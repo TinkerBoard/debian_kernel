@@ -91,7 +91,10 @@
 #define VOP_INTR_GET(vop, name) \
 		vop_read_reg(vop, 0, &vop->data->ctrl->name)
 
-#define VOP_INTR_SET(vop, name, mask, v) \
+#define VOP_INTR_SET(vop, name, v) \
+		REG_SET(vop, name, 0, vop->data->intr->name, \
+			v, false)
+#define VOP_INTR_SET_MASK(vop, name, mask, v) \
 		REG_SET_MASK(vop, name, 0, vop->data->intr->name, \
 			     mask, v, false)
 
@@ -104,7 +107,7 @@
 				mask |= 1 << i; \
 			} \
 		} \
-		VOP_INTR_SET(vop, name, mask, reg); \
+		VOP_INTR_SET_MASK(vop, name, mask, reg); \
 	} while (0)
 #define VOP_INTR_GET_TYPE(vop, name, type) \
 		vop_get_intr_type(vop, &vop->data->intr->name, type)
@@ -1974,6 +1977,12 @@ static irqreturn_t vop_isr(int irq, void *data)
 			vop->vop_isr_ktime = ktime_get();
 #endif
 		}
+		active_irqs &= ~LINE_FLAG_INTR;
+		ret = IRQ_HANDLED;
+	}
+
+	if (active_irqs & LINE_FLAG_INTR) {
+		complete(&vop->line_flag_completion);
 		active_irqs &= ~LINE_FLAG_INTR;
 		ret = IRQ_HANDLED;
 	}
