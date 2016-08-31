@@ -286,6 +286,11 @@ static int rfkill_rk_set_power(void *data, bool blocked)
         return -1;
     }
 
+    if (bt_power_state == 1 && blocked == false) {
+        LOG("%s: bt power has been enabled, return\n", __func__);
+        return 0;
+    }
+
 	if (false == blocked) { 
 
         rfkill_rk_sleep_bt(BT_WAKEUP); // ensure bt is wakeup
