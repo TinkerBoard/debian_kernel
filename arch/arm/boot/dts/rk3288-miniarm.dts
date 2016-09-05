@@ -436,6 +436,11 @@
 		clock-names = "mclk";
 		clocks = <&cru SCLK_I2S0_OUT>;
 	};
+
+    m24c08@50 {
+        compatible = "at,24c08";
+        reg = <0x50>;
+    };
 };
 
 &i2c1 {
