@@ -91,13 +91,16 @@
 #define FRAME_BTA_ACK			BIT(14)
 #define ENABLE_LOW_POWER		(0x3f << 8)
 #define ENABLE_LOW_POWER_MASK		(0x3f << 8)
-#define VID_MODE_TYPE_BURST_SYNC_PULSES		0x2
-#define VID_MODE_TYPE_MASK			0x3
+#define VID_MODE_TYPE_BURST_SYNC_PULSES		0x0
+#define VID_MODE_TYPE_BURST_SYNC_EVENTS		0x1
+#define VID_MODE_TYPE_BURST		0x2
 
 #define DSI_VID_PKT_SIZE		0x3c
 #define VID_PKT_SIZE(p)			(((p) & 0x3fff) << 0)
 #define VID_PKT_MAX_SIZE		0x3fff
 
+#define DSI_VID_NUM_CHUMKS		0x40
+#define DSI_VID_NULL_PKT_SIZE		0x44
 #define DSI_VID_HSA_TIME		0x48
 #define DSI_VID_HBP_TIME		0x4c
 #define DSI_VID_HLINE_TIME		0x50
@@ -285,6 +288,7 @@ struct dw_mipi_dsi {
 	struct drm_encoder encoder;
 	struct drm_connector connector;
 	struct mipi_dsi_host dsi_host;
+	struct device_node *panel_node;
 	struct drm_panel *panel;
 	struct device *dev;
 	struct regmap *grf_regmap;
@@ -370,6 +374,9 @@ static inline struct dw_mipi_dsi *encoder_to_dsi(struct drm_encoder *encoder)
 }
 static inline void dsi_write(struct dw_mipi_dsi *dsi, u32 reg, u32 val)
 {
+    if(reg == DSI_GEN_HDR)
+	 printk("---DSI_GEN_HDR = 0x%x\n", val);
+
 	writel(val, dsi->base + reg);
 }
 
@@ -403,6 +410,8 @@ static int dw_mipi_dsi_phy_init(struct dw_mipi_dsi *dsi)
 {
 	int ret, testdin, vco, val;
 
+	pr_info("---------%s:%d\n", __func__, __LINE__);
+
 	vco = (dsi->lane_mbps < 200) ? 0 : (dsi->lane_mbps + 100) / 200;
 
 	testdin = max_mbps_to_testdin(dsi->lane_mbps);
@@ -412,6 +421,8 @@ static int dw_mipi_dsi_phy_init(struct dw_mipi_dsi *dsi)
 			dsi->lane_mbps);
 		return testdin;
 	}
+
+	pr_info("---------%s:%d\n", __func__, __LINE__);
 
 	dsi_write(dsi, DSI_PWR_UP, POWERUP);
 
@@ -477,6 +488,10 @@ static int dw_mipi_dsi_phy_init(struct dw_mipi_dsi *dsi)
 		dev_err(dsi->dev,
 			"failed to wait for phy clk lane stop state\n");
 
+	dsi_write(dsi, DSI_LPCLK_CTRL, PHY_TXREQUESTCLKHS);
+
+	pr_info("---------%s:%d\n", __func__, __LINE__);
+
 phy_init_end:
 	if (!IS_ERR(dsi->phy_cfg_clk))
 		clk_disable_unprepare(dsi->phy_cfg_clk);
@@ -500,9 +515,12 @@ static int dw_mipi_dsi_get_lane_bps(struct dw_mipi_dsi *dsi)
 	}
 
 	mpclk = DIV_ROUND_UP(dsi->mode->clock, MSEC_PER_SEC);
+
+	printk("------mpclk(dclk) = %ld\n", mpclk);
+
 	if (mpclk) {
-		/* take 1 / 0.9, since mbps must big than bandwidth of RGB */
-		tmp = mpclk * (bpp / dsi->lanes) * 10 / 9;
+		/* take 1 / 0.8, since mbps must big than bandwidth of RGB */
+		tmp = mpclk * (bpp / dsi->lanes) * 10 / 8;
 		if (tmp < max_mbps)
 			target_mbps = tmp;
 		else
@@ -511,6 +529,8 @@ static int dw_mipi_dsi_get_lane_bps(struct dw_mipi_dsi *dsi)
 
 	pllref = DIV_ROUND_UP(clk_get_rate(dsi->pllref_clk), USEC_PER_SEC);
 	tmp = pllref;
+
+	printk("---------pllref = %ld, target_mbps = %d\n", pllref, target_mbps);
 
 	for (i = 1; i < 6; i++) {
 		pre = pllref / i;
@@ -526,6 +546,8 @@ static int dw_mipi_dsi_get_lane_bps(struct dw_mipi_dsi *dsi)
 	dsi->lane_mbps = pllref / n * m;
 	dsi->input_div = n;
 	dsi->feedback_div = m;
+
+	pr_info("-------n = %d, m = %d, lane_mbps = %d\n", n, m, dsi->lane_mbps);
 
 	return 0;
 }
@@ -550,11 +572,9 @@ static int dw_mipi_dsi_host_attach(struct mipi_dsi_host *host,
 	dsi->lanes = device->lanes;
 	dsi->channel = device->channel;
 	dsi->format = device->format;
-	dsi->panel = of_drm_find_panel(device->dev.of_node);
-	if (!dsi->panel) {
-		DRM_ERROR("failed to find panel\n");
-		return -ENODEV;
-	}
+	dsi->panel_node = device->dev.of_node;
+	if (dsi->connector.dev)
+		drm_helper_hpd_irq_event(dsi->connector.dev);
 
 	return 0;
 }
@@ -564,30 +584,36 @@ static int dw_mipi_dsi_host_detach(struct mipi_dsi_host *host,
 {
 	struct dw_mipi_dsi *dsi = host_to_dsi(host);
 
-	if (dsi->panel)
-		drm_panel_detach(dsi->panel);
+	dsi->panel_node = NULL;
 
-	dsi->panel = NULL;
+	if (dsi->connector.dev)
+		drm_helper_hpd_irq_event(dsi->connector.dev);
+
 	return 0;
 }
 
 static int dw_mipi_dsi_gen_pkt_hdr_write(struct dw_mipi_dsi *dsi, u32 val)
 {
 	int ret;
+	int reg_val;
 
 	ret = readx_poll_timeout(readl, dsi->base + DSI_CMD_PKT_STATUS,
-				 val, !(val & GEN_CMD_FULL), 1000,
-				 CMD_PKT_STATUS_TIMEOUT_US);
+		  reg_val, !(reg_val & GEN_CMD_FULL), 1000,
+		  CMD_PKT_STATUS_TIMEOUT_US);
+
 	if (ret < 0) {
 		dev_err(dsi->dev, "failed to get available command FIFO\n");
 		return ret;
 	}
 
+	printk("--2---DSI_GEN_HDR = 0x%x\n",val);
+
 	dsi_write(dsi, DSI_GEN_HDR, val);
 
 	ret = readx_poll_timeout(readl, dsi->base + DSI_CMD_PKT_STATUS,
-				 val, val & (GEN_CMD_EMPTY | GEN_PLD_W_EMPTY),
-				 1000, CMD_PKT_STATUS_TIMEOUT_US);
+		  reg_val, reg_val & (GEN_CMD_EMPTY | GEN_PLD_W_EMPTY),
+				1000, CMD_PKT_STATUS_TIMEOUT_US);
+
 	if (ret < 0) {
 		dev_err(dsi->dev, "failed to write command FIFO\n");
 		return ret;
@@ -597,10 +623,22 @@ static int dw_mipi_dsi_gen_pkt_hdr_write(struct dw_mipi_dsi *dsi, u32 val)
 }
 
 static int dw_mipi_dsi_dcs_short_write(struct dw_mipi_dsi *dsi,
-				       const struct mipi_dsi_msg *msg)
+					const struct mipi_dsi_msg *msg)
 {
 	const u16 *tx_buf = msg->tx_buf;
 	u32 val = GEN_HDATA(*tx_buf) | GEN_HTYPE(msg->type);
+	u32 reg_val = 0;
+	int i = 0;
+
+	pr_info("--------%s:%d, val = 0x%x, msg->len = %d\n", __func__, __LINE__, val, msg->tx_len);
+
+	reg_val = dsi_read(dsi, DSI_CMD_MODE_CFG);
+	dsi_write(dsi, DSI_CMD_MODE_CFG, reg_val & ~GEN_LW_TX_LP);
+
+	reg_val = dsi_read(dsi, DSI_CMD_MODE_CFG);
+	pr_info("-------%s:%d, DSI_CMD_MODE_CFG = 0x%x\n", __func__, __LINE__, reg_val);
+	for (i = 0; i < msg->tx_len; i++)
+		pr_info("----tx_buf[%d] = 0x%x", i, tx_buf[i]);
 
 	if (msg->tx_len > 2) {
 		dev_err(dsi->dev, "too long tx buf length %zu for short write\n",
@@ -608,16 +646,23 @@ static int dw_mipi_dsi_dcs_short_write(struct dw_mipi_dsi *dsi,
 		return -EINVAL;
 	}
 
+	val = val & 0xffff;
+	pr_info("-------%s:%d, val = 0x%x\n", __func__, __LINE__, val);
+
 	return dw_mipi_dsi_gen_pkt_hdr_write(dsi, val);
 }
 
 static int dw_mipi_dsi_dcs_long_write(struct dw_mipi_dsi *dsi,
 				      const struct mipi_dsi_msg *msg)
 {
-	const u32 *tx_buf = msg->tx_buf;
-	int len = msg->tx_len, pld_data_bytes = sizeof(*tx_buf), ret;
-	u32 val = GEN_HDATA(msg->tx_len) | GEN_HTYPE(msg->type);
-	u32 remainder = 0;
+	int len = msg->tx_len;// pld_data_bytes = sizeof(*tx_buf);// ret;
+	u32 val = (len & 0xffff) << 8 | GEN_HTYPE(msg->type);
+	//u32 remainder = 0;
+	u32 reg_val = 0;
+	const u8 *buf = msg->tx_buf;
+	int i = 0;
+	int j = 0;
+	u32 data = 0;
 
 	if (msg->tx_len < 3) {
 		dev_err(dsi->dev, "wrong tx buf length %zu for long write\n",
@@ -625,6 +670,11 @@ static int dw_mipi_dsi_dcs_long_write(struct dw_mipi_dsi *dsi,
 		return -EINVAL;
 	}
 
+	for (i = 0; i < msg->tx_len; i++)
+	 pr_info("----buf[%d] = 0x%x", i, buf[i]);
+
+	reg_val = dsi_read(dsi, DSI_CMD_MODE_CFG);
+/*
 	while (DIV_ROUND_UP(len, pld_data_bytes)) {
 		if (len < pld_data_bytes) {
 			memcpy(&remainder, tx_buf, len);
@@ -643,6 +693,99 @@ static int dw_mipi_dsi_dcs_long_write(struct dw_mipi_dsi *dsi,
 			dev_err(dsi->dev,
 				"failed to get available write payload FIFO\n");
 			return ret;
+		}
+	}
+*/
+	dsi_write(dsi, DSI_CMD_MODE_CFG, reg_val & ~DCS_LW_TX_LP);
+
+	for (i = 0; i < msg->tx_len; i++) {
+	     j = i % 4;
+	     data |= buf[i] << (j * 8);
+	     if (j == 3 || ((i+1) == msg->tx_len)) {
+		  /*ret = readx_poll_timeout(readl, dsi->base + DSI_CMD_PKT_STATUS,
+				     val, !(val & GEN_PLD_W_FULL), 1000,
+				     CMD_PKT_STATUS_TIMEOUT_US);
+		  if (ret < 0) {
+			   dev_err(dsi->dev,
+				    "failed to get available write payload FIFO\n");
+			   return ret;
+		  }*/
+		  reg_val = dsi_read(dsi, DSI_CMD_PKT_STATUS);
+		  if (reg_val & GEN_PLD_W_FULL)
+			   break;
+		  dsi_write(dsi, DSI_GEN_PLD_DATA, data);
+		  data = 0;
+		}
+	}
+
+    pr_info("--------%s:%d\n", __func__, __LINE__);
+
+	return dw_mipi_dsi_gen_pkt_hdr_write(dsi, val);
+}
+
+static int dw_mipi_dsi_generic_long_write(struct dw_mipi_dsi *dsi,
+				      const struct mipi_dsi_msg *msg)
+{
+	//const u32 *tx_buf = msg->tx_buf;
+	int len = msg->tx_len;//pld_data_bytes = sizeof(*tx_buf);// ret;
+	u32 val = (len & 0xffff) << 8 | GEN_HTYPE(msg->type);
+	//u32 remainder = 0;
+	u32 reg_val = 0;
+	const u8 *buf = msg->tx_buf;
+	int i = 0;
+	int j = 0;
+	u32 data = 0;
+
+	if (msg->tx_len < 3) {
+	 dev_err(dsi->dev, "wrong tx buf length %zu for long write\n",
+	 msg->tx_len);
+	 return -EINVAL;
+	}
+
+	reg_val = dsi_read(dsi, DSI_CMD_MODE_CFG);
+	printk("-----reg_val = 0x%x\n", reg_val);
+/*
+	while (DIV_ROUND_UP(len, pld_data_bytes)) {
+		if (len < pld_data_bytes) {
+			memcpy(&remainder, tx_buf, len);
+			dsi_write(dsi, DSI_GEN_PLD_DATA, remainder);
+			len = 0;
+		} else {
+			dsi_write(dsi, DSI_GEN_PLD_DATA, *tx_buf);
+			tx_buf++;
+			len -= pld_data_bytes;
+		}
+
+		ret = readx_poll_timeout(readl, dsi->base + DSI_CMD_PKT_STATUS,
+					 val, !(val & GEN_PLD_W_FULL), 1000,
+					 CMD_PKT_STATUS_TIMEOUT_US);
+		if (ret < 0) {
+			dev_err(dsi->dev,
+				"failed to get available write payload FIFO\n");
+			return ret;
+		}
+	}
+*/
+	//dsi_write(dsi, DSI_CMD_MODE_CFG, reg_val & ~GEN_LW_TX_LP);
+	dsi_write(dsi, DSI_CMD_MODE_CFG, reg_val | GEN_LW_TX_LP);
+	for (i = 0; i < msg->tx_len; i++) {
+		j = i % 4;
+		data |= buf[i] << (j * 8);
+		if (j == 3 || ((i+1) == msg->tx_len)) {
+			/*ret = readx_poll_timeout(readl, dsi->base + DSI_CMD_PKT_STATUS,
+					      val, !(val & GEN_PLD_W_FULL), 1000,
+					      CMD_PKT_STATUS_TIMEOUT_US);
+			if (ret < 0) {
+				dev_err(dsi->dev,
+				"failed to get available write payload FIFO\n");
+				return ret;
+			}*/
+			reg_val = dsi_read(dsi, DSI_CMD_PKT_STATUS);
+			if (reg_val & GEN_PLD_W_FULL)
+				break;
+			printk("-----DSI_GEN_PLD_DATA = 0x%x\n", data);
+			dsi_write(dsi, DSI_GEN_PLD_DATA, data);
+			data = 0;
 		}
 	}
 
@@ -664,6 +807,15 @@ static ssize_t dw_mipi_dsi_host_transfer(struct mipi_dsi_host *host,
 	case MIPI_DSI_DCS_LONG_WRITE:
 		ret = dw_mipi_dsi_dcs_long_write(dsi, msg);
 		break;
+	case MIPI_DSI_GENERIC_SHORT_WRITE_0_PARAM:
+		break;
+	case MIPI_DSI_GENERIC_SHORT_WRITE_1_PARAM:
+		break;
+	case MIPI_DSI_GENERIC_SHORT_WRITE_2_PARAM:
+		break;
+	case MIPI_DSI_GENERIC_LONG_WRITE:
+		ret = dw_mipi_dsi_generic_long_write(dsi, msg);
+		break;
 	default:
 		dev_err(dsi->dev, "unsupported message type\n");
 		ret = -EINVAL;
@@ -682,7 +834,7 @@ static void dw_mipi_dsi_video_mode_config(struct dw_mipi_dsi *dsi)
 {
 	u32 val;
 
-	val = VID_MODE_TYPE_BURST_SYNC_PULSES | ENABLE_LOW_POWER;
+	val = VID_MODE_TYPE_BURST | ENABLE_LOW_POWER;
 
 	dsi_write(dsi, DSI_VID_MODE_CFG, val);
 }
@@ -715,7 +867,6 @@ static void dw_mipi_dsi_init(struct dw_mipi_dsi *dsi)
 		  | PHY_RSTZ | PHY_SHUTDOWNZ);
 	dsi_write(dsi, DSI_CLKMGR_CFG, TO_CLK_DIVIDSION(10) |
 		  TX_ESC_CLK_DIVIDSION(7));
-	dsi_write(dsi, DSI_LPCLK_CTRL, PHY_TXREQUESTCLKHS);
 }
 
 static void dw_mipi_dsi_dpi_config(struct dw_mipi_dsi *dsi,
@@ -758,7 +909,33 @@ static void dw_mipi_dsi_packet_handler_config(struct dw_mipi_dsi *dsi)
 static void dw_mipi_dsi_video_packet_config(struct dw_mipi_dsi *dsi,
 					    struct drm_display_mode *mode)
 {
+#if 0
+	unsigned long mpclk;
+	u32 lane = dsi->lanes;
+	int bytes_clk = dsi->lane_mbps / 8;
+	int temp;
+	int decimals = bytes_clk;
+	u32 m;
+	mpclk = DIV_ROUND_UP(dsi->mode->clock, MSEC_PER_SEC);
+//	dsi->lane_mbps = pllref / n * m;
+
+	for (i = 8; i < 32; i++) {
+		temp = i * 2 * mpclk % bytes_clk;
+		if (decimals > temp) {
+			decimals = temp;
+			m = i;
+		}
+		if (decimals == 0)
+			break;
+	}
+	dsi_write(dsi, DSI_VID_NUM_CHUMKS, 800/m + 1);
+	dsi_write(dsi, DSI_VID_PKT_SIZE, m);
+	temp = m * 2 * mpclk / bytes_clk - m * 3;
+	if (temp >= 12)
+		dsi_write(dsi, DSI_VID_NULL_PKT_SIZE, temp - 12);
+#else
 	dsi_write(dsi, DSI_VID_PKT_SIZE, VID_PKT_SIZE(mode->hdisplay));
+#endif
 }
 
 static void dw_mipi_dsi_command_mode_config(struct dw_mipi_dsi *dsi)
@@ -797,11 +974,17 @@ static void dw_mipi_dsi_line_timer_config(struct dw_mipi_dsi *dsi)
 	lbcc = dw_mipi_dsi_get_hcomponent_lbcc(dsi, htotal);
 	dsi_write(dsi, DSI_VID_HLINE_TIME, lbcc);
 
+	pr_info("hline = %d\n", lbcc);
+
 	lbcc = dw_mipi_dsi_get_hcomponent_lbcc(dsi, hsa);
 	dsi_write(dsi, DSI_VID_HSA_TIME, lbcc);
 
+	pr_info("hsa = %d\n", lbcc);
+
 	lbcc = dw_mipi_dsi_get_hcomponent_lbcc(dsi, hbp);
 	dsi_write(dsi, DSI_VID_HBP_TIME, lbcc);
+
+	pr_info("hbp = %d\n", lbcc);
 }
 
 static void dw_mipi_dsi_vertical_timing_config(struct dw_mipi_dsi *dsi)
@@ -813,6 +996,8 @@ static void dw_mipi_dsi_vertical_timing_config(struct dw_mipi_dsi *dsi)
 	vsa = mode->vsync_end - mode->vsync_start;
 	vfp = mode->vsync_start - mode->vdisplay;
 	vbp = mode->vtotal - mode->vsync_end;
+
+	pr_info("---vactive = %d, vsa = %d, vfp = %d, vbp = %d", vactive, vsa, vfp, vbp);
 
 	dsi_write(dsi, DSI_VID_VACTIVE_LINES, vactive);
 	dsi_write(dsi, DSI_VID_VSA_LINES, vsa);
@@ -921,6 +1106,15 @@ static bool dw_mipi_dsi_encoder_mode_fixup(struct drm_encoder *encoder,
 	return true;
 }
 
+//extern void mcu_power_on(void);
+//extern void mcu_wake_up(void);
+//extern void mcu_bright_on(void);
+//extern void send_dsi_command(void);
+
+//DECLARE_COMPLETION(asus_comp2);
+//EXPORT_SYMBOL_GPL(asus_comp2);
+extern struct completion bridge_ready_comp;
+
 static void dw_mipi_dsi_encoder_commit(struct drm_encoder *encoder)
 {
 	struct dw_mipi_dsi *dsi = encoder_to_dsi(encoder);
@@ -933,6 +1127,8 @@ static void dw_mipi_dsi_encoder_commit(struct drm_encoder *encoder)
 		return;
 	}
 
+    pr_info("pclk enabled. %s:%d\n", __func__, __LINE__);
+
 	if (pdata->grf_dsi0_mode_reg)
 		regmap_write(dsi->grf_regmap, pdata->grf_dsi0_mode_reg,
 			     pdata->grf_dsi0_mode);
@@ -940,8 +1136,17 @@ static void dw_mipi_dsi_encoder_commit(struct drm_encoder *encoder)
 	dw_mipi_dsi_phy_init(dsi);
 	dw_mipi_dsi_wait_for_two_frames(dsi);
 
-	dw_mipi_dsi_set_mode(dsi, DW_MIPI_DSI_VID_MODE);
 	drm_panel_enable(dsi->panel);
+
+	if(wait_for_completion_interruptible_timeout(&bridge_ready_comp, 10*100) <= 0)
+	{
+		pr_info("Wait bridge_ready_comp fail, return!\n");
+		return;
+	}
+
+	pr_info("-----set DW_MIPI_DSI_VID_MODE -----%s:%d\n", __func__, __LINE__);
+
+	dw_mipi_dsi_set_mode(dsi, DW_MIPI_DSI_VID_MODE);
 
 	clk_disable_unprepare(dsi->pclk);
 
@@ -949,6 +1154,8 @@ static void dw_mipi_dsi_encoder_commit(struct drm_encoder *encoder)
 		val = pdata->dsi0_en_bit | (pdata->dsi0_en_bit << 16);
 	else
 		val = pdata->dsi0_en_bit << 16;
+
+	pr_info("---------%s:%d\n", __func__, __LINE__);
 
 	regmap_write(dsi->grf_regmap, pdata->grf_switch_reg, val);
 	dev_dbg(dsi->dev, "vop %s output to dsi0\n", (mux) ? "LIT" : "BIG");
@@ -1034,13 +1241,32 @@ static struct drm_connector_helper_funcs dw_mipi_dsi_connector_helper_funcs = {
 static enum drm_connector_status
 dw_mipi_dsi_detect(struct drm_connector *connector, bool force)
 {
-	return connector_status_connected;
+    struct dw_mipi_dsi *dsi = con_to_dsi(connector);
+
+	if (!dsi->panel) {
+		dsi->panel = of_drm_find_panel(dsi->panel_node);
+		if (dsi->panel)
+			drm_panel_attach(dsi->panel, &dsi->connector);
+	} else if (!dsi->panel_node) {
+		struct drm_encoder *encoder;
+
+		encoder = platform_get_drvdata(to_platform_device(dsi->dev));
+		dw_mipi_dsi_encoder_disable(encoder);
+		drm_panel_detach(dsi->panel);
+		dsi->panel = NULL;
+	}
+
+	if (dsi->panel)
+		return connector_status_connected;
+
+	return connector_status_disconnected;
 }
 
 static void dw_mipi_dsi_drm_connector_destroy(struct drm_connector *connector)
 {
 	drm_connector_unregister(connector);
 	drm_connector_cleanup(connector);
+	connector->dev = NULL;
 }
 
 static struct drm_connector_funcs dw_mipi_dsi_atomic_connector_funcs = {
@@ -1061,6 +1287,8 @@ static int dw_mipi_dsi_register(struct drm_device *drm,
 	struct device *dev = dsi->dev;
 	int ret;
 
+	pr_info("---------%s:%d\n", __func__, __LINE__);
+
 	encoder->possible_crtcs = drm_of_find_possible_crtcs(drm,
 							     dev->of_node);
 	/*
@@ -1072,14 +1300,18 @@ static int dw_mipi_dsi_register(struct drm_device *drm,
 	if (encoder->possible_crtcs == 0)
 		return -EPROBE_DEFER;
 
+	pr_info("---------%s:%d\n", __func__, __LINE__);
+
 	drm_encoder_helper_add(&dsi->encoder,
-			       &dw_mipi_dsi_encoder_helper_funcs);
+				&dw_mipi_dsi_encoder_helper_funcs);
 	ret = drm_encoder_init(drm, &dsi->encoder, &dw_mipi_dsi_encoder_funcs,
 			 DRM_MODE_ENCODER_DSI, NULL);
 	if (ret) {
 		dev_err(dev, "Failed to initialize encoder with drm\n");
 		return ret;
 	}
+
+	connector->polled = DRM_CONNECTOR_POLL_HPD;
 
 	drm_connector_helper_add(connector,
 			&dw_mipi_dsi_connector_helper_funcs);
@@ -1088,11 +1320,11 @@ static int dw_mipi_dsi_register(struct drm_device *drm,
 			   &dw_mipi_dsi_atomic_connector_funcs,
 			   DRM_MODE_CONNECTOR_DSI);
 
-	drm_panel_attach(dsi->panel, &dsi->connector);
-
 	dsi->connector.port = dev->of_node;
 
 	drm_mode_connector_attach_encoder(connector, encoder);
+
+	pr_info("---------%s:%d\n", __func__, __LINE__);
 
 	return 0;
 }
@@ -1147,10 +1379,11 @@ static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 	struct resource *res;
 	int ret;
 
+	pr_info("---------%s:%d\n", __func__, __LINE__);
+
 	dsi->dpms_mode = DRM_MODE_DPMS_OFF;
 
-	if (!dsi->panel)
-		return -EPROBE_DEFER;
+	pr_info("---------%s:%d\n", __func__, __LINE__);
 
 	ret = rockchip_mipi_parse_dt(dsi);
 	if (ret)
@@ -1159,6 +1392,8 @@ static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
 		return -ENODEV;
+
+	pr_info("---------%s:%d\n", __func__, __LINE__);
 
 	dsi->base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(dsi->base))
@@ -1170,6 +1405,8 @@ static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 		dev_err(dev, "Unable to get pll reference clock: %d\n", ret);
 		return ret;
 	}
+
+	pr_info("---------%s:%d\n", __func__, __LINE__);
 
 	dsi->pclk = devm_clk_get(dev, "pclk");
 	if (IS_ERR(dsi->pclk)) {
@@ -1197,6 +1434,8 @@ static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 	dev_set_drvdata(dev, dsi);
 
 	pm_runtime_enable(dev);
+
+	pr_info("---------%s:%d\n", __func__, __LINE__);
 
 	return 0;
 
@@ -1228,6 +1467,7 @@ static int dw_mipi_dsi_probe(struct platform_device *pdev)
 	struct dw_mipi_dsi *dsi;
 	int ret;
 
+	pr_info("---------%s:%d\n", __func__, __LINE__);
 	dsi = devm_kzalloc(&pdev->dev, sizeof(*dsi), GFP_KERNEL);
 	if (!dsi)
 		return -ENOMEM;
@@ -1245,6 +1485,7 @@ static int dw_mipi_dsi_probe(struct platform_device *pdev)
 	ret = component_add(&pdev->dev, &dw_mipi_dsi_ops);
 	if (ret)
 		mipi_dsi_host_unregister(&dsi->dsi_host);
+	pr_info("---------%s:%d\n", __func__, __LINE__);
 
 	return ret;
 }
@@ -1252,6 +1493,8 @@ static int dw_mipi_dsi_probe(struct platform_device *pdev)
 static int dw_mipi_dsi_remove(struct platform_device *pdev)
 {
 	struct dw_mipi_dsi *dsi = dev_get_drvdata(&pdev->dev);
+
+	dw_mipi_dsi_encoder_disable(&dsi->encoder);
 
 	if (dsi)
 		mipi_dsi_host_unregister(&dsi->dsi_host);
