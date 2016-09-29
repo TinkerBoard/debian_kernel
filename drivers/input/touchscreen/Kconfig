@@ -1125,4 +1125,10 @@ config TOUCHSCREEN_ROHM_BU21023
 	  To compile this driver as a module, choose M here: the
 	  module will be called bu21023_ts.
 
+config TOUCHSCREEN_TINKER_FT5406
+	tristate "tinker ft5406"
+	default y
+	depends on I2C
+	help
+	  Control ft5406 touch ic.
 endif
