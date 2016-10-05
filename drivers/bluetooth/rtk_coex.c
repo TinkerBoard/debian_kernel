@@ -852,6 +852,33 @@ static uint8_t handle_l2cap_discon_req(uint16_t handle, uint16_t dcid,
 	return 1;
 }
 
+static const char sample_freqs[4][8] = {
+	"16", "32", "44.1", "48"
+};
+
+static const uint8_t sbc_blocks[4] = { 4, 8, 12, 16 };
+
+static const char chan_modes[4][16] = {
+	"MONO", "DUAL_CHANNEL", "STEREO", "JOINT_STEREO"
+};
+
+static const char alloc_methods[2][12] = {
+	"LOUDNESS", "SNR"
+};
+
+static const uint8_t subbands[2] = { 4, 8 };
+
+void print_sbc_header(struct sbc_frame_hdr *hdr)
+{
+	RTKBT_DBG("syncword: %02x", hdr->syncword);
+	RTKBT_DBG("freq %skHz", sample_freqs[hdr->sampling_frequency]);
+	RTKBT_DBG("blocks %u", sbc_blocks[hdr->blocks]);
+	RTKBT_DBG("channel mode %s", chan_modes[hdr->channel_mode]);
+	RTKBT_DBG("allocation method %s",
+		  alloc_methods[hdr->allocation_method]);
+	RTKBT_DBG("subbands %u", subbands[hdr->subbands]);
+}
+
 static void packets_count(uint16_t handle, uint16_t scid, uint16_t length,
 			  uint8_t direction, u8 *user_data)
 {
@@ -885,7 +912,8 @@ static void packets_count(uint16_t handle, uint16_t scid, uint16_t length,
 				update_profile_state(profile_a2dp, TRUE);
 				rtph = (struct rtp_header *)user_data;
 
-				RTKBT_DBG("cc %u", rtph->cc);
+				RTKBT_DBG("rtp: v %u, cc %u, pt %u",
+					  rtph->v, rtph->cc, rtph->pt);
 				/* move forward */
 				user_data += sizeof(struct rtp_header) +
 					rtph->cc * 4 + 1;
@@ -893,6 +921,8 @@ static void packets_count(uint16_t handle, uint16_t scid, uint16_t length,
 				/* point to the sbc frame header */
 				sbc_header = (struct sbc_frame_hdr *)user_data;
 				bitpool = sbc_header->bitpool;
+
+				print_sbc_header(sbc_header);
 
 				RTKBT_DBG("bitpool %u", bitpool);
 
@@ -2011,70 +2041,9 @@ int ev_filter_out(u8 ev_code)
 	}
 }
 
-/* Context: in_interrupt() */
-void rtk_btcoex_parse_event(uint8_t *buffer, int count)
+static void rtk_btcoex_evt_enqueue(__u8 *s, __u16 count)
 {
-	struct rtl_coex_struct *coex = &btrtl_coex;
 	struct rtl_hci_ev *ev;
-	u8 *s;
-	struct sk_buff *skb;
-	struct sk_buff *ev_sk = NULL;
-
-	/* RTKBT_DBG("%s: parse ev.", __func__); */
-
-	spin_lock(&coex->rxlock);
-	skb = coex->evt_skb;
-
-	while (count) {
-		int len;
-
-		if (!skb) {
-			skb = bt_skb_alloc(HCI_MAX_EVENT_SIZE, GFP_ATOMIC);
-			if (!skb) {
-				RTKBT_ERR("failed to alloc skb");
-				break;
-			}
-
-			coex->pkt_type = HCI_EVENT_PKT;
-			coex->expect = HCI_EVENT_HDR_SIZE;
-		}
-
-		len = min_t(uint, coex->expect, count);
-		memcpy(skb_put(skb, len), buffer, len);
-
-		count -= len;
-		buffer += len;
-		coex->expect -= len;
-
-		if (skb->len == HCI_EVENT_HDR_SIZE) {
-			/* Complete event header */
-			coex->expect = hci_event_hdr(skb)->plen;
-
-			if (skb_tailroom(skb) < coex->expect) {
-				kfree_skb(skb);
-				skb = NULL;
-
-				RTKBT_ERR("skb room is not enough");
-				break;
-			}
-		}
-
-		if (coex->expect == 0) {
-			/* Complete frame */
-			ev_sk = skb;
-			skb = NULL;
-		}
-	}
-
-	/* evt_skb would be NULL only there is a complete frame found. */
-	coex->evt_skb = skb;
-	spin_unlock(&coex->rxlock);
-
-	/* no complete frame */
-	if (!ev_sk)
-		return;
-
-	s = (u8 *)ev_sk->data;
 
 	if (ev_filter_out(s[0]))
 		return;
@@ -2085,20 +2054,84 @@ void rtk_btcoex_parse_event(uint8_t *buffer, int count)
 		return;
 	}
 
-	if (ev_sk->len > MAX_LEN_OF_HCI_EV) {
-		memcpy(ev->data, ev_sk->data, MAX_LEN_OF_HCI_EV);
+	if (count > MAX_LEN_OF_HCI_EV) {
+		memcpy(ev->data, s, MAX_LEN_OF_HCI_EV);
 		ev->len = MAX_LEN_OF_HCI_EV;
 	} else {
-		memcpy(ev->data, ev_sk->data, ev_sk->len);
-		ev->len = ev_sk->len;
+		memcpy(ev->data, s, count);
+		ev->len = count;
 	}
 
 	rtl_ev_node_to_used(&btrtl_coex, ev);
 
 	queue_delayed_work(btrtl_coex.fw_wq, &btrtl_coex.fw_work, 0);
+}
 
-	/* free complete frame here */
-	kfree_skb(ev_sk);
+/* Context: in_interrupt() */
+void rtk_btcoex_parse_event(uint8_t *buffer, int count)
+{
+	struct rtl_coex_struct *coex = &btrtl_coex;
+	__u8 *tbuff;
+	__u16 elen = 0;
+
+	/* RTKBT_DBG("%s: parse ev.", __func__); */
+
+	spin_lock(&coex->rxlock);
+
+	/* coex->tbuff will be set to NULL when initializing or
+	 * there is a complete frame or there is start of a frame */
+	tbuff = coex->tbuff;
+
+	while (count) {
+		int len;
+
+		/* Start of a frame */
+		if (!tbuff) {
+			tbuff = coex->back_buff;
+			coex->tbuff = NULL;
+			coex->elen = 0;
+
+			coex->pkt_type = HCI_EVENT_PKT;
+			coex->expect = HCI_EVENT_HDR_SIZE;
+		}
+
+		len = min_t(uint, coex->expect, count);
+		memcpy(tbuff, buffer, len);
+		tbuff += len;
+		coex->elen += len;
+
+		count -= len;
+		buffer += len;
+		coex->expect -= len;
+
+		if (coex->elen == HCI_EVENT_HDR_SIZE) {
+			/* Complete event header */
+			coex->expect =
+				((struct hci_event_hdr *)coex->back_buff)->plen;
+			if (coex->expect > HCI_MAX_EVENT_SIZE - coex->elen) {
+				tbuff = NULL;
+				coex->elen = 0;
+				RTKBT_ERR("tbuff room is not enough");
+				break;
+			}
+		}
+
+		if (coex->expect == 0) {
+			/* Complete frame */
+			elen = coex->elen;
+			spin_unlock(&coex->rxlock);
+			rtk_btcoex_evt_enqueue(coex->back_buff, elen);
+			spin_lock(&coex->rxlock);
+
+			tbuff = NULL;
+			coex->elen = 0;
+		}
+	}
+
+	/* coex->tbuff would be non-NULL if there isn't a complete frame
+	 * And it will be updated next time */
+	coex->tbuff = tbuff;
+	spin_unlock(&coex->rxlock);
 }
 
 
@@ -2445,8 +2478,8 @@ static inline void rtl_free_frags(struct rtl_coex_struct *coex)
 
 	spin_lock_irqsave(&coex->rxlock, flags);
 
-	kfree_skb(coex->evt_skb);
-	coex->evt_skb = NULL;
+	coex->elen = 0;
+	coex->tbuff = NULL;
 
 	spin_unlock_irqrestore(&coex->rxlock, flags);
 }
@@ -2476,7 +2509,8 @@ void rtk_btcoex_open(struct hci_dev *hdev)
 
 	btrtl_coex.pkt_type = 0;
 	btrtl_coex.expect = 0;
-	btrtl_coex.evt_skb = NULL;
+	btrtl_coex.elen = 0;
+	btrtl_coex.tbuff = NULL;
 
 	create_udpsocket();
 	udpsocket_send(invite_req, sizeof(invite_req));

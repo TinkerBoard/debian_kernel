@@ -688,12 +688,24 @@ static int __init hci_uart_init(void)
 #ifdef CONFIG_BT_HCIUART_H4
 	h4_init();
 #endif
-//
+/*
+#ifdef CONFIG_BT_HCIUART_BCSP
+	bcsp_init();
+#endif
+#ifdef CONFIG_BT_HCIUART_LL
+	ll_init();
+#endif
+#ifdef CONFIG_BT_HCIUART_ATH3K
+	ath_init();
+#endif
+*/
+
 //Realtek_add_start
 //add realtek h5 support
 //#ifdef CONFIG_BT_HCIUART_RTKH5
 	h5_init();
 //#endif
+//Realtek_add_end
 
 #ifdef BTCOEX
 	rtk_btcoex_init();
@@ -713,6 +725,7 @@ static void __exit hci_uart_exit(void)
 #ifdef CONFIG_BT_HCIUART_BCSP
 	bcsp_deinit();
 #endif
+
 #ifdef CONFIG_BT_HCIUART_LL
 	ll_deinit();
 #endif
@@ -725,9 +738,9 @@ static void __exit hci_uart_exit(void)
 //#endif
 
 	/* Release tty registration of line discipline */
-	err = tty_unregister_ldisc(N_HCI);
-	if (err)
+	if ((err = tty_unregister_ldisc(N_HCI)))
 		BT_ERR("Can't unregister HCI line discipline (%d)", err);
+
 #ifdef BTCOEX
 	rtk_btcoex_exit();
 #endif
@@ -738,7 +751,7 @@ module_exit(hci_uart_exit);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
 module_param(reset, bool, 0644);
-MODILE_PARAM_DESC(reset, "Send HCI reset command on initialization");
+MODULE_PARM_DESC(reset, "Send HCI reset command on initialization");
 #endif
 
 MODULE_AUTHOR("Marcel Holtmann <marcel@holtmann.org>");
