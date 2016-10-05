@@ -22,7 +22,6 @@
  */
 
 #include <linux/module.h>
-
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/types.h>
@@ -30,7 +29,6 @@
 #include <linux/interrupt.h>
 #include <linux/ptrace.h>
 #include <linux/poll.h>
-
 #include <linux/slab.h>
 #include <linux/tty.h>
 #include <linux/errno.h>
@@ -40,13 +38,17 @@
 #include <linux/skbuff.h>
 #include <linux/bitrev.h>
 #include <asm/unaligned.h>
-
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
+#include <linux/version.h>
 
 #include "hci_uart.h"
 
-#define VERSION "1.0"
+#ifdef BTCOEX
+#include "rtk_coex.h"
+#endif
+
+//#define VERSION "1.0"
 
 static int txcrc = 1;
 //static int hciextn = 1;
@@ -62,10 +64,10 @@ struct h5_struct {
 	struct sk_buff_head unrel;	/* Unreliable packets queue */
 
 	unsigned long rx_count;
-	struct	sk_buff *rx_skb;
-	u8	rxseq_txack;		/* rxseq == txack. */
-	u8	rxack;			/* Last packet sent by us that the peer ack'ed */
-	struct	timer_list th5;
+	struct sk_buff *rx_skb;
+	u8 rxseq_txack;		/* rxseq == txack. */
+	u8 rxack;		/* Last packet sent by us that the peer ack'ed */
+	struct timer_list th5;
 
 	enum {
 		H5_W4_PKT_DELIMITER,
@@ -80,12 +82,12 @@ struct h5_struct {
 		H5_ESCSTATE_ESC
 	} rx_esc_state;
 
-	u8	use_crc;
-	u16	message_crc;
-	u8	txack_req;		/* Do we need to send ack's to the peer? */
+	u8 use_crc;
+	u16 message_crc;
+	u8 txack_req;		/* Do we need to send ack's to the peer? */
 
 	/* Reliable packet sequence number - used to assign seq to each rel pkt. */
-	u8	msgq_txseq;
+	u8 msgq_txseq;
 };
 
 /* ---- H5 CRC calculation ---- */
@@ -110,7 +112,7 @@ static const u16 crc_table[] = {
         The data byte is treated as two nibbles.  The crc is generated
         in reverse, i.e., bits are fed into the register from the top.
 */
-static void h5_crc_update(u16 *crc, u8 d)
+static void h5_crc_update(u16 * crc, u8 d)
 {
 	u16 reg = *crc;
 
@@ -135,7 +137,7 @@ static void h5_slip_one_byte(struct sk_buff *skb, u8 c)
 	const char esc_db[2] = { 0xdb, 0xdd };
 	const char esc_11[2] = { 0xdb, 0xde };
 	const char esc_13[2] = { 0xdb, 0xdf };
-	
+
 	switch (c) {
 	case 0xc0:
 		memcpy(skb_put(skb, 2), &esc_c0, 2);
@@ -158,7 +160,7 @@ static int h5_enqueue(struct hci_uart *hu, struct sk_buff *skb)
 {
 	struct h5_struct *h5 = hu->priv;
 
-	if (skb->len > 0xFFF) { //Pkt length must be less than 4095 bytes    
+	if (skb->len > 0xFFF) {	//Pkt length must be less than 4095 bytes
 		BT_ERR("Packet too long");
 		kfree_skb(skb);
 		return 0;
@@ -167,29 +169,29 @@ static int h5_enqueue(struct hci_uart *hu, struct sk_buff *skb)
 	switch (bt_cb(skb)->pkt_type) {
 	case HCI_ACLDATA_PKT:
 	case HCI_COMMAND_PKT:
-	    skb_queue_tail(&h5->rel, skb);
-	    break;
+		skb_queue_tail(&h5->rel, skb);
+		break;
 
 	case HCI_SCODATA_PKT:
-	    skb_queue_tail(&h5->unrel, skb);
-	    break;
+		skb_queue_tail(&h5->unrel, skb);
+		break;
 	case H5_LE_PKT:
 	case H5_ACK_PKT:
 	case H5_VDRSPEC_PKT:
-	    skb_queue_tail(&h5->unrel, skb);	/* 3-wire LinkEstablishment*/
-	    break;
-		
+		skb_queue_tail(&h5->unrel, skb);	/* 3-wire LinkEstablishment */
+		break;
+
 	default:
-	    BT_ERR("Unknown packet type");
-	    kfree_skb(skb);
-	    break;
+		BT_ERR("Unknown packet type");
+		kfree_skb(skb);
+		break;
 	}
 
 	return 0;
 }
 
-static struct sk_buff *h5_prepare_pkt(struct h5_struct *h5, u8 *data,
-		int len, int pkt_type)
+static struct sk_buff *h5_prepare_pkt(struct h5_struct *h5, u8 * data,
+				      int len, int pkt_type)
 {
 	struct sk_buff *nskb;
 	u8 hdr[4], chan;
@@ -198,38 +200,37 @@ static struct sk_buff *h5_prepare_pkt(struct h5_struct *h5, u8 *data,
 
 	switch (pkt_type) {
 	case HCI_ACLDATA_PKT:
-	    chan = 2;	/* 3-wire ACL channel */
-	    rel = 1;	/* reliable channel */
-	    break;
+		chan = 2;	/* 3-wire ACL channel */
+		rel = 1;	/* reliable channel */
+		break;
 	case HCI_COMMAND_PKT:
-	    chan = 1;	/* 3-wire cmd channel */
-	    rel = 1;	/* reliable channel */
-	    break;
+		chan = 1;	/* 3-wire cmd channel */
+		rel = 1;	/* reliable channel */
+		break;
 	case HCI_EVENT_PKT:
-	    chan = 4;	/* 3-wire cmd channel */
-	    rel = 1;	/* reliable channel */
-	    break;
+		chan = 4;	/* 3-wire cmd channel */
+		rel = 1;	/* reliable channel */
+		break;
 	case HCI_SCODATA_PKT:
-	    chan = 3;	/* 3-wire SCO channel */
-	    rel = 0;	/* unreliable channel */   
-            break;
+		chan = 3;	/* 3-wire SCO channel */
+		rel = 0;	/* unreliable channel */
+		break;
 	case H5_LE_PKT:
-	    chan = 15;	/* 3-wire LinkEstablishment channel */
-	    rel = 0;	/* unreliable channel */
-	    break;
+		chan = 15;	/* 3-wire LinkEstablishment channel */
+		rel = 0;	/* unreliable channel */
+		break;
 	case H5_ACK_PKT:
-	    chan = 0;	/* 3-wire ACK channel */
-	    rel = 0;	/* unreliable channel */
-	    break;
+		chan = 0;	/* 3-wire ACK channel */
+		rel = 0;	/* unreliable channel */
+		break;
 	case H5_VDRSPEC_PKT:
-	    chan = 14;	/* 3-wire Vendor Specific channel */
-	    rel = 0;	/* unreliable channel */
-	    break;
+		chan = 14;	/* 3-wire Vendor Specific channel */
+		rel = 0;	/* unreliable channel */
+		break;
 	default:
-	    BT_ERR("Unknown packet type");
-	    return NULL;
+		BT_ERR("Unknown packet type");
+		return NULL;
 	}
-
 
 	/* Max len of packet: (original len +4(h5 hdr) +2(crc))*2
 	   (because bytes 0xc0 and 0xdb are escaped, worst case is
@@ -294,18 +295,21 @@ static struct sk_buff *h5_dequeue(struct hci_uart *hu)
 	struct h5_struct *h5 = hu->priv;
 	unsigned long flags;
 	struct sk_buff *skb;
-	
+
 	/* First of all, check for unreliable messages in the queue,
 	   since they have priority */
 
 	if ((skb = skb_dequeue(&h5->unrel)) != NULL) {
-		struct sk_buff *nskb = h5_prepare_pkt(h5, skb->data, skb->len, bt_cb(skb)->pkt_type);
+		struct sk_buff *nskb =
+		    h5_prepare_pkt(h5, skb->data, skb->len,
+				   bt_cb(skb)->pkt_type);
 		if (nskb) {
 			kfree_skb(skb);
 			return nskb;
 		} else {
 			skb_queue_head(&h5->unrel, skb);
-			BT_ERR("Could not dequeue pkt because alloc_skb failed");
+			BT_ERR
+			    ("Could not dequeue pkt because alloc_skb failed");
 		}
 	}
 
@@ -315,8 +319,11 @@ static struct sk_buff *h5_dequeue(struct hci_uart *hu)
 
 	spin_lock_irqsave_nested(&h5->unack.lock, flags, SINGLE_DEPTH_NESTING);
 
-	if (h5->unack.qlen < H5_TXWINSIZE && (skb = skb_dequeue(&h5->rel)) != NULL) {
-		struct sk_buff *nskb = h5_prepare_pkt(h5, skb->data, skb->len, bt_cb(skb)->pkt_type);
+	if (h5->unack.qlen < H5_TXWINSIZE
+	    && (skb = skb_dequeue(&h5->rel)) != NULL) {
+		struct sk_buff *nskb =
+		    h5_prepare_pkt(h5, skb->data, skb->len,
+				   bt_cb(skb)->pkt_type);
 		if (nskb) {
 			__skb_queue_tail(&h5->unack, skb);
 			mod_timer(&h5->th5, jiffies + HZ / 4);
@@ -324,7 +331,8 @@ static struct sk_buff *h5_dequeue(struct hci_uart *hu)
 			return nskb;
 		} else {
 			skb_queue_head(&h5->rel, skb);
-			BT_ERR("Could not dequeue pkt because alloc_skb failed");
+			BT_ERR
+			    ("Could not dequeue pkt because alloc_skb failed");
 		}
 	}
 
@@ -400,56 +408,58 @@ static void h5_pkt_cull(struct h5_struct *h5)
 /* Handle H5 link-establishment packets. When we
    detect a "sync" packet, symptom that the BT module has reset,
    we do nothing :) (yet) */
+#if 0
 static void h5_handle_le_pkt(struct hci_uart *hu)
 {
 	struct h5_struct *h5 = hu->priv;
-	u8 conf_pkt[2]     = { 0x03, 0xfc};
-	u8 conf_rsp_pkt[3] = { 0x04, 0x7b, 0x00};
-	u8 sync_pkt[2]     = { 0x01, 0x7e};
-	u8 sync_rsp_pkt[2] = { 0x02, 0x7d};
+	u8 conf_pkt[2] = { 0x03, 0xfc };
+	u8 conf_rsp_pkt[3] = { 0x04, 0x7b, 0x00 };
+	u8 sync_pkt[2] = { 0x01, 0x7e };
+	u8 sync_rsp_pkt[2] = { 0x02, 0x7d };
 
-	u8 wakeup_pkt[2]   = { 0x05, 0xfa};
-	u8 woken_pkt[2]    = { 0x06, 0xf9};
-	u8 sleep_pkt[2]    = { 0x07, 0x78};
+	u8 wakeup_pkt[2] = { 0x05, 0xfa };
+	u8 woken_pkt[2] = { 0x06, 0xf9 };
+	u8 sleep_pkt[2] = { 0x07, 0x78 };
 
 	/* spot "conf" pkts and reply with a "conf rsp" pkt */
 	if (h5->rx_skb->data[1] >> 4 == 2 && h5->rx_skb->data[2] == 0 &&
-			!memcmp(&h5->rx_skb->data[4], conf_pkt, 2)) {
+	    !memcmp(&h5->rx_skb->data[4], conf_pkt, 2)) {
 		struct sk_buff *nskb = alloc_skb(3, GFP_ATOMIC);
 
 		BT_DBG("Found a LE conf pkt");
 		if (!nskb)
 			return;
 
-		conf_rsp_pkt[2] |= txcrc << 0x4; //crc check enable, version no = 0. needed to be as avariable.
+		conf_rsp_pkt[2] |= txcrc << 0x4;	//crc check enable, version no = 0. needed to be as avariable.
 		memcpy(skb_put(nskb, 3), conf_rsp_pkt, 3);
 		bt_cb(nskb)->pkt_type = H5_LE_PKT;
 
 		skb_queue_head(&h5->unrel, nskb);
 		hci_uart_tx_wakeup(hu);
 	}
-	/* spot "conf resp" pkts*/
+	/* spot "conf resp" pkts */
 	else if (h5->rx_skb->data[1] >> 4 == 2 && h5->rx_skb->data[2] == 0 &&
-			!memcmp(&h5->rx_skb->data[4], conf_rsp_pkt, 2)) {
+		 !memcmp(&h5->rx_skb->data[4], conf_rsp_pkt, 2)) {
 		BT_DBG("Found a LE conf resp pkt, device go into active state");
-	        txcrc = (h5->rx_skb->data[6] >> 0x4) & 0x1;
+		txcrc = (h5->rx_skb->data[6] >> 0x4) & 0x1;
 	}
 
 	/* Spot "sync" pkts. If we find one...disaster! */
 	else if (h5->rx_skb->data[1] >> 4 == 2 && h5->rx_skb->data[2] == 0 &&
-			!memcmp(&h5->rx_skb->data[4], sync_pkt, 2)) {
+		 !memcmp(&h5->rx_skb->data[4], sync_pkt, 2)) {
 		BT_ERR("Found a LE sync pkt, card has reset");
 		//DO Something here
 	}
 	/* Spot "sync resp" pkts. If we find one...disaster! */
 	else if (h5->rx_skb->data[1] >> 4 == 2 && h5->rx_skb->data[2] == 0 &&
-			!memcmp(&h5->rx_skb->data[4], sync_rsp_pkt, 2)) {
-		BT_ERR("Found a LE sync resp pkt, device go into initialized state");
+		 !memcmp(&h5->rx_skb->data[4], sync_rsp_pkt, 2)) {
+		BT_ERR
+		    ("Found a LE sync resp pkt, device go into initialized state");
 		//      DO Something here
 	}
 	/* Spot "wakeup" pkts. reply woken message when in active mode */
 	else if (h5->rx_skb->data[1] >> 4 == 2 && h5->rx_skb->data[2] == 0 &&
-			!memcmp(&h5->rx_skb->data[4], wakeup_pkt, 2)) {
+		 !memcmp(&h5->rx_skb->data[4], wakeup_pkt, 2)) {
 		struct sk_buff *nskb = alloc_skb(2, GFP_ATOMIC);
 
 		BT_ERR("Found a LE Wakeup pkt, and reply woken message");
@@ -463,22 +473,23 @@ static void h5_handle_le_pkt(struct hci_uart *hu)
 	}
 	/* Spot "woken" pkts. receive woken message from device */
 	else if (h5->rx_skb->data[1] >> 4 == 2 && h5->rx_skb->data[2] == 0 &&
-			!memcmp(&h5->rx_skb->data[4], woken_pkt, 2)) {
+		 !memcmp(&h5->rx_skb->data[4], woken_pkt, 2)) {
 		BT_ERR("Found a LE woken pkt from device");
 		//      DO Something here
 	}
-	/* Spot "Sleep" pkts*/
+	/* Spot "Sleep" pkts */
 	else if (h5->rx_skb->data[1] >> 4 == 2 && h5->rx_skb->data[2] == 0 &&
-			!memcmp(&h5->rx_skb->data[4], sleep_pkt, 2)) {
+		 !memcmp(&h5->rx_indent: Standard input:620: Error:Unmatched 'else'
+skb->data[4], sleep_pkt, 2)) {
 		BT_ERR("Found a LE Sleep pkt");
 		//      DO Something here
 	}
-
 }
+#endif
 
 static inline void h5_unslip_one_byte(struct h5_struct *h5, unsigned char byte)
 {
-	const u8 c0   = 0xc0, db   = 0xdb;
+	const u8 c0 = 0xc0, db = 0xdb;
 	const u8 oof1 = 0x11, oof2 = 0x13;
 
 	switch (h5->rx_esc_state) {
@@ -489,8 +500,8 @@ static inline void h5_unslip_one_byte(struct h5_struct *h5, unsigned char byte)
 			break;
 		default:
 			memcpy(skb_put(h5->rx_skb, 1), &byte, 1);
-			if ((h5->rx_skb-> data[0] & 0x40) != 0 && 
-					h5->rx_state != H5_W4_CRC)
+			if ((h5->rx_skb->data[0] & 0x40) != 0 &&
+			    h5->rx_state != H5_W4_CRC)
 				h5_crc_update(&h5->message_crc, byte);
 			h5->rx_count--;
 		}
@@ -500,40 +511,42 @@ static inline void h5_unslip_one_byte(struct h5_struct *h5, unsigned char byte)
 		switch (byte) {
 		case 0xdc:
 			memcpy(skb_put(h5->rx_skb, 1), &c0, 1);
-			if ((h5->rx_skb-> data[0] & 0x40) != 0 && 
-					h5->rx_state != H5_W4_CRC)
-				h5_crc_update(&h5-> message_crc, 0xc0);
+			if ((h5->rx_skb->data[0] & 0x40) != 0 &&
+			    h5->rx_state != H5_W4_CRC)
+				h5_crc_update(&h5->message_crc, 0xc0);
 			h5->rx_esc_state = H5_ESCSTATE_NOESC;
 			h5->rx_count--;
 			break;
 
 		case 0xdd:
 			memcpy(skb_put(h5->rx_skb, 1), &db, 1);
-			if ((h5->rx_skb-> data[0] & 0x40) != 0 && 
-					h5->rx_state != H5_W4_CRC) 
-				h5_crc_update(&h5-> message_crc, 0xdb);
+			if ((h5->rx_skb->data[0] & 0x40) != 0 &&
+			    h5->rx_state != H5_W4_CRC)
+				h5_crc_update(&h5->message_crc, 0xdb);
 			h5->rx_esc_state = H5_ESCSTATE_NOESC;
 			h5->rx_count--;
 			break;
-			
+
 		case 0xde:
 			memcpy(skb_put(h5->rx_skb, 1), &oof1, 1);
-			if ((h5->rx_skb-> data[0] & 0x40) != 0 && h5->rx_state != H5_W4_CRC)
-				h5_crc_update(&h5-> message_crc, oof1);
+			if ((h5->rx_skb->data[0] & 0x40) != 0
+			    && h5->rx_state != H5_W4_CRC)
+				h5_crc_update(&h5->message_crc, oof1);
 			h5->rx_esc_state = H5_ESCSTATE_NOESC;
 			h5->rx_count--;
 			break;
 
 		case 0xdf:
 			memcpy(skb_put(h5->rx_skb, 1), &oof2, 1);
-			if ((h5->rx_skb-> data[0] & 0x40) != 0 && h5->rx_state != H5_W4_CRC) 
-				h5_crc_update(&h5-> message_crc, oof2);
+			if ((h5->rx_skb->data[0] & 0x40) != 0
+			    && h5->rx_state != H5_W4_CRC)
+				h5_crc_update(&h5->message_crc, oof2);
 			h5->rx_esc_state = H5_ESCSTATE_NOESC;
 			h5->rx_count--;
 			break;
 
 		default:
-			BT_ERR ("Invalid byte %02x after esc byte", byte);
+			BT_ERR("Invalid byte %02x after esc byte", byte);
 			kfree_skb(h5->rx_skb);
 			h5->rx_skb = NULL;
 			h5->rx_state = H5_W4_PKT_DELIMITER;
@@ -551,7 +564,7 @@ static void h5_complete_rx_pkt(struct hci_uart *hu)
 		BT_DBG("Received seqno %u from card", h5->rxseq_txack);
 		h5->rxseq_txack++;
 		h5->rxseq_txack %= 0x8;
-		h5->txack_req    = 1;
+		h5->txack_req = 1;
 
 		/* If needed, transmit an ack pkt */
 		hci_uart_tx_wakeup(hu);
@@ -562,23 +575,22 @@ static void h5_complete_rx_pkt(struct hci_uart *hu)
 
 	h5_pkt_cull(h5);
 
-	if ((h5->rx_skb->data[1] & 0x0f) == 2 && 
-			h5->rx_skb->data[0] & 0x80) {
+	if ((h5->rx_skb->data[1] & 0x0f) == 2 && h5->rx_skb->data[0] & 0x80) {
 		bt_cb(h5->rx_skb)->pkt_type = HCI_ACLDATA_PKT;
 		pass_up = 1;
-	} else if ((h5->rx_skb->data[1] & 0x0f) == 4 && 
-			h5->rx_skb->data[0] & 0x80) {
+	} else if ((h5->rx_skb->data[1] & 0x0f) == 4 &&
+		   h5->rx_skb->data[0] & 0x80) {
 		bt_cb(h5->rx_skb)->pkt_type = HCI_EVENT_PKT;
 		pass_up = 1;
 	} else if ((h5->rx_skb->data[1] & 0x0f) == 3) {
 		bt_cb(h5->rx_skb)->pkt_type = HCI_SCODATA_PKT;
 		pass_up = 1;
-	} else if ((h5->rx_skb->data[1] & 0x0f) == 15 && 
-			!(h5->rx_skb->data[0] & 0x80)) {
+	} else if ((h5->rx_skb->data[1] & 0x0f) == 15 &&
+		   !(h5->rx_skb->data[0] & 0x80)) {
 		//h5_handle_le_pkt(hu);//Link Establishment Pkt
 		pass_up = 0;
-	} else if ((h5->rx_skb->data[1] & 0x0f) == 1 && 
-			h5->rx_skb->data[0] & 0x80) {
+	} else if ((h5->rx_skb->data[1] & 0x0f) == 1 &&
+		   h5->rx_skb->data[0] & 0x80) {
 		bt_cb(h5->rx_skb)->pkt_type = HCI_COMMAND_PKT;
 		pass_up = 1;
 	} else if ((h5->rx_skb->data[1] & 0x0f) == 14) {
@@ -587,47 +599,60 @@ static void h5_complete_rx_pkt(struct hci_uart *hu)
 	} else
 		pass_up = 0;
 
-	if (!pass_up) {		
-		struct hci_event_hdr hdr;
+	if (!pass_up) {
+		/* struct hci_event_hdr hdr; */
 		u8 desc = (h5->rx_skb->data[1] & 0x0f);
 
 		if (desc != H5_ACK_PKT && desc != H5_LE_PKT) {
-#if 0			
-			if (hciextn) {
-				desc |= 0xc0;
-				skb_pull(h5->rx_skb, 4);
-				memcpy(skb_push(h5->rx_skb, 1), &desc, 1);
+			/* if (hciextn) {
+			 * 	desc |= 0xc0;
+			 * 	skb_pull(h5->rx_skb, 4);
+			 * 	memcpy(skb_push(h5->rx_skb, 1), &desc, 1);
 
-				hdr.evt = 0xff;
-				hdr.plen = h5->rx_skb->len;
-				memcpy(skb_push(h5->rx_skb, HCI_EVENT_HDR_SIZE), &hdr, HCI_EVENT_HDR_SIZE);
-				bt_cb(h5->rx_skb)->pkt_type = HCI_EVENT_PKT;
+			 * 	hdr.evt = 0xff;
+			 * 	hdr.plen = h5->rx_skb->len;
+			 * 	memcpy(skb_push(h5->rx_skb, HCI_EVENT_HDR_SIZE),
+			 * 	       &hdr, HCI_EVENT_HDR_SIZE);
+			 * 	bt_cb(h5->rx_skb)->pkt_type = HCI_EVENT_PKT;
 
-				hci_recv_frame(h5->rx_skb);
-			} else {
-#endif				
-				BT_ERR ("Packet for unknown channel (%u %s)",
-					h5->rx_skb->data[1] & 0x0f,
-					h5->rx_skb->data[0] & 0x80 ? 
-					"reliable" : "unreliable");
+			 * 	hci_recv_frame(h5->rx_skb);
+			 * } else { */
+				BT_ERR("Packet for unknown channel (%u %s)",
+				       h5->rx_skb->data[1] & 0x0f,
+				       h5->rx_skb->data[0] & 0x80 ?
+				       "reliable" : "unreliable");
 				kfree_skb(h5->rx_skb);
-//			}
+			/* } */
 		} else
 			kfree_skb(h5->rx_skb);
 	} else {
-		/* Pull out H5 hdr */
+			/* Pull out H5 hdr */
 		skb_pull(h5->rx_skb, 4);
 
+#ifdef BTCOEX
+		if (bt_cb(h5->rx_skb)->pkt_type == HCI_EVENT_PKT)
+			rtk_btcoex_parse_event(h5->rx_skb->data,
+					       h5->rx_skb->len);
+
+		if (bt_cb(h5->rx_skb)->pkt_type == HCI_ACLDATA_PKT)
+			rtk_btcoex_parse_l2cap_data_rx(h5->rx_skb->data,
+						       h5->rx_skb->len);
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
 		hci_recv_frame(h5->rx_skb);
+#else
+		hci_recv_frame(hu->hdev, h5->rx_skb);
+#endif
 	}
 
 	h5->rx_state = H5_W4_PKT_DELIMITER;
 	h5->rx_skb = NULL;
 }
 
-static u16 bscp_get_crc(struct h5_struct *h5)
-{
-	return get_unaligned_be16(&h5->rx_skb->data[h5->rx_skb->len - 2]);
+static u16 bscp_get_crc(struct h5_struct *h5) {
+	return get_unaligned_be16(&h5->rx_skb->
+			data[h5->rx_skb->len - 2]);
 }
 
 /* Recv data */
@@ -636,8 +661,8 @@ static int h5_recv(struct hci_uart *hu, void *data, int count)
 	struct h5_struct *h5 = hu->priv;
 	register unsigned char *ptr;
 
-	BT_DBG("hu %p count %d rx_state %d rx_count %ld", 
-		hu, count, h5->rx_state, h5->rx_count);
+	BT_DBG("hu %p count %d rx_state %d rx_count %ld",
+	       hu, count, h5->rx_state, h5->rx_count);
 
 	ptr = data;
 	while (count) {
@@ -650,14 +675,17 @@ static int h5_recv(struct hci_uart *hu, void *data, int count)
 			} else
 				h5_unslip_one_byte(h5, *ptr);
 
-			ptr++; count--;
+			ptr++;
+			count--;
 			continue;
 		}
 
 		switch (h5->rx_state) {
 		case H5_W4_HDR:
-			if ((0xff & (u8) ~ (h5->rx_skb->data[0] + h5->rx_skb->data[1] +
-					h5->rx_skb->data[2])) != h5->rx_skb->data[3]) {
+			if ((0xff & (u8) ~
+			     (h5->rx_skb->data[0] +
+			      h5->rx_skb->data[1] +
+			      h5->rx_skb->data[2])) != h5->rx_skb->data[3]) {
 				BT_ERR("Error in H5 hdr checksum");
 				kfree_skb(h5->rx_skb);
 				h5->rx_state = H5_W4_PKT_DELIMITER;
@@ -665,20 +693,21 @@ static int h5_recv(struct hci_uart *hu, void *data, int count)
 				continue;
 			}
 			if (h5->rx_skb->data[0] & 0x80	/* reliable pkt */
-			    		&& (h5->rx_skb->data[0] & 0x07) != h5->rxseq_txack) {
-				BT_ERR ("Out-of-order packet arrived, got %u expected %u",
-					h5->rx_skb->data[0] & 0x07, h5->rxseq_txack);
+			    && (h5->rx_skb->data[0] & 0x07) != h5->rxseq_txack) {
+				BT_ERR
+				    ("Out-of-order packet arrived, got %u expected %u",
+				     h5->rx_skb->data[0] & 0x07,
+				     h5->rxseq_txack);
 
 				h5->txack_req = 1;
-				hci_uart_tx_wakeup(hu);			
+				hci_uart_tx_wakeup(hu);
 				kfree_skb(h5->rx_skb);
 				h5->rx_state = H5_W4_PKT_DELIMITER;
 				h5->rx_count = 0;
 				continue;
 			}
 			h5->rx_state = H5_W4_DATA;
-			h5->rx_count = (h5->rx_skb->data[1] >> 4) + 
-					(h5->rx_skb->data[2] << 4);	/* May be 0 */
+			h5->rx_count = (h5->rx_skb->data[1] >> 4) + (h5->rx_skb->data[2] << 4);	/* May be 0 */
 			continue;
 
 		case H5_W4_DATA:
@@ -691,9 +720,10 @@ static int h5_recv(struct hci_uart *hu, void *data, int count)
 
 		case H5_W4_CRC:
 			if (bitrev16(h5->message_crc) != bscp_get_crc(h5)) {
-				BT_ERR ("Checksum failed: computed %04x received %04x",
-					bitrev16(h5->message_crc),
-					bscp_get_crc(h5));
+				BT_ERR
+				    ("Checksum failed: computed %04x received %04x",
+				     bitrev16(h5->message_crc),
+				     bscp_get_crc(h5));
 
 				kfree_skb(h5->rx_skb);
 				h5->rx_state = H5_W4_PKT_DELIMITER;
@@ -710,16 +740,18 @@ static int h5_recv(struct hci_uart *hu, void *data, int count)
 				h5->rx_state = H5_W4_PKT_START;
 				break;
 			default:
-				/*BT_ERR("Ignoring byte %02x", *ptr);*/
+				/*BT_ERR("Ignoring byte %02x", *ptr); */
 				break;
 			}
-			ptr++; count--;
+			ptr++;
+			count--;
 			break;
 
 		case H5_W4_PKT_START:
 			switch (*ptr) {
 			case 0xc0:
-				ptr++; count--;
+				ptr++;
+				count--;
 				break;
 
 			default:
@@ -734,12 +766,13 @@ static int h5_recv(struct hci_uart *hu, void *data, int count)
 
 				h5->rx_skb = bt_skb_alloc(0x1005, GFP_ATOMIC);
 				if (!h5->rx_skb) {
-					BT_ERR("Can't allocate mem for new packet");
+					BT_ERR
+					    ("Can't allocate mem for new packet");
 					h5->rx_state = H5_W4_PKT_DELIMITER;
 					h5->rx_count = 0;
 					return 0;
 				}
-				h5->rx_skb->dev = (void *) hu->hdev;
+				h5->rx_skb->dev = (void *)hu->hdev;
 				break;
 			}
 			break;
@@ -748,10 +781,10 @@ static int h5_recv(struct hci_uart *hu, void *data, int count)
 	return count;
 }
 
-	/* Arrange to retransmit all messages in the relq. */
+/* Arrange to retransmit all messages in the relq. */
 static void h5_timed_event(unsigned long arg)
 {
-	struct hci_uart *hu = (struct hci_uart *) arg;
+	struct hci_uart *hu = (struct hci_uart *)arg;
 	struct h5_struct *h5 = hu->priv;
 	struct sk_buff *skb;
 	unsigned long flags;
@@ -776,6 +809,7 @@ static int h5_open(struct hci_uart *hu)
 
 	BT_DBG("hu %p", hu);
 
+	BT_INFO("h5_open");
 	h5 = kzalloc(sizeof(*h5), GFP_ATOMIC);
 	if (!h5)
 		return -ENOMEM;
@@ -787,7 +821,7 @@ static int h5_open(struct hci_uart *hu)
 
 	init_timer(&h5->th5);
 	h5->th5.function = h5_timed_event;
-	h5->th5.data     = (u_long) hu;
+	h5->th5.data = (u_long) hu;
 
 	h5->rx_state = H5_W4_PKT_DELIMITER;
 
@@ -803,7 +837,7 @@ static int h5_close(struct hci_uart *hu)
 	hu->priv = NULL;
 
 	BT_DBG("hu %p", hu);
-
+	BT_INFO("h5_close");
 	skb_queue_purge(&h5->unack);
 	skb_queue_purge(&h5->rel);
 	skb_queue_purge(&h5->unrel);
@@ -814,13 +848,13 @@ static int h5_close(struct hci_uart *hu)
 }
 
 static struct hci_uart_proto h5 = {
-	.id		= HCI_UART_3WIRE,
-	.open		= h5_open,
-	.close		= h5_close,
-	.enqueue	= h5_enqueue,
-	.dequeue	= h5_dequeue,
-	.recv		= h5_recv,
-	.flush		= h5_flush
+	.id = HCI_UART_3WIRE,
+	.open = h5_open,
+	.close = h5_close,
+	.enqueue = h5_enqueue,
+	.dequeue = h5_dequeue,
+	.recv = h5_recv,
+	.flush = h5_flush
 };
 
 int h5_init(void)
@@ -839,8 +873,3 @@ int h5_deinit(void)
 {
 	return hci_uart_unregister_proto(&h5);
 }
-
-#if 0
-module_param(hciextn, bool, 0644);
-MODULE_PARM_DESC(hciextn, "Convert HCI Extensions into H5 packets-3wire test");
-#endif
