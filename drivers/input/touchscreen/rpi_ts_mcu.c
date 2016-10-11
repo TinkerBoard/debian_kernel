@@ -71,9 +71,6 @@ static void recv_cmds(struct i2c_client *client, char *buf, int size)
 	msleep(20);
 }
 
-DECLARE_COMPLETION(bridge_ready_comp);
-EXPORT_SYMBOL_GPL(bridge_ready_comp);
-
 static void mcu_power_up(struct work_struct *work)
 {
 	struct ts_mcu_data *mcu_data = container_of(work, struct ts_mcu_data, work.work);
@@ -86,7 +83,6 @@ static void mcu_power_up(struct work_struct *work)
 	LOG_INFO("recv_cmds: 0x%X\n", recv_buf[0]);
 	if (recv_buf[0] != 0xC3) {
 		LOG_ERR("read wrong info\n");
-		complete(&bridge_ready_comp);
 		return;
 	}
 
@@ -96,8 +92,6 @@ static void mcu_power_up(struct work_struct *work)
 	send_cmds(mcu_data->client, "8501");
 	send_cmds(mcu_data->client, "86FF");
 	send_cmds(mcu_data->client, "8104");
-
-	complete(&bridge_ready_comp);
 }
 
 static int rpi_ts_mcu_probe(struct i2c_client *client,

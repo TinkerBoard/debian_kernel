@@ -224,15 +224,6 @@
 	status = "okay";
 };
 
-&mipi_dsi {
-	status = "okay";
-	mipi_panel: mipi-panel {
-		compatible ="asus,panel";
-		reg = <0>;
-		status = "okay";
-	};
-};
-
 &gpu {
 	mali-supply = <&vdd_gpu>;
 	status = "okay";

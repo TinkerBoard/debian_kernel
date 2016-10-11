@@ -52,14 +52,14 @@ struct panel_desc {
 
 	/**
 	 * @prepare: the time (in milliseconds) that it takes for the panel to
-	 *		become ready and start receiving video data
+	 *           become ready and start receiving video data
 	 * @enable: the time (in milliseconds) that it takes for the panel to
-	 *		display the first valid frame after starting to receive
-	 *		video data
+	 *          display the first valid frame after starting to receive
+	 *          video data
 	 * @disable: the time (in milliseconds) that it takes for the panel to
-	 *		turn the display off (no content is visible)
+	 *           turn the display off (no content is visible)
 	 * @unprepare: the time (in milliseconds) that it takes for the panel
-	 *		to power itself down completely
+	 *             to power itself down completely
 	 */
 	struct {
 		unsigned int prepare;
@@ -77,7 +77,6 @@ struct panel_simple {
 	bool enabled;
 
 	struct device *dev;
-	struct mipi_dsi_device *dsi;
 	const struct panel_desc *desc;
 
 	struct backlight_device *backlight;
@@ -98,8 +97,6 @@ static int panel_simple_get_fixed_modes(struct panel_simple *panel)
 	struct drm_device *drm = panel->base.drm;
 	struct drm_display_mode *mode;
 	unsigned int i, num = 0;
-
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
 
 	if (!panel->desc)
 		return 0;
@@ -157,8 +154,6 @@ static int panel_simple_of_get_native_mode(struct panel_simple *panel)
 	struct device_node *timings_np;
 	int ret;
 
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
-
 	timings_np = of_get_child_by_name(panel->dev->of_node,
 					  "display-timings");
 	if (!timings_np) {
@@ -172,7 +167,7 @@ static int panel_simple_of_get_native_mode(struct panel_simple *panel)
 		return 0;
 
 	ret = of_get_drm_display_mode(panel->dev->of_node, mode,
-					  OF_USE_NATIVE_MODE);
+				      OF_USE_NATIVE_MODE);
 	if (ret) {
 		dev_dbg(panel->dev, "failed to find dts display timings\n");
 		drm_mode_destroy(drm, mode);
@@ -189,8 +184,6 @@ static int panel_simple_of_get_native_mode(struct panel_simple *panel)
 static int panel_simple_disable(struct drm_panel *panel)
 {
 	struct panel_simple *p = to_panel_simple(panel);
-
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
 
 	if (!p->enabled)
 		return 0;
@@ -212,8 +205,6 @@ static int panel_simple_unprepare(struct drm_panel *panel)
 {
 	struct panel_simple *p = to_panel_simple(panel);
 
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
-
 	if (!p->prepared)
 		return 0;
 
@@ -230,96 +221,10 @@ static int panel_simple_unprepare(struct drm_panel *panel)
 	return 0;
 }
 
-#define INIT_CODE
-#ifdef INIT_CODE
-/*
-static void panel_simple_dcs_write(struct mipi_dsi_device *dsi, const void *data, size_t len)
-{
-	int ret;
-
-	ret = mipi_dsi_dcs_write_buffer(dsi, data, len);
-	if (ret < 0) {
-		dev_err(&dsi->dev, "failed to writing dcs seq\n");
-	}
-}
-*/
-static void panel_simple_gen_write(struct mipi_dsi_device *dsi, const void *data, size_t len)
-{
-	int ret;
-
-	ret = mipi_dsi_generic_write(dsi, data, len);
-	if (ret < 0) {
-		dev_err(&dsi->dev, "failed to writing gen seq\n");
-	}
-}
-/*
-#define panel_simple_dcs_write_seq(dsi, seq...) \
-({\
-	static const u8 d[] = { seq };\
-	panel_simple_dcs_write(dsi, d, ARRAY_SIZE(d));\
-})
-*/
-#define panel_simple_gen_write_seq(dsi, seq...) \
-({\
-	static const u8 d[] = { seq };\
-	panel_simple_gen_write(dsi, d, ARRAY_SIZE(d));\
-})
-
-extern struct completion bridge_ready_comp;
-//DECLARE_COMPLETION(asus_comp2);
-//XPORT_SYMBOL_GPL(asus_comp2);
-
-/*
-static int panel_simple_dsi_read_register(struct mipi_dsi_device *dsi, const void *data)
-{
-	u8 lsb = data[0], msb = data[1];
-	mipi_dsi_set_maximum_return_packet_size(4);
-
-	mipi_dsi_generic_read(dsi, lsb, msb);
-}
-*/
-
-static int panel_simple_dsi_init(struct panel_simple *p)
-{
-	struct mipi_dsi_device *dsi = p->dsi;
-
-	//pr_info("--------------%s:%d\n", __func__, __LINE__);
-	//msleep(100);
-	pr_info("--------%s:%d\n", __func__, __LINE__);
-	/* DCS command */
-
-	panel_simple_gen_write_seq(dsi, 0x10, 0x02, 0x07, 0x00, 0x00, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x64, 0x01, 0x05, 0x00, 0x00, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x68, 0x01, 0x05, 0x00, 0x00, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x44, 0x01, 0x00, 0x00, 0x00, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x48, 0x01, 0x00, 0x00, 0x00, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x14, 0x01, 0x06, 0x00, 0x00, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x50, 0x04, 0x60, 0x00, 0x00, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x20, 0x04, 0x52, 0x01, 0x10, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x24, 0x04, 0x02, 0x00, 0x2c, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x28, 0x04, 0x20, 0x03, 0xd2, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x2c, 0x04, 0x02, 0x00, 0x15, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x30, 0x04, 0xe0, 0x01, 0x42, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x34, 0x04, 0x01, 0x00, 0x00, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x64, 0x04, 0x0f, 0x02, 0x00, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x04, 0x01, 0x01, 0x00, 0x00, 0x00);
-	panel_simple_gen_write_seq(dsi, 0x04, 0x02, 0x01, 0x00, 0x00, 0x00);
-
-	pr_info("--------%s:%d\n", __func__, __LINE__);
-	//mipi_dsi_dcs_exit_sleep_mode(dsi);
-	//mipi_dsi_dcs_set_display_on(dsi);
-	//complete(&asus_comp2);
-	usleep_range(10, 20);
-	return 0;
-}
-#endif
-
 static int panel_simple_prepare(struct drm_panel *panel)
 {
 	struct panel_simple *p = to_panel_simple(panel);
 	int err;
-
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
 
 	if (p->prepared)
 		return 0;
@@ -348,15 +253,6 @@ static int panel_simple_enable(struct drm_panel *panel)
 	if (p->enabled)
 		return 0;
 
-	if(wait_for_completion_interruptible_timeout(&bridge_ready_comp, 10*100) <= 0) {
-		pr_info("Wait bridge_ready_comp fail, return!\n");
-        return 0;
-	}
-	msleep(100);
-	complete(&bridge_ready_comp); //try complete againe, due to dw_mipi_dsi_encoder_commit wait it.
-	pr_info("-----Start sending mipi command to bridge-----%s:%d\n", __func__, __LINE__);
-	panel_simple_dsi_init(p);
-
 	if (p->desc && p->desc->delay.enable)
 		msleep(p->desc->delay.enable);
 
@@ -374,8 +270,6 @@ static int panel_simple_get_modes(struct drm_panel *panel)
 {
 	struct panel_simple *p = to_panel_simple(panel);
 	int num = 0;
-
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
 
 	/* probe EDID if a DDC bus is available */
 	if (p->ddc) {
@@ -397,13 +291,11 @@ static int panel_simple_get_modes(struct drm_panel *panel)
 }
 
 static int panel_simple_get_timings(struct drm_panel *panel,
-					unsigned int num_timings,
-					struct display_timing *timings)
+				    unsigned int num_timings,
+				    struct display_timing *timings)
 {
 	struct panel_simple *p = to_panel_simple(panel);
 	unsigned int i;
-
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
 
 	if (!p->desc)
 		return 0;
@@ -427,86 +319,12 @@ static const struct drm_panel_funcs panel_simple_funcs = {
 	.get_timings = panel_simple_get_timings,
 };
 
-static int panel_simple_mipi_probe(struct mipi_dsi_device *dsi, const struct panel_desc *desc)
-{
-	struct device_node *backlight, *ddc;
-	struct panel_simple *panel;
-	struct device *dev = &dsi->dev;
-	int err;
-
-	panel = devm_kzalloc(dev, sizeof(*panel), GFP_KERNEL);
-	if (!panel)
-		return -ENOMEM;
-
-	panel->enabled = false;
-	panel->prepared = false;
-	panel->desc = desc;
-	panel->dev = dev;
-	panel->dsi = dsi;
-
-	panel->supply = devm_regulator_get(dev, "power");
-	if (IS_ERR(panel->supply))
-		return PTR_ERR(panel->supply);
-
-	panel->enable_gpio = devm_gpiod_get_optional(dev, "enable",
-							 GPIOD_OUT_LOW);
-	if (IS_ERR(panel->enable_gpio)) {
-		err = PTR_ERR(panel->enable_gpio);
-		dev_err(dev, "failed to request GPIO: %d\n", err);
-		return err;
-	}
-
-	backlight = of_parse_phandle(dev->of_node, "backlight", 0);
-	if (backlight) {
-		panel->backlight = of_find_backlight_by_node(backlight);
-		of_node_put(backlight);
-
-		if (!panel->backlight)
-			return -EPROBE_DEFER;
-	}
-
-	ddc = of_parse_phandle(dev->of_node, "ddc-i2c-bus", 0);
-	if (ddc) {
-		panel->ddc = of_find_i2c_adapter_by_node(ddc);
-		of_node_put(ddc);
-
-		if (!panel->ddc) {
-			err = -EPROBE_DEFER;
-			goto free_backlight;
-		}
-	}
-
-	drm_panel_init(&panel->base);
-	panel->base.dev = dev;
-	panel->base.funcs = &panel_simple_funcs;
-
-	err = drm_panel_add(&panel->base);
-	if (err < 0)
-		goto free_ddc;
-
-	dev_set_drvdata(dev, panel);
-
-	return 0;
-
-free_ddc:
-	if (panel->ddc)
-		put_device(&panel->ddc->dev);
-free_backlight:
-	if (panel->backlight)
-		put_device(&panel->backlight->dev);
-
-	return err;
-}
-
-
 static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 {
 	struct device_node *backlight, *ddc;
 	struct panel_simple *panel;
 	int err;
 
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
-
 	panel = devm_kzalloc(dev, sizeof(*panel), GFP_KERNEL);
 	if (!panel)
 		return -ENOMEM;
@@ -516,13 +334,9 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 	panel->desc = desc;
 	panel->dev = dev;
 
-	pr_info("--------%s:%d\n", __func__,__LINE__);
-
 	panel->supply = devm_regulator_get(dev, "power");
 	if (IS_ERR(panel->supply))
 		return PTR_ERR(panel->supply);
-
-	pr_info("--------%s:%d\n", __func__,__LINE__);
 
 	panel->enable_gpio = devm_gpiod_get_optional(dev, "enable", 0);
 	if (IS_ERR(panel->enable_gpio)) {
@@ -531,8 +345,6 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 		return err;
 	}
 
-	pr_info("--------%s:%d\n", __func__,__LINE__);
-
 	backlight = of_parse_phandle(dev->of_node, "backlight", 0);
 	if (backlight) {
 		panel->backlight = of_find_backlight_by_node(backlight);
@@ -541,8 +353,6 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 		if (!panel->backlight)
 			return -EPROBE_DEFER;
 	}
-
-	pr_info("--------%s:%d\n", __func__,__LINE__);
 
 	ddc = of_parse_phandle(dev->of_node, "ddc-i2c-bus", 0);
 	if (ddc) {
@@ -555,19 +365,13 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 		}
 	}
 
-	pr_info("--------%s:%d\n", __func__,__LINE__);
-
 	drm_panel_init(&panel->base);
 	panel->base.dev = dev;
 	panel->base.funcs = &panel_simple_funcs;
 
-	pr_info("--------%s:%d\n", __func__,__LINE__);
-
 	err = drm_panel_add(&panel->base);
 	if (err < 0)
 		goto free_ddc;
-
-	pr_info("--------%s:%d\n", __func__,__LINE__);
 
 	dev_set_drvdata(dev, panel);
 
@@ -586,8 +390,6 @@ free_backlight:
 static int panel_simple_remove(struct device *dev)
 {
 	struct panel_simple *panel = dev_get_drvdata(dev);
-
-	pr_info("--------%s:%d\n", __func__,__LINE__);
 
 	drm_panel_detach(&panel->base);
 	drm_panel_remove(&panel->base);
@@ -1635,67 +1437,6 @@ static const struct panel_desc_dsi auo_b080uan01 = {
 	.lanes = 4,
 };
 
-static const struct drm_display_mode asus_panel_mode = {
-	.clock = 36000,
-	.hdisplay = 800,
-	.hsync_start = 800 + 210,
-	.hsync_end = 800 + 210 + 2,
-	.htotal = 800 + 210 + 2 + 44,
-	.vdisplay = 480,
-	.vsync_start = 480 + 66,
-	.vsync_end = 480 + 66 + 2,
-	.vtotal = 480 + 66 + 2 + 21,
-	.vrefresh = 60,
-	.flags = DRM_MODE_FLAG_NVSYNC | DRM_MODE_FLAG_NHSYNC,
-};
-
-static const struct panel_desc_dsi asus_panel = {
-	.desc = {
-		.modes = &asus_panel_mode,
-		.num_modes = 1,
-		.bpc = 8,
-		.size = {
-			.width = 217,
-			.height = 136,
-		},
-	},
-	.flags = MIPI_DSI_MODE_VIDEO |
-		 MIPI_DSI_MODE_VIDEO_BURST |
-		 MIPI_DSI_MODE_VIDEO_SYNC_PULSE,
-	.format = MIPI_DSI_FMT_RGB888,
-	.lanes = 2,
-};
-
-static const struct drm_display_mode boe_tv080wum_mode = {
-	.clock = 150000,
-	.hdisplay = 1200,
-	.hsync_start = 1200 + 81,
-	.hsync_end = 1200 + 81 + 10,
-	.htotal = 1200 + 81 + 10 + 80,
-	.vdisplay = 1920,
-	.vsync_start = 1920 + 21,
-	.vsync_end = 1920 + 21 + 3,
-	.vtotal = 1920 + 21 + 3 + 21,
-	.vrefresh = 60,
-	.flags = DRM_MODE_FLAG_NVSYNC | DRM_MODE_FLAG_NHSYNC,
-};
-
-static const struct panel_desc_dsi boe_tv080wum = {
-	.desc = {
-		.modes = &boe_tv080wum_mode,
-		.num_modes = 1,
-		.size = {
-			.width = 107,
-			.height = 172,
-		},
-	},
-	.flags = MIPI_DSI_MODE_VIDEO |
-		 MIPI_DSI_MODE_VIDEO_BURST |
-		 MIPI_DSI_MODE_VIDEO_SYNC_PULSE,
-	.format = MIPI_DSI_FMT_RGB888,
-	.lanes = 4,
-};
-
 static const struct drm_display_mode boe_tv080wum_nl0_mode = {
 	.clock = 160000,
 	.hdisplay = 1200,
@@ -1820,12 +1561,6 @@ static const struct of_device_id dsi_of_match[] = {
 		.compatible = "auo,b080uan01",
 		.data = &auo_b080uan01
 	}, {
-		.compatible = "asus,panel",
-		.data = &asus_panel
-	}, {
-		.compatible = "boe,tv080wum",
-		.data = &boe_tv080wum
-	}, {
 		.compatible = "boe,tv080wum-nl0",
 		.data = &boe_tv080wum_nl0
 	}, {
@@ -1851,37 +1586,22 @@ static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
 	u32 val;
 	int err;
 
-	printk("ckck panel_simple_dsi_probe\n");
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
-
 	id = of_match_node(dsi_of_match, dsi->dev.of_node);
 	if (!id)
 		return -ENODEV;
 
-	pr_info("---%s\n", id->name);
-	//	pr_info("---%s\n", id->tpye);
-	pr_info("---%s\n", id->compatible);
-
 	desc = id->data;
 
 	if (desc) {
-		pr_info("--------------%s:%d, mode_flags = %lu, lanes = %u\n", __func__, __LINE__, dsi->mode_flags, dsi->lanes);
-
 		dsi->mode_flags = desc->flags;
 		dsi->format = desc->format;
 		dsi->lanes = desc->lanes;
 		pdesc = &desc->desc;
-
-		pr_info("--------------%s:%d, mode_flags = %lu, lanes = %u\n", __func__, __LINE__, dsi->mode_flags, dsi->lanes);
 	} else {
-		pr_info("--------------%s:%d\n", __func__, __LINE__);
 		pdesc = NULL;
 	}
 
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
-
-	err = panel_simple_mipi_probe(dsi, pdesc);
-
+	err = panel_simple_probe(&dsi->dev, pdesc);
 	if (err < 0)
 		return err;
 
@@ -1894,16 +1614,12 @@ static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
 	if (!of_property_read_u32(dsi->dev.of_node, "dsi,lanes", &val))
 		dsi->lanes = val;
 
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
-
 	return mipi_dsi_attach(dsi);
 }
 
 static int panel_simple_dsi_remove(struct mipi_dsi_device *dsi)
 {
 	int err;
-
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
 
 	err = mipi_dsi_detach(dsi);
 	if (err < 0)
@@ -1931,8 +1647,6 @@ static int __init panel_simple_init(void)
 {
 	int err;
 
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
-
 	err = platform_driver_register(&panel_simple_platform_driver);
 	if (err < 0)
 		return err;
@@ -1943,8 +1657,6 @@ static int __init panel_simple_init(void)
 			return err;
 	}
 
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
-
 	return 0;
 }
 module_init(panel_simple_init);
@@ -1953,8 +1665,6 @@ static void __exit panel_simple_exit(void)
 {
 	if (IS_ENABLED(CONFIG_DRM_MIPI_DSI))
 		mipi_dsi_driver_unregister(&panel_simple_dsi_driver);
-
-	pr_info("--------------%s:%d\n", __func__, __LINE__);
 
 	platform_driver_unregister(&panel_simple_platform_driver);
 }
