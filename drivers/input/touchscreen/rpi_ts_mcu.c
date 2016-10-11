@@ -1,21 +1,3 @@
-/*
- *
- * RPI Touchscreen MCU driver.
- *
- * Copyright (c) 2016 ASUSTek Computer Inc.
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- */
-
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
@@ -56,14 +38,14 @@ static int string_to_byte(const char *source, unsigned char *destination, int si
 	return 0;
 }
 
-static int send_cmds(struct i2c_client *client, const char *buf)
+static void send_cmds(struct i2c_client *client, const char *buf)
 {
 	int ret, size = strlen(buf);
 	unsigned char byte_cmd[size/2];
 
 	if ((size%2) != 0) {
 		LOG_ERR("size should be even\n");
-		return -EINVAL;
+		return;
 	}
 
 	LOG_INFO("%s\n", buf);
@@ -73,58 +55,42 @@ static int send_cmds(struct i2c_client *client, const char *buf)
 	ret = i2c_master_send(client, byte_cmd, size/2);
 	if (ret < 0) {
 		LOG_ERR("send command failed, ret = %d\n", ret);
-		return ret;
 	}
 	msleep(20);
-	return 0;
 }
 
-static int recv_cmds(struct i2c_client *client, char *buf, int size)
+static void recv_cmds(struct i2c_client *client, char *buf, int size)
 {
 	int ret;
 
 	ret = i2c_master_recv(client, buf, size);
 	if (ret < 0) {
 		LOG_ERR("receive commands failed, %d\n", ret);
-		return ret;
+		return;
 	}
 	msleep(20);
-	return 0;
 }
 
 DECLARE_COMPLETION(bridge_ready_comp);
 EXPORT_SYMBOL_GPL(bridge_ready_comp);
 
-static int init_cmd_check(struct ts_mcu_data *mcu_data)
-{
-	int ret;
-	char recv_buf[1] = {0};
-
-	ret = send_cmds(mcu_data->client, "80");
-	if (ret < 0)
-		goto error;
-
-	recv_cmds(mcu_data->client, recv_buf, 1);
-	if (ret < 0)
-		goto error;
-
-	LOG_INFO("recv_cmds: 0x%X\n", recv_buf[0]);
-	if (recv_buf[0] != 0xC3) {
-		LOG_ERR("read wrong info\n");
-		ret = -EINVAL;
-		goto error;
-
-	}
-	return 0;
-
-error:
-	return ret;
-}
-
 static void mcu_power_up(struct work_struct *work)
 {
 	struct ts_mcu_data *mcu_data = container_of(work, struct ts_mcu_data, work.work);
 
+	char recv_buf[1];
+
+	send_cmds(mcu_data->client, "80");
+
+	recv_cmds(mcu_data->client, recv_buf, 1);
+	LOG_INFO("recv_cmds: 0x%X\n", recv_buf[0]);
+	if (recv_buf[0] != 0xC3) {
+		LOG_ERR("read wrong info\n");
+		complete(&bridge_ready_comp);
+		return;
+	}
+
+	msleep(500);
 	send_cmds(mcu_data->client, "8500");
 	msleep(2000);
 	send_cmds(mcu_data->client, "8501");
@@ -138,7 +104,6 @@ static int rpi_ts_mcu_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
 	struct ts_mcu_data *mcu_data;
-	int ret;
 
 	LOG_INFO("address = 0x%x\n", client->addr);
 
@@ -156,22 +121,11 @@ static int rpi_ts_mcu_probe(struct i2c_client *client,
 	mcu_data->client = client;
 	i2c_set_clientdata(client, mcu_data);
 
-	ret = init_cmd_check(mcu_data);
-	if (ret < 0) {
-		LOG_ERR("init_cmd_check failed, %d\n", ret);
-		complete(&bridge_ready_comp);
-		goto error;
-	}
-
 	mcu_data->wq = create_singlethread_workqueue("rpi_ts_mcu_wq");
 	INIT_DELAYED_WORK(&mcu_data->work, mcu_power_up);
 	queue_delayed_work(mcu_data->wq, &mcu_data->work, 0.5 * HZ);
 
 	return 0;
-
-error:
-	kfree(mcu_data);
-	return ret;
 }
 
 static int rpi_ts_mcu_remove(struct i2c_client *client)
