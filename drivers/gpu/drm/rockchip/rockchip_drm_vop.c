@@ -581,6 +581,7 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 	struct vop *vop = to_vop(crtc);
 	int i;
 
+	return;
 	/*
 	 * We need to make sure that all windows are disabled before we
 	 * disable that crtc. Otherwise we might try to scan from a destroyed

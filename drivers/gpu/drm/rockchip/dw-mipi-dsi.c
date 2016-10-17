@@ -897,7 +897,8 @@ static void dw_mipi_dsi_encoder_mode_set(struct drm_encoder *encoder,
 static void dw_mipi_dsi_encoder_disable(struct drm_encoder *encoder)
 {
 	struct dw_mipi_dsi *dsi = encoder_to_dsi(encoder);
-
+	
+	return;
 	if (dsi->dpms_mode != DRM_MODE_DPMS_ON)
 		return;
 
