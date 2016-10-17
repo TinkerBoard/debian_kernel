@@ -91,6 +91,8 @@ struct vop_ctrl {
 	struct vop_reg ymirror;
 	struct vop_reg dsp_background;
 
+	struct vop_reg line_flag_num[2];
+
 	struct vop_reg cfg_done;
 };
 
