@@ -40,6 +40,10 @@
 #include "rockchip_drm_fb.h"
 #include "rockchip_drm_vop.h"
 
+#ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
+#include <soc/rockchip/dmc-sync.h>
+#endif
+
 #define VOP_REG_SUPPORT(vop, reg) \
 		(!reg.major || (reg.major == VOP_MAJOR(vop->data->version) && \
 		reg.begin_minor <= VOP_MINOR(vop->data->version) && \
@@ -182,6 +186,13 @@ struct vop {
 	wait_queue_head_t wait_vop_switch_queue;
 	uint32_t *regsbak;
 	void __iomem *regs;
+
+#ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
+	struct notifier_block dmc_nb_rk3288;
+	bool dmc_disabled_rk3288;
+	ktime_t vop_isr_ktime;
+	u64 vblank_time;
+#endif
 
 	/* physical map length of vop register */
 	uint32_t len;
@@ -621,6 +632,44 @@ static void vop_line_flag_irq_disable(struct vop *vop)
 	spin_unlock_irqrestore(&vop->irq_lock, flags);
 }
 
+#ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
+static int dmc_notify_rk3288(struct notifier_block *nb,
+		      unsigned long action,
+		      void *data)
+{
+	struct vop *vop = container_of(nb, struct vop, dmc_nb_rk3288);
+	ktime_t *timeout = data;
+	unsigned long jiffies_left;
+
+	struct drm_display_mode *mode = &vop->crtc.mode;
+	int vact_end = mode->vtotal - mode->vsync_start + mode->vdisplay;
+
+	if (WARN_ON(!vop->is_enabled))
+		return NOTIFY_BAD;
+
+
+	if (vop_line_flag_irq_is_enabled(vop)) {
+		return -EBUSY;
+	}
+
+	reinit_completion(&vop->line_flag_completion);
+	vop_line_flag_irq_enable(vop, vact_end);
+
+	jiffies_left = wait_for_completion_timeout(&vop->line_flag_completion,
+						   msecs_to_jiffies(100));
+	vop_line_flag_irq_disable(vop);
+
+	if (jiffies_left == 0) {
+		dev_err(vop->dev, "Timeout waiting for IRQ\n");
+		return NOTIFY_BAD;
+	}
+
+	*timeout = ktime_add_ns(vop->vop_isr_ktime, vop->vblank_time);
+
+	return NOTIFY_STOP;
+}
+#endif
+
 static void vop_enable(struct drm_crtc *crtc)
 {
 	struct vop *vop = to_vop(crtc);
@@ -693,10 +742,21 @@ static void vop_enable(struct drm_crtc *crtc)
 
 	/* if enable two vop, need to disable dmc */
 	if ((num_enabled_crtc > 1) && vop->devfreq) {
+
 		if (vop->devfreq_event_dev)
 			devfreq_event_disable_edev(vop->devfreq_event_dev);
 		devfreq_suspend_device(vop->devfreq);
 	}
+
+#ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
+	if (!vop->dmc_disabled_rk3288 && vop->vblank_time <= DMC_SET_RATE_TIME_NS +
+	    DMC_PAUSE_CPU_TIME_NS) {
+		rockchip_dmc_disable();
+		vop->dmc_disabled_rk3288 = true;
+	}
+	rockchip_dmc_get(&vop->dmc_nb_rk3288);
+#endif
+
 	return;
 
 err_disable_dclk:
@@ -740,6 +800,14 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 		spin_unlock(&vop->reg_lock);
 	}
 	vop_cfg_done(vop);
+
+#ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
+	rockchip_dmc_put(&vop->dmc_nb_rk3288);
+	if (vop->dmc_disabled_rk3288) {
+	   rockchip_dmc_enable();
+	   vop->dmc_disabled_rk3288 = false;
+	}
+#endif
 
 	drm_crtc_vblank_off(crtc);
 
@@ -793,6 +861,7 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 	 * change to 1 vop enabled, need to enable dmc again.
 	 */
 	if ((num_enabled_crtc == 1) && vop->devfreq) {
+
 		if (vop->devfreq_event_dev)
 			devfreq_event_enable_edev(vop->devfreq_event_dev);
 		devfreq_resume_device(vop->devfreq);
@@ -1231,6 +1300,33 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 	u16 vact_end = vact_st + vdisplay;
 	uint32_t val;
 
+#ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
+	u64 vblank_time;
+	/*
+	 * Make sure we disable _before_ changing the mode / disabling the
+	 * clock since we need the mode to be right during the disable.
+	 */
+	vblank_time = adjusted_mode->vtotal - adjusted_mode->vdisplay;
+	vblank_time *= (u64)NSEC_PER_SEC * adjusted_mode->htotal;
+
+	do_div(vblank_time,
+	       clk_round_rate(vop->dclk, adjusted_mode->clock * 1000));
+
+	if (vblank_time <= DMC_SET_RATE_TIME_NS + DMC_PAUSE_CPU_TIME_NS) {
+		/*
+		 * Set a large timeout so we can change the clk rate to max when
+		 * dmc freq is disabled.
+		 */
+		rockchip_dmc_lock();
+		vop->vblank_time = DMC_DEFAULT_TIMEOUT_NS;
+		rockchip_dmc_unlock();
+		if (!vop->dmc_disabled_rk3288)
+			rockchip_dmc_disable();
+
+		vop->dmc_disabled_rk3288 = true;
+	}
+#endif
+
 	vop_enable(crtc);
 	/*
 	 * If dclk rate is zero, mean that scanout is stop,
@@ -1314,6 +1410,18 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 	clk_set_rate(vop->dclk, adjusted_mode->clock * 1000);
 
 	VOP_CTRL_SET(vop, standby, 0);
+
+#ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
+	if (vblank_time > DMC_SET_RATE_TIME_NS + DMC_PAUSE_CPU_TIME_NS) {
+		rockchip_dmc_lock();
+		vop->vblank_time = vblank_time;
+		rockchip_dmc_unlock();
+		if (vop->dmc_disabled_rk3288)
+			rockchip_dmc_enable();
+
+		vop->dmc_disabled_rk3288 = false;
+	}
+#endif
 }
 
 static int vop_zpos_cmp(const void *a, const void *b)
@@ -1553,7 +1661,12 @@ static irqreturn_t vop_isr(int irq, void *data)
 	}
 
 	if (active_irqs & LINE_FLAG_INTR) {
-		complete(&vop->line_flag_completion);
+		if (!completion_done(&vop->line_flag_completion)) {
+			complete(&vop->line_flag_completion);
+#ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
+			vop->vop_isr_ktime = ktime_get();
+#endif
+		}
 		active_irqs &= ~LINE_FLAG_INTR;
 		ret = IRQ_HANDLED;
 	}
@@ -1689,6 +1802,11 @@ static int vop_create_crtc(struct vop *vop)
 		ret = -ENOENT;
 		goto err_cleanup_crtc;
 	}
+
+#ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
+	vop->vblank_time = DMC_DEFAULT_TIMEOUT_NS;
+	vop->dmc_nb_rk3288.notifier_call = dmc_notify_rk3288;
+#endif
 
 	init_completion(&vop->dsp_hold_completion);
 	init_completion(&vop->wait_update_complete);
@@ -1848,7 +1966,6 @@ int rockchip_drm_wait_line_flag(struct drm_crtc *crtc, unsigned int line_num,
 	return 0;
 }
 EXPORT_SYMBOL(rockchip_drm_wait_line_flag);
-
 
 static int vop_bind(struct device *dev, struct device *master, void *data)
 {
