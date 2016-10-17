@@ -505,7 +505,7 @@ static int dw_mipi_dsi_get_lane_bps(struct dw_mipi_dsi *dsi)
 	mpclk = DIV_ROUND_UP(dsi->mode->clock, MSEC_PER_SEC);
 	if (mpclk) {
 		/* take 1 / 0.9, since mbps must big than bandwidth of RGB */
-		tmp = mpclk * (bpp / dsi->lanes) * 10 / 9;
+		tmp = mpclk * (bpp / dsi->lanes);
 		if (tmp < max_mbps)
 			target_mbps = tmp;
 		else
@@ -951,8 +951,9 @@ static void dw_mipi_dsi_encoder_commit(struct drm_encoder *encoder)
 	dw_mipi_dsi_phy_init(dsi);
 	dw_mipi_dsi_wait_for_two_frames(dsi);
 
-	dw_mipi_dsi_set_mode(dsi, DW_MIPI_DSI_VID_MODE);
 	drm_panel_enable(dsi->panel);
+
+	dw_mipi_dsi_set_mode(dsi, DW_MIPI_DSI_VID_MODE);
 
 	clk_disable_unprepare(dsi->pclk);
 
