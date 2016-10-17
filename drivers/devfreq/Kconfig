@@ -100,4 +100,6 @@ config ARM_TEGRA_DEVFREQ
 
 source "drivers/devfreq/event/Kconfig"
 
+source "drivers/devfreq/rockchip/Kconfig"
+
 endif # PM_DEVFREQ
