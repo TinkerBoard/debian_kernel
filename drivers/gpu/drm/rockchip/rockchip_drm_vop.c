@@ -775,7 +775,6 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 	int num_enabled_crtc = 0;
 	int i;
 
-	return;
 	/*
 	 * if in dmc scaling frequency process, wait until it finish
 	 * use 100ms as timeout time.
