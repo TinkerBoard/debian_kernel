@@ -511,6 +511,10 @@
 	bus-width = <4>;
 	cap-mmc-highspeed;
 	cap-sd-highspeed;
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	sd-uhs-sdr104;
 	card-detect-delay = <200>;
 	disable-wp;			/* wp not hooked up */
 	num-slots = <1>;
