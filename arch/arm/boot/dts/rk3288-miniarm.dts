@@ -96,6 +96,7 @@
 		compatible = "rockchip,rk3288-io-voltage-domain";
 		rockchip,grf = <&grf>;
 		wifi-supply = <&vcc_18>;
+		sdcard-supply = <&vccio_sd>;
 	};
 
 	sdio_pwrseq: sdio-pwrseq {
