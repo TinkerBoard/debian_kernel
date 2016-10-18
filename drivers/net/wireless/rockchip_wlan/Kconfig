@@ -13,4 +13,5 @@ config WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
 
 source "drivers/net/wireless/rockchip_wlan/rkwifi/Kconfig"
 source "drivers/net/wireless/rockchip_wlan/rtl8188eu/Kconfig"
+source "drivers/net/wireless/rockchip_wlan/rtl8723bs/Kconfig"
 endif # WL_ROCKCHIP
