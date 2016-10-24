@@ -1153,6 +1153,12 @@ static struct sg_table *ion_map_dma_buf(struct dma_buf_attachment *attachment,
 	struct ion_buffer *buffer = dmabuf->priv;
 
 	ion_buffer_sync_for_device(buffer, attachment->dev, direction);
+
+	if (dma_map_sg(attachment->dev, buffer->sg_table->sgl, buffer->sg_table->nents,
+			direction) == 0) {
+		return ERR_PTR(-ENOMEM);
+	}
+
 	return buffer->sg_table;
 }
 
@@ -1160,6 +1166,8 @@ static void ion_unmap_dma_buf(struct dma_buf_attachment *attachment,
 			      struct sg_table *table,
 			      enum dma_data_direction direction)
 {
+	dma_unmap_sg(attachment->dev, table->sgl, table->nents,
+		direction);
 }
 
 void ion_pages_sync_for_device(struct device *dev, struct page *page,

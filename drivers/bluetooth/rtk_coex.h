@@ -245,9 +245,7 @@ struct rtl_coex_struct {
 	spinlock_t rxlock;
 	__u8 pkt_type;
 	__u16 expect;
-	__u8 *tbuff;
-	__u16 elen;
-	__u8 back_buff[HCI_MAX_EVENT_SIZE];
+	struct sk_buff *evt_skb;
 
 	/* l2cap rx buff */
 	struct list_head l2_used_list;
@@ -263,7 +261,8 @@ struct rtl_coex_struct {
 
 };
 
-#ifdef __LITTLE_ENDIAN
+/* #if __BYTE_ORDER == __LITTLE_ENDIAN */
+/* Little endian */
 struct sbc_frame_hdr {
 	uint8_t syncword:8;		/* Sync word */
 	uint8_t subbands:1;		/* Subbands */
@@ -294,34 +293,34 @@ struct rtp_header {
 	uint32_t csrc[0];
 } __attribute__ ((packed));
 
-#else
-/* big endian */
-struct sbc_frame_hdr {
-	uint8_t syncword:8;		/* Sync word */
-	uint8_t sampling_frequency:2;	/* Sampling frequency */
-	uint8_t blocks:2;		/* Blocks */
-	uint8_t channel_mode:2;		/* Channel mode */
-	uint8_t allocation_method:1;	/* Allocation method */
-	uint8_t subbands:1;		/* Subbands */
-	uint8_t bitpool:8;		/* Bitpool */
-	uint8_t crc_check:8;		/* CRC check */
-} __attribute__ ((packed));
-
-struct rtp_header {
-	unsigned v:2;
-	unsigned p:1;
-	unsigned x:1;
-	unsigned cc:4;
-
-	unsigned m:1;
-	unsigned pt:7;
-
-	uint16_t sequence_number;
-	uint32_t timestamp;
-	uint32_t ssrc;
-	uint32_t csrc[0];
-} __attribute__ ((packed));
-#endif /* __LITTLE_ENDIAN */
+/* #elif __BYTE_ORDER == __BIG_ENDIAN
+ * struct sbc_frame_hdr {
+ * 	uint8_t syncword;
+ * 	uint8_t sampling_frequency:2;
+ * 	uint8_t blocks:2;
+ * 	uint8_t channel_mode:2;
+ * 	uint8_t allocation_method:1;
+ * 	uint8_t subbands:1;
+ * 	uint8_t bitpool:8;
+ * 	uint8_t crc_check:8;
+ * } __attribute__ ((packed));
+ * 
+ * struct rtp_header {
+ * 	unsigned v:2;
+ * 	unsigned p:1;
+ * 	unsigned x:1;
+ * 	unsigned cc:4;
+ * 
+ * 	unsigned m:1;
+ * 	unsigned pt:7;
+ * 
+ * 	uint16_t sequence_number;
+ * 	uint32_t timestamp;
+ * 	uint32_t ssrc;
+ * 	uint32_t csrc[0];
+ * } __attribute__ ((packed));
+ * 
+ * #endif */
 
 void rtk_btcoex_parse_event(uint8_t *buffer, int count);
 void rtk_btcoex_parse_cmd(uint8_t *buffer, int count);

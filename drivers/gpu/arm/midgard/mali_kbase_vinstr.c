@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2011-2016 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2011-2015 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -30,7 +30,6 @@
 #include <mali_kbase.h>
 #include <mali_kbase_hwcnt_reader.h>
 #include <mali_kbase_mem_linux.h>
-#include <mali_kbase_tlstream.h>
 
 /*****************************************************************************/
 
@@ -310,8 +309,6 @@ static void kbasep_vinstr_unmap_kernel_dump_buffer(
  */
 static int kbasep_vinstr_create_kctx(struct kbase_vinstr_context *vinstr_ctx)
 {
-	struct kbase_device *kbdev = vinstr_ctx->kbdev;
-	struct kbasep_kctx_list_element *element;
 	int err;
 
 	vinstr_ctx->kctx = kbase_create_context(vinstr_ctx->kbdev, true);
@@ -327,39 +324,10 @@ static int kbasep_vinstr_create_kctx(struct kbase_vinstr_context *vinstr_ctx)
 		return err;
 	}
 
-	/* Add kernel context to list of contexts associated with device. */
-	element = kzalloc(sizeof(*element), GFP_KERNEL);
-	if (element) {
-		element->kctx = vinstr_ctx->kctx;
-		mutex_lock(&kbdev->kctx_list_lock);
-		list_add(&element->link, &kbdev->kctx_list);
-
-		/* Inform timeline client about new context.
-		 * Do this while holding the lock to avoid tracepoint
-		 * being created in both body and summary stream. */
-		kbase_tlstream_tl_new_ctx(
-				vinstr_ctx->kctx,
-				(u32)(vinstr_ctx->kctx->id),
-				(u32)(vinstr_ctx->kctx->tgid));
-
-		mutex_unlock(&kbdev->kctx_list_lock);
-	} else {
-		/* Don't treat this as a fail - just warn about it. */
-		dev_warn(kbdev->dev,
-				"couldn't add kctx to kctx_list\n");
-	}
-
 	err = enable_hwcnt(vinstr_ctx);
 	if (err) {
 		kbasep_vinstr_unmap_kernel_dump_buffer(vinstr_ctx);
 		kbase_destroy_context(vinstr_ctx->kctx);
-		if (element) {
-			mutex_lock(&kbdev->kctx_list_lock);
-			list_del(&element->link);
-			kfree(element);
-			mutex_unlock(&kbdev->kctx_list_lock);
-		}
-		kbase_tlstream_tl_del_ctx(vinstr_ctx->kctx);
 		vinstr_ctx->kctx = NULL;
 		return err;
 	}
@@ -372,13 +340,6 @@ static int kbasep_vinstr_create_kctx(struct kbase_vinstr_context *vinstr_ctx)
 		disable_hwcnt(vinstr_ctx);
 		kbasep_vinstr_unmap_kernel_dump_buffer(vinstr_ctx);
 		kbase_destroy_context(vinstr_ctx->kctx);
-		if (element) {
-			mutex_lock(&kbdev->kctx_list_lock);
-			list_del(&element->link);
-			kfree(element);
-			mutex_unlock(&kbdev->kctx_list_lock);
-		}
-		kbase_tlstream_tl_del_ctx(vinstr_ctx->kctx);
 		vinstr_ctx->kctx = NULL;
 		return -EFAULT;
 	}
@@ -392,34 +353,11 @@ static int kbasep_vinstr_create_kctx(struct kbase_vinstr_context *vinstr_ctx)
  */
 static void kbasep_vinstr_destroy_kctx(struct kbase_vinstr_context *vinstr_ctx)
 {
-	struct kbase_device             *kbdev = vinstr_ctx->kbdev;
-	struct kbasep_kctx_list_element *element;
-	struct kbasep_kctx_list_element *tmp;
-	bool                            found = false;
-
 	/* Release hw counters dumping resources. */
 	vinstr_ctx->thread = NULL;
 	disable_hwcnt(vinstr_ctx);
 	kbasep_vinstr_unmap_kernel_dump_buffer(vinstr_ctx);
 	kbase_destroy_context(vinstr_ctx->kctx);
-
-	/* Remove kernel context from the device's contexts list. */
-	mutex_lock(&kbdev->kctx_list_lock);
-	list_for_each_entry_safe(element, tmp, &kbdev->kctx_list, link) {
-		if (element->kctx == vinstr_ctx->kctx) {
-			list_del(&element->link);
-			kfree(element);
-			found = true;
-		}
-	}
-	mutex_unlock(&kbdev->kctx_list_lock);
-
-	if (!found)
-		dev_warn(kbdev->dev, "kctx not in kctx_list\n");
-
-	/* Inform timeline client about context destruction. */
-	kbase_tlstream_tl_del_ctx(vinstr_ctx->kctx);
-
 	vinstr_ctx->kctx = NULL;
 }
 
@@ -441,10 +379,9 @@ static struct kbase_vinstr_client *kbasep_vinstr_attach_client(
 	struct kbase_vinstr_client *cli;
 
 	KBASE_DEBUG_ASSERT(vinstr_ctx);
-
-	if (buffer_count > MAX_BUFFER_COUNT
-	    || (buffer_count & (buffer_count - 1)))
-		return NULL;
+	KBASE_DEBUG_ASSERT(buffer_count >= 0);
+	KBASE_DEBUG_ASSERT(buffer_count <= MAX_BUFFER_COUNT);
+	KBASE_DEBUG_ASSERT(!(buffer_count & (buffer_count - 1)));
 
 	cli = kzalloc(sizeof(*cli), GFP_KERNEL);
 	if (!cli)
@@ -498,7 +435,7 @@ static struct kbase_vinstr_client *kbasep_vinstr_attach_client(
 
 		/* Allocate required number of dumping buffers. */
 		cli->dump_buffers = (char *)__get_free_pages(
-				GFP_KERNEL | __GFP_ZERO,
+				GFP_KERNEL,
 				get_order(cli->dump_size * cli->buffer_count));
 		if (!cli->dump_buffers)
 			goto error;
@@ -1518,8 +1455,7 @@ static int kbasep_vinstr_hwcnt_reader_mmap(struct file *filp,
 		struct vm_area_struct *vma)
 {
 	struct kbase_vinstr_client *cli;
-	unsigned long size, addr, pfn, offset;
-	unsigned long vm_size = vma->vm_end - vma->vm_start;
+	size_t                     size;
 
 	KBASE_DEBUG_ASSERT(filp);
 	KBASE_DEBUG_ASSERT(vma);
@@ -1528,24 +1464,14 @@ static int kbasep_vinstr_hwcnt_reader_mmap(struct file *filp,
 	KBASE_DEBUG_ASSERT(cli);
 
 	size = cli->buffer_count * cli->dump_size;
-
-	if (vma->vm_pgoff > (size >> PAGE_SHIFT))
-		return -EINVAL;
-	if (vm_size > size)
-		return -EINVAL;
-
-	offset = vma->vm_pgoff << PAGE_SHIFT;
-	if ((vm_size + offset) > size)
-		return -EINVAL;
-
-	addr = __pa((unsigned long)cli->dump_buffers + offset);
-	pfn = addr >> PAGE_SHIFT;
+	if (vma->vm_end - vma->vm_start > size)
+		return -ENOMEM;
 
 	return remap_pfn_range(
 			vma,
 			vma->vm_start,
-			pfn,
-			vm_size,
+			__pa((unsigned long)cli->dump_buffers) >> PAGE_SHIFT,
+			size,
 			vma->vm_page_prot);
 }
 

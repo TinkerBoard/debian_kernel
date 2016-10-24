@@ -54,6 +54,7 @@ struct vop_ctrl {
 	struct vop_reg vtotal_pw;
 	struct vop_reg vact_st_end;
 	struct vop_reg vact_st_end_f1;
+	struct vop_reg vs_st_end_f1;
 	struct vop_reg hpost_st_end;
 	struct vop_reg vpost_st_end;
 	struct vop_reg vpost_st_end_f1;
@@ -90,6 +91,8 @@ struct vop_ctrl {
 	struct vop_reg xmirror;
 	struct vop_reg ymirror;
 	struct vop_reg dsp_background;
+
+	struct vop_reg line_flag_num[2];
 
 	struct vop_reg cfg_done;
 };

@@ -67,8 +67,116 @@ u32 GlobalDebugLevel = _drv_err_;
 
 void dump_drv_version(void *sel)
 {
-	DBG_871X_SEL_NL(sel, "%s %s\n", DRV_NAME, DRIVERVERSION);
-	DBG_871X_SEL_NL(sel, "build time: %s %s\n", __DATE__, __TIME__);
+	//DBG_871X_SEL_NL(sel, "%s %s\n", DRV_NAME, DRIVERVERSION);
+	//DBG_871X_SEL_NL(sel, "build time: %s %s\n", __DATE__, __TIME__);
+}
+
+void dump_drv_cfg(void *sel)
+{
+	char *kernel_version = utsname()->release;
+	
+	DBG_871X_SEL_NL(sel, "\nKernel Version: %s\n", kernel_version);
+	DBG_871X_SEL_NL(sel, "Driver Version: %s\n", DRIVERVERSION);
+	DBG_871X_SEL_NL(sel, "------------------------------------------------\n");
+#ifdef CONFIG_IOCTL_CFG80211
+	DBG_871X_SEL_NL(sel, "CFG80211\n");
+	#ifdef RTW_USE_CFG80211_STA_EVENT
+	DBG_871X_SEL_NL(sel, "RTW_USE_CFG80211_STA_EVENT\n");
+	#endif
+#else
+	DBG_871X_SEL_NL(sel, "WEXT\n");
+#endif
+
+	DBG_871X_SEL_NL(sel, "DBG:%d\n", DBG);
+#ifdef CONFIG_DEBUG
+	DBG_871X_SEL_NL(sel, "CONFIG_DEBUG\n");
+#endif
+
+#ifdef CONFIG_CONCURRENT_MODE
+	DBG_871X_SEL_NL(sel, "CONFIG_CONCURRENT_MODE\n");
+#endif
+
+#ifdef CONFIG_POWER_SAVING
+	DBG_871X_SEL_NL(sel, "CONFIG_POWER_SAVING\n");
+#endif
+
+#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
+	DBG_871X_SEL_NL(sel, "LOAD_PHY_PARA_FROM_FILE - REALTEK_CONFIG_PATH=%s\n", REALTEK_CONFIG_PATH);
+	#ifdef CONFIG_CALIBRATE_TX_POWER_BY_REGULATORY
+	DBG_871X_SEL_NL(sel, "CONFIG_CALIBRATE_TX_POWER_BY_REGULATORY\n");
+	#endif
+	#ifdef CONFIG_CALIBRATE_TX_POWER_TO_MAX
+	DBG_871X_SEL_NL(sel, "CONFIG_CALIBRATE_TX_POWER_TO_MAX\n");
+	#endif
+#endif
+
+#ifdef CONFIG_DISABLE_ODM
+	DBG_871X_SEL_NL(sel, "CONFIG_DISABLE_ODM\n");
+#endif
+
+#ifdef CONFIG_MINIMAL_MEMORY_USAGE
+	DBG_871X_SEL_NL(sel, "CONFIG_MINIMAL_MEMORY_USAGE\n");
+#endif
+
+	DBG_871X_SEL_NL(sel, "CONFIG_RTW_ADAPTIVITY_EN = %d\n", CONFIG_RTW_ADAPTIVITY_EN);
+#if (CONFIG_RTW_ADAPTIVITY_EN)
+	DBG_871X_SEL_NL(sel, "ADAPTIVITY_MODE = %s\n", (CONFIG_RTW_ADAPTIVITY_MODE) ? "carrier_sense" : "normal");
+#endif
+
+#ifdef CONFIG_WOWLAN
+	DBG_871X_SEL_NL(sel, "CONFIG_WOWLAN - ");
+
+	#ifdef CONFIG_GPIO_WAKEUP
+	DBG_871X_SEL_NL(sel, "CONFIG_GPIO_WAKEUP - WAKEUP_GPIO_IDX:%d\n", WAKEUP_GPIO_IDX);
+	#endif
+#endif	
+
+#ifdef CONFIG_TDLS
+	DBG_871X_SEL_NL(sel, "CONFIG_TDLS\n");
+#endif
+
+#ifdef CONFIG_USB_HCI
+	#ifdef CONFIG_SUPPORT_USB_INT	
+	DBG_871X_SEL_NL(sel, "CONFIG_SUPPORT_USB_INT\n");
+	#endif
+	#ifdef CONFIG_USB_INTERRUPT_IN_PIPE		
+	DBG_871X_SEL_NL(sel, "CONFIG_USB_INTERRUPT_IN_PIPE\n");
+	#endif
+	#ifdef CONFIG_USB_TX_AGGREGATION
+	DBG_871X_SEL_NL(sel, "CONFIG_USB_TX_AGGREGATION\n");
+	#endif
+	#ifdef CONFIG_USB_RX_AGGREGATION
+	DBG_871X_SEL_NL(sel, "CONFIG_USB_RX_AGGREGATION\n");
+	#endif
+	#ifdef CONFIG_USE_USB_BUFFER_ALLOC_TX
+	DBG_871X_SEL_NL(sel, "CONFIG_USE_USB_BUFFER_ALLOC_TX\n");
+	#endif
+	#ifdef CONFIG_USE_USB_BUFFER_ALLOC_RX
+	DBG_871X_SEL_NL(sel, "CONFIG_USE_USB_BUFFER_ALLOC_RX\n");
+	#endif	
+	#ifdef CONFIG_PREALLOC_RECV_SKB
+	DBG_871X_SEL_NL(sel, "CONFIG_PREALLOC_RECV_SKB\n");
+	#endif
+	#ifdef CONFIG_FIX_NR_BULKIN_BUFFER
+	DBG_871X_SEL_NL(sel, "CONFIG_FIX_NR_BULKIN_BUFFER\n");
+	#endif
+#endif /*CONFIG_USB_HCI*/
+	
+#ifdef CONFIG_SDIO_HCI
+	#ifdef CONFIG_TX_AGGREGATION
+	DBG_871X_SEL_NL(sel, "CONFIG_TX_AGGREGATION\n");
+	#endif
+	#ifdef CONFIG_RX_AGGREGATION
+	DBG_871X_SEL_NL(sel, "CONFIG_RX_AGGREGATION\n");
+	#endif
+#endif /*CONFIG_SDIO_HCI*/
+
+#ifdef CONFIG_PCI_HCI
+#endif
+	
+	DBG_871X_SEL_NL(sel, "MAX_XMITBUF_SZ = %d\n", MAX_XMITBUF_SZ);
+	DBG_871X_SEL_NL(sel, "MAX_RECVBUF_SZ = %d\n", MAX_RECVBUF_SZ);
+	
 }
 
 void dump_drv_cfg(void *sel)
