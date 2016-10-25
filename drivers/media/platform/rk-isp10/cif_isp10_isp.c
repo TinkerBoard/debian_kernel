@@ -347,7 +347,7 @@ static int cifisp_dpcc_param(struct cif_isp10_isp_dev *isp_dev,
 			    bool flag, struct cifisp_dpcc_config *arg)
 {
 	unsigned long lock_flags = 0;
-	unsigned int i;
+	unsigned int i = 0;
 	struct cifisp_dpcc_methods_config *method;
 	int retval = 0;
 
