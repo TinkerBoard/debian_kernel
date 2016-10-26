@@ -796,6 +796,14 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 
 		spin_lock(&vop->reg_lock);
 		VOP_WIN_SET(vop, win, enable, 0);
+
+		if (win->phy->scl && win->phy->scl->ext) {
+			VOP_SCL_SET_EXT(vop, win, yrgb_hor_scl_mode, SCALE_NONE);
+			VOP_SCL_SET_EXT(vop, win, yrgb_ver_scl_mode, SCALE_NONE);
+			VOP_SCL_SET_EXT(vop, win, cbcr_hor_scl_mode, SCALE_NONE);
+			VOP_SCL_SET_EXT(vop, win, cbcr_ver_scl_mode, SCALE_NONE);
+		}
+
 		spin_unlock(&vop->reg_lock);
 	}
 	vop_cfg_done(vop);
