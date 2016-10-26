@@ -29,6 +29,7 @@
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_encoder_slave.h>
+#include <drm/drm_scdc_helper.h>
 #include <drm/bridge/dw_hdmi.h>
 
 #include "dw-hdmi.h"
@@ -1058,7 +1059,7 @@ static int hdmi_phy_configure(struct dw_hdmi *hdmi, unsigned char prep,
 			      unsigned char res, int cscon)
 {
 	unsigned res_idx;
-	u8 val, msec;
+	u8 val, msec, tmds_cfg;
 	const struct dw_hdmi_plat_data *pdata = hdmi->plat_data;
 	const struct dw_hdmi_mpll_config *mpll_config = pdata->mpll_cfg;
 	const struct dw_hdmi_curr_ctrl *curr_ctrl = pdata->cur_ctr;
@@ -1119,6 +1120,13 @@ static int hdmi_phy_configure(struct dw_hdmi *hdmi, unsigned char prep,
 
 	/* gen2 pddq */
 	dw_hdmi_phy_gen2_pddq(hdmi, 1);
+
+	/* Control for TMDS Bit Period/TMDS Clock-Period Ratio */
+	if(mpll_config->mpixelclock > 340000000 && hdmi->connector.scdc_present){
+		drm_scdc_readb(hdmi->ddc, SCDC_TMDS_CONFIG, &tmds_cfg);
+		tmds_cfg |= 2;
+		drm_scdc_writeb(hdmi->ddc, SCDC_TMDS_CONFIG, tmds_cfg);
+	}
 
 	/* PHY reset */
 	hdmi_writeb(hdmi, HDMI_MC_PHYRSTZ_DEASSERT, HDMI_MC_PHYRSTZ);
@@ -1325,7 +1333,7 @@ static void hdmi_config_AVI(struct dw_hdmi *hdmi, struct drm_display_mode *mode)
 static void hdmi_av_composer(struct dw_hdmi *hdmi,
 			     const struct drm_display_mode *mode)
 {
-	u8 inv_val;
+	u8 inv_val, bytes;
 	struct hdmi_vmode *vmode = &hdmi->hdmi_data.video_mode;
 	int hblank, vblank, h_de_hs, v_de_vs, hsync_len, vsync_len;
 	unsigned int vdisplay;
@@ -1382,6 +1390,15 @@ static void hdmi_av_composer(struct dw_hdmi *hdmi,
 		vblank /= 2;
 		v_de_vs /= 2;
 		vsync_len /= 2;
+	}
+
+	/* Scrambling Control */
+	if(vmode->mpixelclock > 297000000 && hdmi->connector.supports_scramble){
+		drm_scdc_readb(hdmi->ddc, SCDC_SINK_VERSION, &bytes);
+		drm_scdc_writeb(hdmi->ddc, SCDC_SOURCE_VERSION, 1);
+		drm_scdc_writeb(hdmi->ddc, SCDC_TMDS_CONFIG, 1);
+		hdmi_writeb(hdmi, (u8)~HDMI_MC_SWRSTZ_TMDSSWRST_REQ, HDMI_MC_SWRSTZ);
+		hdmi_writeb(hdmi, HDMI_FC_SCRAMBLER_CTRL_EN, HDMI_FC_SCRAMBLER_CTRL);
 	}
 
 	/* Set up horizontal active pixel width */
