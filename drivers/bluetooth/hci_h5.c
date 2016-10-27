@@ -192,7 +192,7 @@ static void h5_peer_reset(struct hci_uart *hu)
 static int h5_open(struct hci_uart *hu)
 {
 	struct h5 *h5;
-	const unsigned char sync[] = { 0x01, 0x7e };
+	/* const unsigned char sync[] = { 0x01, 0x7e }; */
 
 	BT_DBG("hu %p", hu);
 
@@ -214,11 +214,16 @@ static int h5_open(struct hci_uart *hu)
 
 	h5->tx_win = H5_TX_WIN_MAX;
 
-	set_bit(HCI_UART_INIT_PENDING, &hu->hdev_flags);
+	/* set_bit(HCI_UART_INIT_PENDING, &hu->hdev_flags); */
+
+	/* Firmware was already download by userspace app rtk_hciattach */
+	h5->state = H5_ACTIVE;
+	hci_uart_init_ready(hu);
 
 	/* Send initial sync request */
-	h5_link_control(hu, sync, sizeof(sync));
-	mod_timer(&h5->timer, jiffies + H5_SYNC_TIMEOUT);
+	/* h5_link_control(hu, sync, sizeof(sync));
+	 * mod_timer(&h5->timer, jiffies + H5_SYNC_TIMEOUT);
+	 */
 
 	return 0;
 }
@@ -380,6 +385,11 @@ static void h5_complete_rx_pkt(struct hci_uart *hu)
 
 static int h5_rx_crc(struct hci_uart *hu, unsigned char c)
 {
+	struct h5 *h5 = hu->priv;
+
+	/* TODO: crc check */
+	skb_trim(h5->rx_skb, h5->rx_skb->len - 2);
+
 	h5_complete_rx_pkt(hu);
 
 	return 0;
