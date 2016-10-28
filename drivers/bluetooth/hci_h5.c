@@ -30,6 +30,10 @@
 
 #include "hci_uart.h"
 
+#ifdef BTCOEX
+#include "rtk_coex.h"
+#endif
+
 #define HCI_3WIRE_ACK_PKT	0
 #define HCI_3WIRE_LINK_PKT	15
 
@@ -369,6 +373,16 @@ static void h5_complete_rx_pkt(struct hci_uart *hu)
 
 		/* Remove Three-wire header */
 		skb_pull(h5->rx_skb, 4);
+
+#ifdef BTCOEX
+		if (bt_cb(h5->rx_skb)->pkt_type == HCI_EVENT_PKT)
+			rtk_btcoex_parse_event(h5->rx_skb->data,
+					       h5->rx_skb->len);
+
+		if (bt_cb(h5->rx_skb)->pkt_type == HCI_ACLDATA_PKT)
+			rtk_btcoex_parse_l2cap_data_rx(h5->rx_skb->data,
+						       h5->rx_skb->len);
+#endif
 
 		hci_recv_frame(hu->hdev, h5->rx_skb);
 		h5->rx_skb = NULL;
