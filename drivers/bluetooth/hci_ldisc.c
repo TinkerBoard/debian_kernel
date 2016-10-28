@@ -134,7 +134,7 @@ int hci_uart_tx_wakeup(struct hci_uart *hu)
 
 	BT_DBG("");
 
-	schedule_work(&hu->write_work);
+	queue_work(hu->hci_uart_wq, &hu->write_work);
 
 	return 0;
 }
@@ -474,6 +474,15 @@ static int hci_uart_tty_open(struct tty_struct *tty)
 		return -ENFILE;
 	}
 
+	BT_INFO("Create singlethread HCI UART tx wq");
+	hu->hci_uart_wq = create_singlethread_workqueue("hci_uart_tx_wq");
+	if (!hu->hci_uart_wq) {
+		BT_ERR("Can't create single wq for hci uart tx");
+		kfree(hu);
+		hu = NULL;
+		return -EINVAL;
+	}
+
 	tty->disc_data = hu;
 	hu->tty = tty;
 	tty->receive_room = 65536;
@@ -526,6 +535,9 @@ static void hci_uart_tty_close(struct tty_struct *tty)
 		hu->proto->close(hu);
 	}
 	clear_bit(HCI_UART_PROTO_SET, &hu->flags);
+
+	flush_workqueue(hu->hci_uart_wq);
+	destroy_workqueue(hu->hci_uart_wq);
 
 	kfree(hu);
 }

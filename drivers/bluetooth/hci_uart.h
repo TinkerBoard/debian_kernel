@@ -91,6 +91,8 @@ struct hci_uart {
 
 	unsigned int init_speed;
 	unsigned int oper_speed;
+
+	struct workqueue_struct *hci_uart_wq;
 };
 
 /* HCI_UART proto flag bits */
