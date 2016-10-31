@@ -2517,9 +2517,10 @@ static int vcodec_probe(struct platform_device *pdev)
 	vcodec_read_property(np, pservice);
 	vcodec_init_drvdata(pservice);
 
-	if (strncmp(pservice->name, "hevc_service", 12) == 0)
+	/* Underscore for label, hyphens for name */
+	if (strncmp(pservice->name, "hevc-service", 12) == 0)
 		pservice->dev_id = VCODEC_DEVICE_ID_HEVC;
-	else if (strncmp(pservice->name, "vpu_service", 11) == 0)
+	else if (strncmp(pservice->name, "vpu-service", 11) == 0)
 		pservice->dev_id = VCODEC_DEVICE_ID_VPU;
 	else if (strncmp(pservice->name, "rkvdec", 6) == 0)
 		pservice->dev_id = VCODEC_DEVICE_ID_RKVDEC;
