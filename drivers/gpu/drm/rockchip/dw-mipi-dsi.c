@@ -241,7 +241,7 @@
 #define	TER_RESISTOR_LOW	0
 #define LEVEL_SHIFTERS_ON	BIT(6)
 #define TER_CAL_DONE		BIT(5)
-#define SETRD_MAX		(0x7 << 2)
+#define SETRD_MAX		(0x0 << 2)
 #define POWER_MANAGE		BIT(1)
 #define TER_RESISTORS_ON	BIT(0)
 
