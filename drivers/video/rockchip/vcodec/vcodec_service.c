@@ -415,24 +415,6 @@ struct compat_vpu_request {
 };
 #endif
 
-/* debugfs root directory for all device (vpu, hevc).*/
-static struct dentry *parent;
-
-#ifdef CONFIG_DEBUG_FS
-static int vcodec_debugfs_init(void);
-static void vcodec_debugfs_exit(void);
-static struct dentry *vcodec_debugfs_create_device_dir(
-		char *dirname, struct dentry *parent);
-static int debug_vcodec_open(struct inode *inode, struct file *file);
-
-static const struct file_operations debug_vcodec_fops = {
-	.open = debug_vcodec_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
-#endif
-
 #define VDPU_SOFT_RESET_REG	101
 #define VDPU_CLEAN_CACHE_REG	516
 #define VEPU_CLEAN_CACHE_REG	772
@@ -2367,15 +2349,6 @@ static int vcodec_subdev_probe(struct platform_device *pdev,
 	INIT_LIST_HEAD(&data->lnk_service);
 	list_add_tail(&data->lnk_service, &pservice->subdev_list);
 
-#ifdef CONFIG_DEBUG_FS
-	data->debugfs_dir = vcodec_debugfs_create_device_dir(name, parent);
-	if (!IS_ERR_OR_NULL(data->debugfs_dir))
-		data->debugfs_file_regs =
-			debugfs_create_file("regs", 0664, data->debugfs_dir,
-					data, &debug_vcodec_fops);
-	else
-		vpu_err("create debugfs dir %s failed\n", name);
-#endif
 	return 0;
 err:
 	if (data->child_dev) {
@@ -2863,119 +2836,5 @@ static irqreturn_t vepu_isr(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static int __init vcodec_service_init(void)
-{
-	int ret = platform_driver_register(&vcodec_driver);
-
-	if (ret) {
-		vpu_err("Platform device register failed (%d).\n", ret);
-		return ret;
-	}
-
-#ifdef CONFIG_DEBUG_FS
-	vcodec_debugfs_init();
-#endif
-
-	return ret;
-}
-
-static void __exit vcodec_service_exit(void)
-{
-#ifdef CONFIG_DEBUG_FS
-	vcodec_debugfs_exit();
-#endif
-
-	platform_driver_unregister(&vcodec_driver);
-}
-
-module_init(vcodec_service_init);
-module_exit(vcodec_service_exit);
+module_platform_driver(vcodec_driver);
 MODULE_LICENSE("GPL v2");
-
-#ifdef CONFIG_DEBUG_FS
-#include <linux/seq_file.h>
-
-static int vcodec_debugfs_init(void)
-{
-	parent = debugfs_create_dir("vcodec", NULL);
-	if (!parent)
-		return -1;
-
-	return 0;
-}
-
-static void vcodec_debugfs_exit(void)
-{
-	debugfs_remove(parent);
-}
-
-static struct dentry *vcodec_debugfs_create_device_dir(
-		char *dirname, struct dentry *parent)
-{
-	return debugfs_create_dir(dirname, parent);
-}
-
-static int debug_vcodec_show(struct seq_file *s, void *unused)
-{
-	struct vpu_subdev_data *data = s->private;
-	struct vpu_service_info *pservice = data->pservice;
-	unsigned int i, n;
-	struct vpu_reg *reg, *reg_tmp;
-	struct vpu_session *session, *session_tmp;
-
-	mutex_lock(&pservice->lock);
-	vpu_service_power_on(pservice);
-	if (data->hw_info->hw_id != HEVC_ID) {
-		seq_puts(s, "\nENC Registers:\n");
-		n = data->enc_dev.iosize >> 2;
-
-		for (i = 0; i < n; i++)
-			seq_printf(s, "\tswreg%d = %08X\n", i,
-				   readl_relaxed(data->enc_dev.regs + i));
-	}
-
-	seq_puts(s, "\nDEC Registers:\n");
-
-	n = data->dec_dev.iosize >> 2;
-	for (i = 0; i < n; i++)
-		seq_printf(s, "\tswreg%d = %08X\n", i,
-			   readl_relaxed(data->dec_dev.regs + i));
-
-	seq_puts(s, "\nvpu service status:\n");
-
-	list_for_each_entry_safe(session, session_tmp,
-				 &pservice->session, list_session) {
-		seq_printf(s, "session pid %d type %d:\n",
-			   session->pid, session->type);
-
-		list_for_each_entry_safe(reg, reg_tmp,
-					 &session->waiting, session_link) {
-			seq_printf(s, "waiting register set %p\n", reg);
-		}
-		list_for_each_entry_safe(reg, reg_tmp,
-					 &session->running, session_link) {
-			seq_printf(s, "running register set %p\n", reg);
-		}
-		list_for_each_entry_safe(reg, reg_tmp,
-					 &session->done, session_link) {
-			seq_printf(s, "done    register set %p\n", reg);
-		}
-	}
-
-	seq_printf(s, "\npower counter: on %d off %d\n",
-		   atomic_read(&pservice->power_on_cnt),
-		   atomic_read(&pservice->power_off_cnt));
-
-	mutex_unlock(&pservice->lock);
-	vpu_service_power_off(pservice);
-
-	return 0;
-}
-
-static int debug_vcodec_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, debug_vcodec_show, inode->i_private);
-}
-
-#endif
-
