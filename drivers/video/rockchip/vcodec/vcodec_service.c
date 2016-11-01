@@ -549,9 +549,8 @@ static int vpu_get_clk(struct vpu_service_info *pservice)
 	case VCODEC_DEVICE_ID_HEVC:
 		pservice->pd_video = devm_clk_get(dev, "pd_hevc");
 		if (IS_ERR(pservice->pd_video)) {
-			dev_err(dev, "failed on clk_get pd_hevc\n");
 			pservice->pd_video = NULL;
-			return -1;
+			dev_info(dev, "failed on clk_get pd_hevc\n");
 		}
 	case VCODEC_DEVICE_ID_COMBO:
 	case VCODEC_DEVICE_ID_RKVDEC:
