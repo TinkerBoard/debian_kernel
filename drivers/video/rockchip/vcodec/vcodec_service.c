@@ -2576,7 +2576,6 @@ static void vcodec_shutdown(struct platform_device *pdev)
 	pm_runtime_disable(&pdev->dev);
 }
 
-#if defined(CONFIG_OF)
 static const struct of_device_id vcodec_service_dt_ids[] = {
 	{.compatible = "rockchip,vpu_service",},
 	{.compatible = "rockchip,hevc_service",},
@@ -2584,18 +2583,17 @@ static const struct of_device_id vcodec_service_dt_ids[] = {
 	{.compatible = "rockchip,rkvdec",},
 	{},
 };
-#endif
+
+MODULE_DEVICE_TABLE(of, vcodec_service_dt_ids);
 
 static struct platform_driver vcodec_driver = {
 	.probe = vcodec_probe,
 	.remove = vcodec_remove,
 	.shutdown = vcodec_shutdown,
 	.driver = {
-		.name = "vcodec",
+		.name = "rk-vcodec",
 		.owner = THIS_MODULE,
-#if defined(CONFIG_OF)
 		.of_match_table = of_match_ptr(vcodec_service_dt_ids),
-#endif
 	},
 };
 
