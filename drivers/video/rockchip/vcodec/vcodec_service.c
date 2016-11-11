@@ -605,34 +605,7 @@ static void vpu_reset(struct vpu_subdev_data *data)
 	if (pservice->dev_id == VCODEC_DEVICE_ID_HEVC)
 		type = IDLE_REQ_HEVC;
 
-	pr_info("%s: resetting...", dev_name(pservice->dev));
-
-#if defined(CONFIG_ARCH_RK29)
-	clk_disable(aclk_ddr_vepu);
-	cru_set_soft_reset(SOFT_RST_CPU_VODEC_A2A_AHB, true);
-	cru_set_soft_reset(SOFT_RST_DDR_VCODEC_PORT, true);
-	cru_set_soft_reset(SOFT_RST_VCODEC_AHB_BUS, true);
-	cru_set_soft_reset(SOFT_RST_VCODEC_AXI_BUS, true);
-	mdelay(10);
-	cru_set_soft_reset(SOFT_RST_VCODEC_AXI_BUS, false);
-	cru_set_soft_reset(SOFT_RST_VCODEC_AHB_BUS, false);
-	cru_set_soft_reset(SOFT_RST_DDR_VCODEC_PORT, false);
-	cru_set_soft_reset(SOFT_RST_CPU_VODEC_A2A_AHB, false);
-	clk_enable(aclk_ddr_vepu);
-#elif defined(CONFIG_ARCH_RK30)
-	pmu_set_idle_request(IDLE_REQ_VIDEO, true);
-	cru_set_soft_reset(SOFT_RST_CPU_VCODEC, true);
-	cru_set_soft_reset(SOFT_RST_VCODEC_NIU_AXI, true);
-	cru_set_soft_reset(SOFT_RST_VCODEC_AHB, true);
-	cru_set_soft_reset(SOFT_RST_VCODEC_AXI, true);
-	mdelay(1);
-	cru_set_soft_reset(SOFT_RST_VCODEC_AXI, false);
-	cru_set_soft_reset(SOFT_RST_VCODEC_AHB, false);
-	cru_set_soft_reset(SOFT_RST_VCODEC_NIU_AXI, false);
-	cru_set_soft_reset(SOFT_RST_CPU_VCODEC, false);
-	pmu_set_idle_request(IDLE_REQ_VIDEO, false);
-#else
-#endif
+	dev_info(pservice->dev, "resetting...\n");
 	WARN_ON(pservice->reg_codec != NULL);
 	WARN_ON(pservice->reg_pproc != NULL);
 	WARN_ON(pservice->reg_resev != NULL);
@@ -640,22 +613,31 @@ static void vpu_reset(struct vpu_subdev_data *data)
 	pservice->reg_pproc = NULL;
 	pservice->reg_resev = NULL;
 
-	pr_info("for 3288/3368...");
 #ifdef CONFIG_RESET_CONTROLLER
+	dev_info(pservice->dev, "for 3288/3368...");
+	rockchip_pmu_idle_request(pservice->dev, true);
 	if (pservice->rst_a && pservice->rst_h) {
-		pr_info("reset in\n");
+		dev_info(pservice->dev, "vpu reset in\n");
+
 		if (pservice->rst_v)
 			reset_control_assert(pservice->rst_v);
 		reset_control_assert(pservice->rst_a);
 		reset_control_assert(pservice->rst_h);
 		udelay(5);
+
 		reset_control_deassert(pservice->rst_h);
 		reset_control_deassert(pservice->rst_a);
 		if (pservice->rst_v)
 			reset_control_deassert(pservice->rst_v);
-	}
-#endif
+	} else if (pservice->rst_v) {
+		dev_info(pservice->dev, "hevc reset in\n");
+		reset_control_assert(pservice->rst_v);
+		udelay(5);
 
+		reset_control_deassert(pservice->rst_v);
+	}
+	rockchip_pmu_idle_request(pservice->dev, false);
+#endif
 	if (data->mmu_dev && test_bit(MMU_ACTIVATED, &data->state)) {
 		clear_bit(MMU_ACTIVATED, &data->state);
 		if (atomic_read(&pservice->enabled))
@@ -665,7 +647,7 @@ static void vpu_reset(struct vpu_subdev_data *data)
 	}
 
 	atomic_set(&pservice->reset_request, 0);
-	pr_info("done\n");
+	dev_info(pservice->dev, "reset done\n");
 }
 
 static void reg_deinit(struct vpu_subdev_data *data, struct vpu_reg *reg);
