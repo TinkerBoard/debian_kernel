@@ -2760,7 +2760,8 @@ static irqreturn_t vdpu_isr(int irq, void *dev_id)
 		} else {
 			reg_from_run_to_done(data, pservice->reg_codec);
 			/* avoid vpu timeout and can't recover problem */
-			VDPU_SOFT_RESET(data->regs);
+			if (data->mode == VCODEC_RUNNING_MODE_VPU)
+				VDPU_SOFT_RESET(data->regs);
 		}
 	}
 
