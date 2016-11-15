@@ -1150,6 +1150,7 @@ static const struct of_device_id dw_mipi_dsi_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, dw_mipi_dsi_dt_ids);
 
+extern int tinker_mcu_is_connected(void);
 static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 			     void *data)
 {
@@ -1198,6 +1199,11 @@ static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 	if (ret) {
 		dev_err(dev, "%s: Failed to enable pllref_clk\n", __func__);
 		return ret;
+	}
+
+	if(!tinker_mcu_is_connected()) {
+		pr_info("panel doesn't be connected\n");
+		goto err_pllref;
 	}
 
 	ret = dw_mipi_dsi_register(drm, dsi);
