@@ -1297,6 +1297,11 @@ void rtk_btcoex_parse_cmd(uint8_t *buffer, int count)
 {
 	u16 opcode = (buffer[0]) + (buffer[1] << 8);
 
+	if (!test_bit(RTL_COEX_RUNNING, &btrtl_coex.flags)) {
+		RTKBT_INFO("%s: Coex is closed, ignore", __func__);
+		return;
+	}
+
 	if ((opcode == HCI_OP_INQUIRY) || (opcode == HCI_OP_PERIODIC_INQ)) {
 		if (!btrtl_coex.isinquirying) {
 			btrtl_coex.isinquirying = 1;
@@ -2075,6 +2080,10 @@ void rtk_btcoex_parse_event(uint8_t *buffer, int count)
 	__u16 elen = 0;
 
 	/* RTKBT_DBG("%s: parse ev.", __func__); */
+	if (!test_bit(RTL_COEX_RUNNING, &btrtl_coex.flags)) {
+		RTKBT_INFO("%s: Coex is closed, ignore", __func__);
+		return;
+	}
 
 	spin_lock(&coex->rxlock);
 
@@ -2137,6 +2146,11 @@ void rtk_btcoex_parse_event(uint8_t *buffer, int count)
 
 void rtk_btcoex_parse_l2cap_data_tx(uint8_t *buffer, int count)
 {
+	if (!test_bit(RTL_COEX_RUNNING, &btrtl_coex.flags)) {
+		RTKBT_INFO("%s: Coex is closed, ignore", __func__);
+		return;
+	}
+
 	rtl_l2_data_process(buffer, count, 1);
 	//u16 handle, total_len, pdu_len, channel_ID, command_len, psm, scid,
 	//    dcid, result, status;
@@ -2199,6 +2213,11 @@ void rtk_btcoex_parse_l2cap_data_tx(uint8_t *buffer, int count)
 
 void rtk_btcoex_parse_l2cap_data_rx(uint8_t *buffer, int count)
 {
+	if (!test_bit(RTL_COEX_RUNNING, &btrtl_coex.flags)) {
+		RTKBT_INFO("%s: Coex is closed, ignore", __func__);
+		return;
+	}
+
 	rtl_l2_data_process(buffer, count, 0);
 	//u16 handle, total_len, pdu_len, channel_ID, command_len, psm, scid,
 	//    dcid, result, status;
@@ -2533,26 +2552,26 @@ void rtk_btcoex_close(void)
 
 	RTKBT_INFO("Close BTCOEX");
 
+	/* Close coex socket */
 	if (btrtl_coex.wifi_on)
 		udpsocket_send(bt_leave, sizeof(bt_leave));
-
-	if (btrtl_coex.polling_enable) {
-		btrtl_coex.polling_enable = 0;
-		del_timer(&(btrtl_coex.polling_timer));
-	}
-
-	del_timer(&(btrtl_coex.a2dp_count_timer));
-	del_timer(&(btrtl_coex.pan_count_timer));
-
-	cancel_delayed_work(&btrtl_coex.sock_work);
-	cancel_delayed_work(&btrtl_coex.fw_work);
-	cancel_delayed_work(&btrtl_coex.l2_work);
-
+	cancel_delayed_work_sync(&btrtl_coex.sock_work);
 	if (btrtl_coex.sock_open) {
 		btrtl_coex.sock_open = 0;
 		RTKBT_DBG("release udp socket");
 		sock_release(btrtl_coex.udpsock);
 	}
+
+	/* Delete all timers */
+	if (btrtl_coex.polling_enable) {
+		btrtl_coex.polling_enable = 0;
+		del_timer_sync(&(btrtl_coex.polling_timer));
+	}
+	del_timer_sync(&(btrtl_coex.a2dp_count_timer));
+	del_timer_sync(&(btrtl_coex.pan_count_timer));
+
+	cancel_delayed_work_sync(&btrtl_coex.fw_work);
+	cancel_delayed_work_sync(&btrtl_coex.l2_work);
 
 	flush_connection_hash(&btrtl_coex);
 	flush_profile_hash(&btrtl_coex);
