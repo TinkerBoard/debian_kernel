@@ -46,6 +46,19 @@
 / {
 	compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
 
+	ion {
+		compatible = "rockchip,ion";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cma-heap {
+			reg = <0x78000000 0x08000000>;
+		};
+
+		system-heap {
+		};
+	};
+
 	memory {
 		device_type = "memory";
 		reg = <0x0 0x80000000>;
@@ -81,9 +94,9 @@
 
 	io-domains {
 		compatible = "rockchip,rk3288-io-voltage-domain";
-                rockchip,grf = <&grf>;
-                wifi-supply = <&vcc_18>;
-                sdcard-supply = <&vccio_sd>;
+		rockchip,grf = <&grf>;
+		wifi-supply = <&vcc_18>;
+		sdcard-supply = <&vccio_sd>;
 	};
 
 	sdio_pwrseq: sdio-pwrseq {
@@ -173,21 +186,17 @@
 		startup-delay-us = <100000>;
 		vin-supply = <&vcc_io>;
 	};
+
+	vdd_log: vdd_log {
+		compatible = "regulator-fixed";
+		regulator-min-microvolt = <1000000>;
+		regulator-max-microvolt = <1000000>;
+		regulator-name = "vdd_logic";
+	};
 };
 
 &cpu0 {
 	cpu0-supply = <&vdd_cpu>;
-};
-
-&emmc {
-	bus-width = <8>;
-	cap-mmc-highspeed;
-	disable-wp;
-	non-removable;
-	num-slots = <1>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&emmc_clk &emmc_cmd &emmc_pwr &emmc_bus8>;
-	status = "okay";
 };
 
 &gmac {
@@ -206,6 +215,21 @@
 	status = "ok";
 };
 
+&cif_isp0 {
+	rockchip,camera-modules-attached = <&camera1>;
+	status = "okay";
+};
+
+&mipi_dsi {
+	status = "okay";
+	mipi_panel: mipi-panel {
+		compatible ="asus,tc358762";
+		reg = <0>;
+		status = "okay";
+	};
+};
+
+
 &gpu {
 	mali-supply = <&vdd_gpu>;
 	status = "okay";
@@ -217,6 +241,12 @@
 	#sound-dai-cells = <0>;
 	ddc-i2c-bus = <&i2c5>;
 	status = "okay";
+	/* Don't use vopl for HDMI */
+	ports {
+		hdmi_in: port {
+			/delete-node/ endpoint@1;
+		};
+	};
 };
 
 &i2c0 {
@@ -266,6 +296,7 @@
 				regulator-min-microvolt = <850000>;
 				regulator-max-microvolt = <1250000>;
 				regulator-name = "vdd_gpu";
+				regulator-ramp-delay = <6000>;
 				regulator-state-mem {
 					regulator-on-in-suspend;
 					regulator-suspend-microvolt = <1000000>;
@@ -412,29 +443,42 @@
 &i2c2 {
 	status = "okay";
 
-	headset: nau8825@1a {
-		compatible = "nuvoton,nau8825";
-		#sound-dai-cells = <0>;
-		reg = <0x1a>;
-		interrupt-parent = <&gpio6>;
-		interrupts = <5 IRQ_TYPE_LEVEL_LOW>;
-		nuvoton,jkdet-enable = <1>;
-		nuvoton,jkdet-pull-enable = <1>;
-		nuvoton,jkdet-pull-up = <0>;
-		nuvoton,jkdet-polarity = <1>;
-		nuvoton,vref-impedance = <2>;
-		nuvoton,micbias-voltage = <6>;
-		nuvoton,sar-threshold-num = <4>;
-		nuvoton,sar-threshold = <0xa 0x14 0x26 0x73>;
-		nuvoton,sar-hysteresis = <0>;
-		nuvoton,sar-voltage = <6>;
-		nuvoton,sar-compare-time = <0>;
-		nuvoton,sar-sampling-time = <0>;
-		nuvoton,short-key-debounce = <3>;
-		nuvoton,jack-insert-debounce = <7>;
-		nuvoton,jack-eject-debounce = <7>;
-		clock-names = "mclk";
-		clocks = <&cru SCLK_I2S0_OUT>;
+	afc0:af-controller@0 {
+		status = "okay";
+		compatible = "silicon touch,vm149C-v4l2-i2c-subdev";
+		reg = < 0x0c >;
+	};
+
+	camera1:camera-module@1 {
+		status = "okay";
+		compatible = "sony,imx219-v4l2-i2c-subdev";
+		reg = < 0x10 >;
+		device_type = "v4l2-i2c-subdev";
+		clocks = <&cru SCLK_CIFOUT>;
+		clock-names = "clk_cif_out";
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&cam0_default_pins>;
+		pinctrl-1 = <&cam0_sleep_pins>;
+		rockchip,pd-gpio = <&gpio2 0 GPIO_ACTIVE_LOW>;
+		rockchip,pd-gpio-is_active_low;
+		rockchip,camera-module-regulator-names = "vcc33_mipi";
+		rockchip,camera-module-regulator-voltages = <3300000>;
+		rockchip,camera-module-dovdd = "1.8v";
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "cmk-cb0695-fv1";
+		rockchip,camera-module-len-name = "lg9569a2";
+		rockchip,camera-module-fov-h = "66.0";
+		rockchip,camera-module-fov-v = "50.1";
+		rockchip,camera-module-orientation = <0>;
+		rockchip,camera-module-iq-flip = <0>;
+		rockchip,camera-module-iq-mirror = <0>;
+		rockchip,camera-module-flip = <0>;
+		rockchip,camera-module-mirror = <0>;
+
+		/* resolution.w, resolution.h, defrect.left, defrect.top, defrect.w, defrect.h */
+		rockchip,camera-module-defrect0 = <3264 2448 0 0 3264 2448>;
+		rockchip,camera-module-flash-support = <0>;
+		rockchip,camera-module-mipi-dphy-index = <0>;
 	};
 
     m24c08@50 {
@@ -499,6 +543,10 @@
 	bus-width = <4>;
 	cap-mmc-highspeed;
 	cap-sd-highspeed;
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	sd-uhs-sdr104;
 	card-detect-delay = <200>;
 	disable-wp;			/* wp not hooked up */
 	num-slots = <1>;
@@ -544,6 +592,7 @@
 };
 
 &usb_host0_ehci {
+	no-relinquish-port;
 	status = "okay";
 };
 
@@ -565,6 +614,10 @@
 
 &vopl {
 	status = "okay";
+	/* Don't use vopl for HDMI */
+	vopl_out: port {
+		/delete-node/ endpoint@0;
+	};
 };
 
 &vopl_mmu {
@@ -659,4 +712,40 @@
 			rockchip,pins = <4 19 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
+
+	cam_pins {
+		cam0_default_pins:cam0_default_pins {
+			rockchip,pins = <0 17 RK_FUNC_GPIO &pcfg_pull_none>,/*sensor power pin: GPIO0_C1 */
+			<2 0 RK_FUNC_GPIO &pcfg_pull_none>,/*sensor power down pin: GPIO2_A0*/
+			<2 11 RK_FUNC_1 &pcfg_pull_none>;/*sensor mclk: cif_clkout*/
+		};
+
+		cam0_sleep_pins:cam0_sleep_pins {
+			rockchip,pins = <0 17 RK_FUNC_GPIO &pcfg_pull_none>,/*sensor power pin: GPIO0_C1 */
+			<2 0 RK_FUNC_GPIO &pcfg_pull_none>,/* cif power down pin */
+			<2 11 RK_FUNC_GPIO &pcfg_pull_none>;/* cif_clkout */
+		};
+	};
+};
+
+&dmc {
+	status = "okay";
+	logic-supply = <&vdd_log>;
+	rockchip,odt-disable-freq = <333000000>;
+	rockchip,dll-disable-freq = <333000000>;
+	rockchip,sr-enable-freq = <333000000>;
+	rockchip,auto-self-refresh-cnt = <0>;
+	rockchip,auto-power-down-cnt = <64>;
+	rockchip,ddr-speed-bin = <21>;
+	rockchip,trcd = <10>;
+	rockchip,trp = <10>;
+	rockchip,pd-enable-freq = <533000000>;
+	operating-points = <
+		/* KHz    uV */
+		200000 1000000
+		333000 1000000
+		533000 1000000
+	>;
+
+	#cooling-cells = <2>; /* min followed by max */
 };
