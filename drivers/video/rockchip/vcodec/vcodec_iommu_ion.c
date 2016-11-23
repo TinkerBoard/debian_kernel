@@ -52,6 +52,20 @@ vcodec_ion_get_buffer(struct vcodec_iommu_info *iommu_info, int idx)
 	return NULL;
 }
 
+static struct vcodec_ion_buffer *
+vcodec_ion_get_buffer_fd(struct vcodec_iommu_info *iommu_info, int fd)
+{
+	struct vcodec_ion_buffer *ion_buffer = NULL, *n;
+
+	list_for_each_entry_safe(ion_buffer, n,
+				 &iommu_info->buffer_list, buffer) {
+		if (ion_buffer->fd == fd)
+			return ion_buffer;
+	}
+
+	return NULL;
+}
+
 static void vcodec_ion_clear_map(struct kref *ref)
 {
 	/* do nothing */
@@ -65,6 +79,29 @@ static int vcodec_ion_destroy(struct vcodec_iommu_info *iommu_info)
 
 	kfree(ion_info);
 	iommu_info->private = NULL;
+
+	return 0;
+}
+
+static int vcodec_ion_free_fd(struct vcodec_iommu_info *iommu_info, int fd)
+{
+	struct vcodec_ion_buffer *ion_buffer;
+	struct vcodec_iommu_ion_info *ion_info = iommu_info->private;
+
+	mutex_lock(&iommu_info->list_mutex);
+	ion_buffer = vcodec_ion_get_buffer(iommu_info, idx);
+
+	if (!ion_buffer) {
+		pr_err("can not find %d buffer in list\n", idx);
+
+		return -EINVAL;
+	}
+
+	ion_free(ion_info->ion_client, ion_buffer->handle);
+
+	list_del_init(&ion_buffer->buffer);
+	mutex_unlock(&iommu_info->list_mutex);
+	kfree(ion_buffer);
 
 	return 0;
 }
@@ -121,7 +158,8 @@ static int vcodec_ion_map_iommu(struct vcodec_iommu_info *iommu_info, int idx,
 	int ret;
 
 	/* Force to flush iommu table */
-	rockchip_iovmm_invalidate_tlb(iommu_info->mmu_dev);
+	if (of_machine_is_compatible("rockchip,rk3288"))
+		rockchip_iovmm_invalidate_tlb(iommu_info->mmu_dev);
 
 	mutex_lock(&iommu_info->list_mutex);
 	ion_buffer = vcodec_ion_get_buffer(iommu_info, idx);
@@ -162,7 +200,8 @@ static int vcodec_ion_unmap_kernel(struct vcodec_iommu_info *iommu_info,
 	struct vcodec_ion_buffer *ion_buffer;
 
 	/* Force to flush iommu table */
-	rockchip_iovmm_invalidate_tlb(iommu_info->mmu_dev);
+	if (of_machine_is_compatible("rockchip,rk3288"))
+		rockchip_iovmm_invalidate_tlb(iommu_info->mmu_dev);
 
 	mutex_lock(&iommu_info->list_mutex);
 	ion_buffer = vcodec_ion_get_buffer(iommu_info, idx);
@@ -255,6 +294,7 @@ static struct vcodec_iommu_ops ion_ops = {
 	.destroy = vcodec_ion_destroy,
 	.import = vcodec_ion_import,
 	.free = vcodec_ion_free,
+	.free_fd = vcodec_ion_free_fd,
 	.map_kernel = vcodec_ion_map_kernel,
 	.unmap_kernel = vcodec_ion_unmap_kernel,
 	.map_iommu = vcodec_ion_map_iommu,

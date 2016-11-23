@@ -129,6 +129,8 @@ struct vpu_task_info {
 	struct timeval start;
 	struct timeval end;
 
+	/* input stream */
+	int reg_rlc;
 	/*
 	 * task enable register
 	 * use for enable hardware task process

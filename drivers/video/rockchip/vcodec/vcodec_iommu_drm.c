@@ -44,7 +44,7 @@ struct vcodec_drm_buffer {
 		unsigned long iova;
 		unsigned long phys;
 	};
-	u8 *cpu_addr;
+	void *cpu_addr;
 	unsigned long size;
 	int fd;
 	int index;
@@ -52,42 +52,37 @@ struct vcodec_drm_buffer {
 	struct sg_table *sgt;
 	struct page **pages;
 	struct kref ref;
+	struct vcodec_iommu_session_info *session_info;
 };
 
 struct vcodec_iommu_drm_info {
 	struct iommu_domain *domain;
+	bool attached;
 };
 
-static void vcodec_drm_dump_fd_refs(struct vcodec_iommu_info *iommu_info,
-				    int fd,
-				    const char *caller)
-{
-	struct files_struct *files = current->files;
-	struct file *file;
-
-	if (!files)
-		return;
-
-	rcu_read_lock();
-	file = fcheck_files(files, fd);
-	if (file)
-		vpu_iommu_debug(iommu_info->debug_level, DEBUG_IOMMU_OPS_DUMP,
-				"caller %s fd %d ref is %d\n", caller, fd,
-				get_file_rcu(file));
-	else
-		vpu_iommu_debug(iommu_info->debug_level, DEBUG_IOMMU_OPS_DUMP,
-				"caller %s can not find fd %d\n", caller, fd);
-	rcu_read_unlock();
-}
-
-static struct vcodec_drm_buffer *
-vcodec_drm_get_buffer(struct vcodec_iommu_info *iommu_info, int idx)
+static struct vcodec_drm_buffer *vcodec_drm_get_buffer(
+		struct vcodec_iommu_session_info *session_info,
+						       int idx)
 {
 	struct vcodec_drm_buffer *drm_buffer = NULL, *n;
 
-	list_for_each_entry_safe(drm_buffer, n, &iommu_info->buffer_list,
+	list_for_each_entry_safe(drm_buffer, n, &session_info->buffer_list,
 				 buffer) {
 		if (drm_buffer->index == idx)
+			return drm_buffer;
+	}
+
+	return NULL;
+}
+
+static struct vcodec_drm_buffer *
+vcodec_drm_get_buffer_fd(struct vcodec_iommu_session_info *session_info, int fd)
+{
+	struct vcodec_drm_buffer *drm_buffer = NULL, *n;
+
+	list_for_each_entry_safe(drm_buffer, n, &session_info->buffer_list,
+				 buffer) {
+		if (drm_buffer->fd == fd)
 			return drm_buffer;
 	}
 
@@ -100,27 +95,25 @@ static void vcodec_drm_detach(struct vcodec_iommu_info *iommu_info)
 	struct device *dev = iommu_info->dev;
 	struct iommu_domain *domain = drm_info->domain;
 
-	/*
-	 * FIXME we should free it first, but it would make kernel crash
-	 * down.
-	 */
-	dev->dma_parms = NULL;
+	mutex_lock(&iommu_info->iommu_mutex);
+
+	if (!drm_info->attached) {
+		mutex_unlock(&iommu_info->iommu_mutex);
+		return;
+	}
 
 	iommu_detach_device(domain, dev);
+	drm_info->attached = false;
+
+	mutex_unlock(&iommu_info->iommu_mutex);
 }
 
-static int vcodec_drm_attach(struct vcodec_iommu_info *iommu_info)
+static int vcodec_drm_attach_unlock(struct vcodec_iommu_info *iommu_info)
 {
 	struct vcodec_iommu_drm_info *drm_info = iommu_info->private;
 	struct device *dev = iommu_info->dev;
 	struct iommu_domain *domain = drm_info->domain;
-	int ret;
-
-	if (!dev->dma_parms)
-		dev->dma_parms = devm_kzalloc
-			(dev, sizeof(*dev->dma_parms), GFP_KERNEL);
-	if (!dev->dma_parms)
-		return -ENOMEM;
+	int ret = 0;
 
 	ret = dma_set_coherent_mask(dev, DMA_BIT_MASK(32));
 	if (ret)
@@ -142,8 +135,36 @@ static int vcodec_drm_attach(struct vcodec_iommu_info *iommu_info)
 	return ret;
 }
 
-static u8 *vcodec_drm_sgt_map_kernel(struct vcodec_drm_buffer *drm_buffer)
+static int vcodec_drm_attach(struct vcodec_iommu_info *iommu_info)
 {
+	struct vcodec_iommu_drm_info *drm_info = iommu_info->private;
+	int ret;
+
+	mutex_lock(&iommu_info->iommu_mutex);
+
+	if (drm_info->attached) {
+		mutex_unlock(&iommu_info->iommu_mutex);
+		return 0;
+	}
+
+	ret = vcodec_drm_attach_unlock(iommu_info);
+	if (ret) {
+		mutex_unlock(&iommu_info->iommu_mutex);
+		return ret;
+	}
+
+	drm_info->attached = true;
+
+	mutex_unlock(&iommu_info->iommu_mutex);
+
+	return ret;
+}
+
+static void *vcodec_drm_sgt_map_kernel(struct vcodec_drm_buffer *drm_buffer)
+{
+	struct vcodec_iommu_session_info *session_info =
+		drm_buffer->session_info;
+	struct device *dev = session_info->dev;
 	struct scatterlist *sgl, *sg;
 	int nr_pages = PAGE_ALIGN(drm_buffer->size) >> PAGE_SHIFT;
 	int i = 0, j = 0, k = 0;
@@ -152,7 +173,7 @@ static u8 *vcodec_drm_sgt_map_kernel(struct vcodec_drm_buffer *drm_buffer)
 	drm_buffer->pages = kmalloc_array(nr_pages, sizeof(*drm_buffer->pages),
 					  GFP_KERNEL);
 	if (!(drm_buffer->pages)) {
-		pr_err("can not alloc pages\n");
+		dev_err(dev, "drm map can not alloc pages\n");
 
 		return NULL;
 	}
@@ -165,7 +186,8 @@ static u8 *vcodec_drm_sgt_map_kernel(struct vcodec_drm_buffer *drm_buffer)
 			drm_buffer->pages[k++] = page++;
 	}
 
-	return vmap(drm_buffer->pages, nr_pages, VM_MAP, PAGE_KERNEL);
+	return vmap(drm_buffer->pages, nr_pages, VM_MAP,
+		    pgprot_noncached(PAGE_KERNEL));
 }
 
 static void vcodec_drm_sgt_unmap_kernel(struct vcodec_drm_buffer *drm_buffer)
@@ -178,6 +200,19 @@ static void vcodec_drm_clear_map(struct kref *ref)
 {
 	struct vcodec_drm_buffer *drm_buffer =
 		container_of(ref, struct vcodec_drm_buffer, ref);
+	struct vcodec_iommu_session_info *session_info =
+		drm_buffer->session_info;
+	struct vcodec_iommu_info *iommu_info = session_info->iommu_info;
+	struct vcodec_iommu_drm_info *drm_info = iommu_info->private;
+	struct device *dev = session_info->dev;
+	struct iommu_domain *domain = drm_info->domain;
+
+	mutex_lock(&iommu_info->iommu_mutex);
+	drm_info = session_info->iommu_info->private;
+	if (!drm_info->attached) {
+		if (vcodec_drm_attach_unlock(session_info->iommu_info))
+			dev_err(dev, "can't clea map, attach iommu failed.\n");
+	}
 
 	if (drm_buffer->cpu_addr) {
 		vcodec_drm_sgt_unmap_kernel(drm_buffer);
@@ -191,34 +226,41 @@ static void vcodec_drm_clear_map(struct kref *ref)
 		dma_buf_put(drm_buffer->dma_buf);
 		drm_buffer->attach = NULL;
 	}
+
+	if (!drm_info->attached)
+		iommu_detach_device(domain, dev);
+
+	mutex_unlock(&iommu_info->iommu_mutex);
 }
 
-static void vcdoec_drm_dump_info(struct vcodec_iommu_info *iommu_info)
+static void vcdoec_drm_dump_info(struct vcodec_iommu_session_info *session_info)
 {
 	struct vcodec_drm_buffer *drm_buffer = NULL, *n;
 
-	vpu_iommu_debug(iommu_info->debug_level, DEBUG_IOMMU_OPS_DUMP,
+	vpu_iommu_debug(session_info->debug_level, DEBUG_IOMMU_OPS_DUMP,
 			"still there are below buffers stored in list\n");
-	list_for_each_entry_safe(drm_buffer, n, &iommu_info->buffer_list,
+	list_for_each_entry_safe(drm_buffer, n, &session_info->buffer_list,
 				 buffer) {
-		vpu_iommu_debug(iommu_info->debug_level, DEBUG_IOMMU_OPS_DUMP,
+		vpu_iommu_debug(session_info->debug_level, DEBUG_IOMMU_OPS_DUMP,
 				"index %d drm_buffer fd %d cpu_addr %p\n",
 				drm_buffer->index,
 				drm_buffer->fd, drm_buffer->cpu_addr);
 	}
 }
 
-static int vcodec_drm_free(struct vcodec_iommu_info *iommu_info, int idx)
+static int vcodec_drm_free(struct vcodec_iommu_session_info *session_info,
+			   int idx)
 {
+	struct device *dev = session_info->dev;
 	/* please double-check all maps have been release */
 	struct vcodec_drm_buffer *drm_buffer;
 
-	mutex_lock(&iommu_info->list_mutex);
-	drm_buffer = vcodec_drm_get_buffer(iommu_info, idx);
+	mutex_lock(&session_info->list_mutex);
+	drm_buffer = vcodec_drm_get_buffer(session_info, idx);
 
 	if (!drm_buffer) {
-		pr_err("%s can not find %d buffer in list\n", __func__, idx);
-		mutex_unlock(&iommu_info->list_mutex);
+		dev_err(dev, "can not find %d buffer in list\n", idx);
+		mutex_unlock(&session_info->list_mutex);
 
 		return -EINVAL;
 	}
@@ -226,27 +268,29 @@ static int vcodec_drm_free(struct vcodec_iommu_info *iommu_info, int idx)
 	if (atomic_read(&drm_buffer->ref.refcount) == 0) {
 		dma_buf_put(drm_buffer->dma_buf);
 		list_del_init(&drm_buffer->buffer);
-		vcodec_drm_dump_fd_refs(iommu_info, drm_buffer->fd, __func__);
 		kfree(drm_buffer);
 	}
-	mutex_unlock(&iommu_info->list_mutex);
+	mutex_unlock(&session_info->list_mutex);
 
 	return 0;
 }
 
-static int vcodec_drm_unmap_iommu(struct vcodec_iommu_info *iommu_info, int idx)
+static int vcodec_drm_unmap_iommu
+(struct vcodec_iommu_session_info *session_info, int idx)
 {
+	struct device *dev = session_info->dev;
 	struct vcodec_drm_buffer *drm_buffer;
 
 	/* Force to flush iommu table */
-	rockchip_iovmm_invalidate_tlb(iommu_info->mmu_dev);
+	if (of_machine_is_compatible("rockchip,rk3288"))
+		rockchip_iovmm_invalidate_tlb(session_info->mmu_dev);
 
-	mutex_lock(&iommu_info->list_mutex);
-	drm_buffer = vcodec_drm_get_buffer(iommu_info, idx);
-	mutex_unlock(&iommu_info->list_mutex);
+	mutex_lock(&session_info->list_mutex);
+	drm_buffer = vcodec_drm_get_buffer(session_info, idx);
+	mutex_unlock(&session_info->list_mutex);
 
 	if (!drm_buffer) {
-		pr_err("%s can not find %d buffer in list\n", __func__, idx);
+		dev_err(dev, "can not find %d buffer in list\n", idx);
 		return -EINVAL;
 	}
 
@@ -255,148 +299,204 @@ static int vcodec_drm_unmap_iommu(struct vcodec_iommu_info *iommu_info, int idx)
 	return 0;
 }
 
-static int vcodec_drm_map_iommu(struct vcodec_iommu_info *iommu_info, int idx,
-				unsigned long *iova, unsigned long *size)
+static int vcodec_drm_map_iommu(struct vcodec_iommu_session_info *session_info,
+				int idx,
+				unsigned long *iova,
+				unsigned long *size)
 {
-	struct dma_buf_attachment *attach;
-	struct sg_table *sgt;
+	struct device *dev = session_info->dev;
 	struct vcodec_drm_buffer *drm_buffer;
-	struct device *dev = iommu_info->dev;
-	int ret = 0;
 
 	/* Force to flush iommu table */
-	rockchip_iovmm_invalidate_tlb(iommu_info->mmu_dev);
+	if (of_machine_is_compatible("rockchip,rk3288"))
+		rockchip_iovmm_invalidate_tlb(session_info->mmu_dev);
 
-	mutex_lock(&iommu_info->list_mutex);
-	drm_buffer = vcodec_drm_get_buffer(iommu_info, idx);
-	mutex_unlock(&iommu_info->list_mutex);
+	mutex_lock(&session_info->list_mutex);
+	drm_buffer = vcodec_drm_get_buffer(session_info, idx);
+	mutex_unlock(&session_info->list_mutex);
 
 	if (!drm_buffer) {
-		pr_err("%s can not find %d buffer in list\n", __func__, idx);
+		dev_err(dev, "can not find %d buffer in list\n", idx);
 		return -EINVAL;
 	}
 
-	if (drm_buffer->attach) {
-		atomic_inc_return(&drm_buffer->ref.refcount);
-		if (iova)
-			*iova = drm_buffer->iova;
-		if (size)
-			*size = drm_buffer->size;
-		return 0;
-	}
-
-	attach = dma_buf_attach(drm_buffer->dma_buf, dev);
-	if (IS_ERR(attach))
-		return -ENOMEM;
-
-	get_dma_buf(drm_buffer->dma_buf);
-
-	sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
-	if (IS_ERR(sgt)) {
-		ret = -ENOMEM;
-		goto fail_detach;
-	}
-
-	drm_buffer->iova = sg_dma_address(sgt->sgl);
+	kref_get(&drm_buffer->ref);
 	if (iova)
 		*iova = drm_buffer->iova;
-
-	drm_buffer->size = drm_buffer->dma_buf->size;
 	if (size)
 		*size = drm_buffer->size;
-	drm_buffer->attach = attach;
-	drm_buffer->sgt = sgt;
-
-	atomic_inc_return(&drm_buffer->ref.refcount);
-
 	return 0;
-
-fail_detach:
-	dma_buf_detach(drm_buffer->dma_buf, attach);
-	dma_buf_put(drm_buffer->dma_buf);
-
-	return ret;
 }
 
-static int vcodec_drm_unmap_kernel(struct vcodec_iommu_info *iommu_info,
-				   int idx)
+static int vcodec_drm_unmap_kernel
+(struct vcodec_iommu_session_info *session_info, int idx)
 {
+	struct device *dev = session_info->dev;
 	struct vcodec_drm_buffer *drm_buffer;
 
-	mutex_lock(&iommu_info->list_mutex);
-	drm_buffer = vcodec_drm_get_buffer(iommu_info, idx);
-	mutex_unlock(&iommu_info->list_mutex);
+	mutex_lock(&session_info->list_mutex);
+	drm_buffer = vcodec_drm_get_buffer(session_info, idx);
+	mutex_unlock(&session_info->list_mutex);
 
 	if (!drm_buffer) {
-		pr_err("%s can not find %d buffer in list\n", __func__, idx);
+		dev_err(dev, "can not find %d buffer in list\n", idx);
 
 		return -EINVAL;
+	}
+
+	if (drm_buffer->cpu_addr) {
+		vcodec_drm_sgt_unmap_kernel(drm_buffer);
+		drm_buffer->cpu_addr = NULL;
 	}
 
 	kref_put(&drm_buffer->ref, vcodec_drm_clear_map);
 	return 0;
 }
 
-static u8 *vcodec_drm_map_kernel(struct vcodec_iommu_info *iommu_info, int idx)
+static int
+vcodec_drm_free_fd(struct vcodec_iommu_session_info *session_info, int fd)
 {
-	struct vcodec_drm_buffer *drm_buffer;
+	struct device *dev = session_info->dev;
+	/* please double-check all maps have been release */
+	struct vcodec_drm_buffer *drm_buffer = NULL;
 
-	mutex_lock(&iommu_info->list_mutex);
-	drm_buffer = vcodec_drm_get_buffer(iommu_info, idx);
-	mutex_unlock(&iommu_info->list_mutex);
+	mutex_lock(&session_info->list_mutex);
+	drm_buffer = vcodec_drm_get_buffer_fd(session_info, fd);
 
 	if (!drm_buffer) {
-		pr_err("can not find %d buffer in list\n", idx);
+		dev_err(dev, "can not find %d buffer in list\n", fd);
+		mutex_unlock(&session_info->list_mutex);
+
+		return -EINVAL;
+	}
+	mutex_unlock(&session_info->list_mutex);
+
+	vcodec_drm_unmap_iommu(session_info, drm_buffer->index);
+
+	mutex_lock(&session_info->list_mutex);
+	if (atomic_read(&drm_buffer->ref.refcount) == 0) {
+		dma_buf_put(drm_buffer->dma_buf);
+		list_del_init(&drm_buffer->buffer);
+		kfree(drm_buffer);
+	}
+	mutex_unlock(&session_info->list_mutex);
+
+	return 0;
+}
+
+static void
+vcodec_drm_clear_session(struct vcodec_iommu_session_info *session_info)
+{
+	struct vcodec_drm_buffer *drm_buffer = NULL, *n;
+
+	list_for_each_entry_safe(drm_buffer, n, &session_info->buffer_list,
+				 buffer) {
+		kref_put(&drm_buffer->ref, vcodec_drm_clear_map);
+		vcodec_drm_free(session_info, drm_buffer->index);
+	}
+}
+
+static void *
+vcodec_drm_map_kernel(struct vcodec_iommu_session_info *session_info, int idx)
+{
+	struct device *dev = session_info->dev;
+	struct vcodec_drm_buffer *drm_buffer;
+
+	mutex_lock(&session_info->list_mutex);
+	drm_buffer = vcodec_drm_get_buffer(session_info, idx);
+	mutex_unlock(&session_info->list_mutex);
+
+	if (!drm_buffer) {
+		dev_err(dev, "can not find %d buffer in list\n", idx);
 		return NULL;
 	}
 
-	atomic_inc_return(&drm_buffer->ref.refcount);
-	if  (!drm_buffer->attach) {
-		vcodec_drm_map_iommu(iommu_info, idx, NULL, NULL);
-		kref_put(&drm_buffer->ref, vcodec_drm_clear_map);
-	}
-
-	if (!drm_buffer->cpu_addr) {
+	if (!drm_buffer->cpu_addr)
 		drm_buffer->cpu_addr =
 			vcodec_drm_sgt_map_kernel(drm_buffer);
-	}
+
+	kref_get(&drm_buffer->ref);
 
 	return drm_buffer->cpu_addr;
 }
 
-static int vcodec_drm_import(struct vcodec_iommu_info *iommu_info, int fd)
+static int vcodec_drm_import(struct vcodec_iommu_session_info *session_info,
+			     int fd)
 {
 	struct vcodec_drm_buffer *drm_buffer = NULL, *n;
+	struct vcodec_iommu_info *iommu_info = session_info->iommu_info;
+	struct vcodec_iommu_drm_info *drm_info = iommu_info->private;
+	struct device *dev = session_info->dev;
+	struct dma_buf_attachment *attach;
+	struct sg_table *sgt;
 
-	mutex_lock(&iommu_info->list_mutex);
 	list_for_each_entry_safe(drm_buffer, n,
-				 &iommu_info->buffer_list, buffer) {
+				 &session_info->buffer_list, buffer) {
 		if (drm_buffer->fd == fd) {
-			mutex_unlock(&iommu_info->list_mutex);
 			return drm_buffer->index;
 		}
 	}
-	mutex_unlock(&iommu_info->list_mutex);
 
 	drm_buffer = kzalloc(sizeof(*drm_buffer), GFP_KERNEL);
 	if (!drm_buffer)
-		return 0;
+		return -ENOMEM;
 
-	vcodec_drm_dump_fd_refs(iommu_info, fd, __func__);
 	drm_buffer->dma_buf = dma_buf_get(fd);
 	drm_buffer->fd = fd;
+	drm_buffer->session_info = session_info;
 
-	atomic_set(&drm_buffer->ref.refcount, 0);
+	kref_init(&drm_buffer->ref);
+
+	mutex_lock(&iommu_info->iommu_mutex);
+	drm_info = session_info->iommu_info->private;
+	if (!drm_info->attached) {
+		if (vcodec_drm_attach_unlock(session_info->iommu_info)) {
+			kfree(drm_buffer);
+			mutex_unlock(&iommu_info->iommu_mutex);
+			return -EFAULT;
+		}
+	}
+
+	attach = dma_buf_attach(drm_buffer->dma_buf, dev);
+	if (IS_ERR(attach)) {
+		kfree(drm_buffer);
+		mutex_unlock(&iommu_info->iommu_mutex);
+		return -EFAULT;
+	}
+
+	get_dma_buf(drm_buffer->dma_buf);
+
+	sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+	if (IS_ERR(sgt))
+		goto fail_detach;
+
+	drm_buffer->iova = sg_dma_address(sgt->sgl);
+	drm_buffer->size = drm_buffer->dma_buf->size;
+
+	drm_buffer->attach = attach;
+	drm_buffer->sgt = sgt;
+
+	mutex_unlock(&iommu_info->iommu_mutex);
+
 	INIT_LIST_HEAD(&drm_buffer->buffer);
-	mutex_lock(&iommu_info->list_mutex);
-	drm_buffer->index = iommu_info->max_idx;
-	list_add_tail(&drm_buffer->buffer, &iommu_info->buffer_list);
-	iommu_info->max_idx++;
-	if (iommu_info->max_idx % 0x100000000L == 0)
-		iommu_info->max_idx = 0;
-	mutex_unlock(&iommu_info->list_mutex);
+	mutex_lock(&session_info->list_mutex);
+	drm_buffer->index = session_info->max_idx;
+	list_add_tail(&drm_buffer->buffer, &session_info->buffer_list);
+	session_info->max_idx++;
+	if (session_info->max_idx % 0x100000000L == 0)
+		session_info->max_idx = 0;
+	mutex_unlock(&session_info->list_mutex);
 
 	return drm_buffer->index;
+
+fail_detach:
+	dev_err(dev, "dmabuf map attach failed\n");
+	kfree(drm_buffer);
+	dma_buf_detach(drm_buffer->dma_buf, attach);
+	dma_buf_put(drm_buffer->dma_buf);
+	mutex_unlock(&iommu_info->iommu_mutex);
+
+	return -EFAULT;
 }
 
 static int vcodec_drm_create(struct vcodec_iommu_info *iommu_info)
@@ -411,6 +511,7 @@ static int vcodec_drm_create(struct vcodec_iommu_info *iommu_info)
 		return -ENOMEM;
 
 	drm_info->domain = iommu_domain_alloc(&platform_bus_type);
+	drm_info->attached = false;
 	if (!drm_info->domain)
 		return -ENOMEM;
 
@@ -446,6 +547,7 @@ static struct vcodec_iommu_ops drm_ops = {
 	.create = vcodec_drm_create,
 	.import = vcodec_drm_import,
 	.free = vcodec_drm_free,
+	.free_fd = vcodec_drm_free_fd,
 	.map_kernel = vcodec_drm_map_kernel,
 	.unmap_kernel = vcodec_drm_unmap_kernel,
 	.map_iommu = vcodec_drm_map_iommu,
@@ -454,6 +556,7 @@ static struct vcodec_iommu_ops drm_ops = {
 	.dump = vcdoec_drm_dump_info,
 	.attach = vcodec_drm_attach,
 	.detach = vcodec_drm_detach,
+	.clear = vcodec_drm_clear_session,
 };
 
 void vcodec_iommu_drm_set_ops(struct vcodec_iommu_info *iommu_info)
