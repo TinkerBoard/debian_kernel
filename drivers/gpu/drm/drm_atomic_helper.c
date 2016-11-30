@@ -1507,7 +1507,7 @@ retry:
 	if (plane == crtc->cursor)
 		state->legacy_cursor_update = true;
 
-	ret = drm_atomic_commit(state);
+	ret = drm_atomic_async_commit(state);
 	if (ret != 0)
 		goto fail;
 
