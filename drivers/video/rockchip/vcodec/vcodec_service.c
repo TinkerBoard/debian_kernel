@@ -86,12 +86,15 @@
 #define PRINT_FUNCTION				0x80000000
 #define PRINT_LINE				0x40000000
 
+#define MHZ					(1000 * 1000)
+#define SIZE_REG(reg)				((reg) * 4)
+
+#define VCODEC_CLOCK_ENABLE	1
+#define EXTRA_INFO_MAGIC	0x4C4A46
+
 static int debug;
 module_param(debug, int, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(debug, "bit switch for vcodec_service debug information");
-
-#define VCODEC_CLOCK_ENABLE	1
-
 /*
  * hardware information organization
  *
@@ -128,7 +131,6 @@ struct extra_info_elem {
 	u32 offset;
 };
 
-#define EXTRA_INFO_MAGIC	0x4C4A46
 
 struct extra_info_for_iommu {
 	u32 magic;
@@ -136,46 +138,64 @@ struct extra_info_for_iommu {
 	struct extra_info_elem elem[20];
 };
 
-#define MHZ					(1000*1000)
-#define SIZE_REG(reg)				((reg)*4)
-
-static struct vcodec_info vcodec_info_set[] = {
-	[0] = {
+static const struct vcodec_info vcodec_info_set[] = {
+	{
 		.hw_id		= VPU_ID_8270,
 		.hw_info	= &hw_vpu_8270,
 		.task_info	= task_vpu,
 		.trans_info	= trans_vpu,
 	},
-	[1] = {
+	{
 		.hw_id		= VPU_ID_4831,
 		.hw_info	= &hw_vpu_4831,
 		.task_info	= task_vpu,
 		.trans_info	= trans_vpu,
 	},
-	[2] = {
+	{
 		.hw_id		= VPU_DEC_ID_9190,
 		.hw_info	= &hw_vpu_9190,
 		.task_info	= task_vpu,
 		.trans_info	= trans_vpu,
 	},
-	[3] = {
+	{
 		.hw_id		= HEVC_ID,
 		.hw_info	= &hw_rkhevc,
 		.task_info	= task_rkv,
 		.trans_info	= trans_rkv,
 	},
-	[4] = {
+	{
 		.hw_id		= RKV_DEC_ID,
 		.hw_info	= &hw_rkvdec,
 		.task_info	= task_rkv,
 		.trans_info	= trans_rkv,
 	},
-	[5] = {
-		.hw_id		= VPU2_ID,
-		.hw_info	= &hw_vpu2,
-		.task_info	= task_vpu2,
-		.trans_info	= trans_vpu2,
+	{
+		.hw_id          = VPU2_ID,
+		.hw_info        = &hw_vpu2,
+		.task_info      = task_vpu2,
+		.trans_info     = trans_vpu2,
 	},
+};
+
+/* Both VPU1 and VPU2 */
+static const struct vcodec_device_info vpu_device_info = {
+	.device_type = VCODEC_DEVICE_TYPE_VPUX,
+	.name = "vpu-service",
+};
+
+static const struct vcodec_device_info vpu_combo_device_info = {
+	.device_type = VCODEC_DEVICE_TYPE_VPUC,
+	.name = "vpu-combo",
+};
+
+static const struct vcodec_device_info hevc_device_info = {
+	.device_type = VCODEC_DEVICE_TYPE_HEVC,
+	.name = "hevc-service",
+};
+
+static const struct vcodec_device_info rkvd_device_info = {
+	.device_type = VCODEC_DEVICE_TYPE_RKVD,
+	.name = "rkvdec",
 };
 
 #define DEBUG
@@ -429,6 +449,8 @@ struct compat_vpu_request {
 
 #define VPU_POWER_OFF_DELAY		(4 * HZ) /* 4s */
 #define VPU_TIMEOUT_DELAY		(2 * HZ) /* 2s */
+
+static void *vcodec_get_drv_data(struct platform_device *pdev);
 
 static void time_record(struct vpu_task_info *task, int is_end)
 {
@@ -708,7 +730,7 @@ static void vpu_service_power_off(struct vpu_service_info *pservice)
 		vpu_service_dump(pservice);
 	}
 
-	pr_info("%s: power off...", dev_name(pservice->dev));
+	dev_info(pservice->dev, "power off...\n");
 
 	udelay(5);
 
@@ -736,7 +758,7 @@ static void vpu_service_power_off(struct vpu_service_info *pservice)
 
 	atomic_add(1, &pservice->power_off_cnt);
 	wake_unlock(&pservice->wake_lock);
-	pr_info("done\n");
+	dev_info(pservice->dev, "power off done\n");
 }
 
 static inline void vpu_queue_power_off_work(struct vpu_service_info *pservice)
@@ -1975,7 +1997,7 @@ static int vpu_service_check_hw(struct vpu_subdev_data *data)
 	pr_info("checking hw id %x\n", hw_id);
 	data->hw_info = NULL;
 	for (i = 0; i < ARRAY_SIZE(vcodec_info_set); i++) {
-		struct vcodec_info *info = &vcodec_info_set[i];
+		const struct vcodec_info *info = &vcodec_info_set[i];
 
 		if (hw_id == info->hw_id) {
 			data->hw_id = info->hw_id;
@@ -2187,14 +2209,18 @@ static int vcodec_subdev_probe(struct platform_device *pdev,
 	struct device *dev = &pdev->dev;
 	char *name = (char *)dev_name(dev);
 	struct device_node *np = pdev->dev.of_node;
-	struct vpu_subdev_data *data =
-		devm_kzalloc(dev, sizeof(struct vpu_subdev_data), GFP_KERNEL);
-	u32 iommu_en = 0;
+	struct vpu_subdev_data *data = NULL;
+	struct device_node *sub_np = NULL;
+	bool iommu_en = false;
 	char mmu_dev_dts_name[40];
 
-	of_property_read_u32(np, "iommu_enabled", &iommu_en);
+	dev_info(dev, "probe device");
 
-	pr_info("probe device %s\n", dev_name(dev));
+	of_property_read_bool(np, "iommu_enabled", &iommu_en);
+
+	data = devm_kzalloc(dev, sizeof(struct vpu_subdev_data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
 
 	data->pservice = pservice;
 	data->dev = dev;
@@ -2463,23 +2489,40 @@ static int vcodec_probe(struct platform_device *pdev)
 	struct resource *res = NULL;
 	struct device *dev = &pdev->dev;
 	struct device_node *np = pdev->dev.of_node;
-	struct vpu_service_info *pservice =
-		devm_kzalloc(dev, sizeof(struct vpu_service_info), GFP_KERNEL);
+	struct vpu_service_info *pservice = NULL;
+	struct vcodec_device_info *driver_data;
 
+	pservice = devm_kzalloc(dev, sizeof(struct vpu_service_info),
+				GFP_KERNEL);
+	if (!pservice)
+		return -ENOMEM;
 	pservice->dev = dev;
+
+	driver_data = vcodec_get_drv_data(pdev);
+	if (!driver_data)
+		return -EINVAL;
 
 	vcodec_read_property(np, pservice);
 	vcodec_init_drvdata(pservice);
 
 	/* Underscore for label, hyphens for name */
-	if (strncmp(pservice->name, "hevc-service", 12) == 0)
-		pservice->dev_id = VCODEC_DEVICE_ID_HEVC;
-	else if (strncmp(pservice->name, "vpu-service", 11) == 0)
+	switch (driver_data->device_type) {
+	case VCODEC_DEVICE_TYPE_VPUX:
 		pservice->dev_id = VCODEC_DEVICE_ID_VPU;
-	else if (strncmp(pservice->name, "rkvdec", 6) == 0)
-		pservice->dev_id = VCODEC_DEVICE_ID_RKVDEC;
-	else
+		break;
+	case VCODEC_DEVICE_TYPE_VPUC:
 		pservice->dev_id = VCODEC_DEVICE_ID_COMBO;
+		break;
+	case VCODEC_DEVICE_TYPE_HEVC:
+		pservice->dev_id = VCODEC_DEVICE_ID_HEVC;
+		break;
+	case VCODEC_DEVICE_TYPE_RKVD:
+		pservice->dev_id = VCODEC_DEVICE_ID_RKVDEC;
+		break;
+	default:
+		dev_err(dev, "unsupported device type\n");
+		return -ENODEV;
+	}
 
 	if (0 > vpu_get_clk(pservice))
 		goto err;
@@ -2559,14 +2602,38 @@ static void vcodec_shutdown(struct platform_device *pdev)
 }
 
 static const struct of_device_id vcodec_service_dt_ids[] = {
-	{.compatible = "rockchip,vpu_service",},
-	{.compatible = "rockchip,hevc_service",},
-	{.compatible = "rockchip,vpu_combo",},
-	{.compatible = "rockchip,rkvdec",},
+	{
+		.compatible = "rockchip,vpu_service",
+		.data = &vpu_device_info,
+	},
+	{
+		.compatible = "rockchip,hevc_service",
+		.data = &hevc_device_info,
+	},
+	{
+		.compatible = "rockchip,vpu_combo",
+		.data = &vpu_combo_device_info,
+	},
+	{
+		.compatible = "rockchip,rkvdec",
+		.data = &rkvd_device_info,
+	},
 	{},
 };
 
 MODULE_DEVICE_TABLE(of, vcodec_service_dt_ids);
+
+static void *vcodec_get_drv_data(struct platform_device *pdev)
+{
+	struct vcodec_device_info *driver_data = NULL;
+	const struct of_device_id *match;
+
+	match = of_match_node(vcodec_service_dt_ids, pdev->dev.of_node);
+	if (match)
+		driver_data = (struct vcodec_device_info *)match->data;
+
+	return driver_data;
+}
 
 static struct platform_driver vcodec_driver = {
 	.probe = vcodec_probe,
