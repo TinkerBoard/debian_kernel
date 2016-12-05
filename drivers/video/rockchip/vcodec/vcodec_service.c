@@ -725,7 +725,7 @@ static void vpu_service_power_off(struct vpu_service_info *pservice)
 		vpu_service_dump(pservice);
 	}
 
-	dev_info(pservice->dev, "power off...\n");
+	dev_dbg(pservice->dev, "power off...\n");
 
 	udelay(5);
 
@@ -751,7 +751,7 @@ static void vpu_service_power_off(struct vpu_service_info *pservice)
 
 	atomic_add(1, &pservice->power_off_cnt);
 	wake_unlock(&pservice->wake_lock);
-	dev_info(pservice->dev, "power off done\n");
+	dev_dbg(pservice->dev, "power off done\n");
 }
 
 static inline void vpu_queue_power_off_work(struct vpu_service_info *pservice)
@@ -792,7 +792,7 @@ static void vpu_service_power_on(struct vpu_subdev_data *data,
 	if (!ret)
 		return;
 
-	pr_info("%s: power on\n", dev_name(pservice->dev));
+	dev_dbg(pservice->dev, "power on\n");
 
 #define BIT_VCODEC_CLK_SEL	(1<<10)
 	if (of_machine_is_compatible("rockchip,rk3126"))
@@ -966,14 +966,14 @@ static int vcodec_bufid_to_iova(struct vpu_subdev_data *data,
 
 	if (tbl == NULL || size <= 0) {
 		dev_err(pservice->dev, "input arguments invalidate\n");
-		return -1;
+		return -EINVAL;
 	}
 
 	if (task->get_fmt)
 		type = task->get_fmt(reg->reg);
 	else {
-		pr_err("invalid task with NULL get_fmt\n");
-		return -1;
+		dev_err(pservice->dev, "invalid task with NULL get_fmt\n");
+		return -EINVAL;
 	}
 
 	for (i = 0; i < size; i++) {
@@ -1132,6 +1132,7 @@ static int vcodec_reg_address_translate(struct vpu_subdev_data *data,
 					struct vpu_reg *reg,
 					struct extra_info_for_iommu *ext_inf)
 {
+	struct vpu_service_info *pservice = data->pservice;
 	enum FORMAT_TYPE type = reg->task->get_fmt(reg->reg);
 
 	if (type < FMT_TYPE_BUTT) {
@@ -1142,8 +1143,9 @@ static int vcodec_reg_address_translate(struct vpu_subdev_data *data,
 		return vcodec_bufid_to_iova(data, session, tbl, size, reg,
 					    ext_inf);
 	}
-	pr_err("found invalid format type!\n");
-	return -1;
+
+	dev_err(pservice->dev, "found invalid format type!\n");
+	return -EINVAL;
 }
 
 static void get_reg_freq(struct vpu_subdev_data *data, struct vpu_reg *reg)
@@ -1182,8 +1184,8 @@ static struct vpu_reg *reg_init(struct vpu_subdev_data *data,
 
 	vpu_debug_enter();
 
-	if (NULL == reg) {
-		vpu_err("error: kmalloc failed\n");
+	if (!reg) {
+		vpu_err("error: kzalloc failed\n");
 		return NULL;
 	}
 
@@ -1221,7 +1223,8 @@ static struct vpu_reg *reg_init(struct vpu_subdev_data *data,
 
 		vpu_err("error: translate reg address failed, dumping regs\n");
 		for (i = 0; i < size >> 2; i++)
-			pr_err("reg[%02d]: %08x\n", i, *((u32 *)src + i));
+			dev_err(pservice->dev, "reg[%02d]: %08x\n",
+				i, *((u32 *)src + i));
 
 		kfree(reg);
 		return NULL;
@@ -1637,7 +1640,9 @@ static void try_set_reg(struct vpu_subdev_data *data)
 					can_set = 1;
 				} break;
 			default: {
-				pr_err("undefined reg type %d\n", reg->type);
+				dev_err(pservice->dev,
+					"undefined reg type %d\n",
+					reg->type);
 			} break;
 			}
 		}
@@ -1808,10 +1813,11 @@ static long vpu_service_ioctl(struct file *filp, unsigned int cmd,
 				atomic_set(&session->task_running, 0);
 				atomic_sub(task_running,
 					   &pservice->total_running);
-				pr_err("%d task is running but not return, reset hardware...",
+				dev_err(pservice->dev,
+					"%d task is running but not return, reset hardware...",
 				       task_running);
 				vpu_reset(data);
-				pr_err("done\n");
+				dev_err(pservice->dev, "done\n");
 			}
 			vpu_service_session_clear(data, session);
 			mutex_unlock(&pservice->lock);
@@ -1958,10 +1964,11 @@ static long compat_vpu_service_ioctl(struct file *filp, unsigned int cmd,
 				atomic_set(&session->task_running, 0);
 				atomic_sub(task_running,
 					   &pservice->total_running);
-				pr_err("%d task is running but not return, reset hardware...",
-				       task_running);
+				dev_err(pservice->dev,
+					"%d task is running but not return, reset hardware...",
+					task_running);
 				vpu_reset(data);
-				pr_err("done\n");
+				dev_err(pservice->dev, "done\n");
 			}
 			vpu_service_session_clear(data, session);
 			mutex_unlock(&pservice->lock);
@@ -1996,12 +2003,14 @@ static long compat_vpu_service_ioctl(struct file *filp, unsigned int cmd,
 
 static int vpu_service_check_hw(struct vpu_subdev_data *data)
 {
+	struct vpu_service_info *pservice = data->pservice;
 	int ret = -EINVAL, i = 0;
 	u32 hw_id = readl_relaxed(data->regs);
 
 	hw_id = (hw_id >> 16) & 0xFFFF;
-	pr_info("checking hw id %x\n", hw_id);
+	dev_info(pservice->dev, "checking hw id %x\n", hw_id);
 	data->hw_info = NULL;
+
 	for (i = 0; i < ARRAY_SIZE(vcodec_info_set); i++) {
 		const struct vcodec_info *info = &vcodec_info_set[i];
 
@@ -2022,11 +2031,12 @@ static int vpu_service_open(struct inode *inode, struct file *filp)
 	struct vpu_subdev_data *data = container_of(
 			inode->i_cdev, struct vpu_subdev_data, cdev);
 	struct vpu_service_info *pservice = data->pservice;
-	struct vpu_session *session = kmalloc(sizeof(*session), GFP_KERNEL);
+	struct vpu_session *session = NULL;
 
 	vpu_debug_enter();
 
-	if (NULL == session) {
+	session = kzalloc(sizeof(*session), GFP_KERNEL);
+	if (!session) {
 		vpu_err("error: unable to allocate memory for vpu_session.");
 		return -ENOMEM;
 	}
@@ -2046,7 +2056,7 @@ static int vpu_service_open(struct inode *inode, struct file *filp)
 	filp->private_data = (void *)session;
 	mutex_unlock(&pservice->lock);
 
-	pr_debug("dev opened\n");
+	dev_dbg(pservice->dev, "dev opened\n");
 	vpu_debug_leave();
 	return nonseekable_open(inode, filp);
 }
@@ -2065,8 +2075,9 @@ static int vpu_service_release(struct inode *inode, struct file *filp)
 
 	task_running = atomic_read(&session->task_running);
 	if (task_running) {
-		pr_err("error: session %d still has %d task running when closing\n",
-		       session->pid, task_running);
+		dev_err(pservice->dev,
+			"error: session %d still has %d task running when closing\n",
+			session->pid, task_running);
 		msleep(50);
 	}
 	wake_up(&session->wait);
@@ -2081,7 +2092,7 @@ static int vpu_service_release(struct inode *inode, struct file *filp)
 	filp->private_data = NULL;
 	mutex_unlock(&pservice->lock);
 
-	pr_debug("dev closed\n");
+	dev_info(pservice->dev, "closed\n");
 	vpu_debug_leave();
 	return 0;
 }
@@ -2450,17 +2461,17 @@ static void vcodec_read_property(struct device_node *np,
 	pservice->rst_v = devm_reset_control_get(pservice->dev, "video");
 
 	if (IS_ERR_OR_NULL(pservice->rst_a)) {
-		pr_warn("No aclk reset resource define\n");
+		dev_warn(pservice->dev, "No aclk reset resource define\n");
 		pservice->rst_a = NULL;
 	}
 
 	if (IS_ERR_OR_NULL(pservice->rst_h)) {
-		pr_warn("No hclk reset resource define\n");
+		dev_warn(pservice->dev, "No hclk reset resource define\n");
 		pservice->rst_h = NULL;
 	}
 
 	if (IS_ERR_OR_NULL(pservice->rst_v)) {
-		pr_warn("No core reset resource define\n");
+		dev_warn(pservice->dev, "No core reset resource define\n");
 		pservice->rst_v = NULL;
 	}
 #endif
@@ -2574,12 +2585,12 @@ static int vcodec_probe(struct platform_device *pdev)
 
 	vpu_service_power_off(pservice);
 
-	pr_info("init success\n");
+	dev_info(dev, "init success\n");
 
 	return 0;
 
 err:
-	pr_info("init failed\n");
+	dev_info(dev, "init failed\n");
 	vpu_service_power_off(pservice);
 	wake_lock_destroy(&pservice->wake_lock);
 
@@ -2602,7 +2613,7 @@ static void vcodec_shutdown(struct platform_device *pdev)
 	struct vpu_subdev_data *data = platform_get_drvdata(pdev);
 	struct vpu_service_info *pservice = data->pservice;
 
-	dev_info(&pdev->dev, "%s IN\n", __func__);
+	dev_info(&pdev->dev, "vcodec shutdown");
 
 	mutex_lock(&pservice->shutdown_lock);
 	atomic_set(&pservice->service_on, 0);
