@@ -609,7 +609,7 @@ static int vpu_get_clk(struct vpu_service_info *pservice)
 #endif
 }
 
-static void vpu_reset(struct vpu_subdev_data *data)
+static void _vpu_reset(struct vpu_subdev_data *data)
 {
 	struct vpu_service_info *pservice = data->pservice;
 	enum pmu_idle_req type = IDLE_REQ_VIDEO;
@@ -652,6 +652,13 @@ static void vpu_reset(struct vpu_subdev_data *data)
 	if (of_machine_is_compatible("rockchip,rk3288"))
 		rockchip_pmu_idle_request(pservice->dev, false);
 #endif
+}
+
+static void vpu_reset(struct vpu_subdev_data *data)
+{
+	struct vpu_service_info *pservice = data->pservice;
+
+	_vpu_reset(data);
 	if (data->mmu_dev && test_bit(MMU_ACTIVATED, &data->state)) {
 		if (atomic_read(&pservice->enabled)) {
 			/* Need to reset iommu */
@@ -732,9 +739,11 @@ static void vpu_service_power_off(struct vpu_service_info *pservice)
 	list_for_each_entry_safe(data, n, &pservice->subdev_list, lnk_service) {
 		if (data->mmu_dev && test_bit(MMU_ACTIVATED, &data->state)) {
 			clear_bit(MMU_ACTIVATED, &data->state);
+			vcodec_iommu_detach(data->iommu_info);
 		}
 	}
 	pservice->curr_mode = VCODEC_RUNNING_MODE_NONE;
+	pm_runtime_put(pservice->dev);
 #if VCODEC_CLOCK_ENABLE
 		if (pservice->pd_video)
 			clk_disable_unprepare(pservice->pd_video);
@@ -747,7 +756,6 @@ static void vpu_service_power_off(struct vpu_service_info *pservice)
 		if (pservice->clk_cabac)
 			clk_disable_unprepare(pservice->clk_cabac);
 #endif
-	pm_runtime_put(pservice->dev);
 
 	atomic_add(1, &pservice->power_off_cnt);
 	wake_unlock(&pservice->wake_lock);
@@ -789,8 +797,13 @@ static void vpu_service_power_on(struct vpu_subdev_data *data,
 		pservice->last = now;
 	}
 	ret = atomic_add_unless(&pservice->enabled, 1, 1);
-	if (!ret)
+	if (!ret) {
+		if (data->mmu_dev && !test_bit(MMU_ACTIVATED, &data->state)) {
+			set_bit(MMU_ACTIVATED, &data->state);
+			vcodec_iommu_attach(data->iommu_info);
+		}
 		return;
+	}
 
 	dev_dbg(pservice->dev, "power on\n");
 
@@ -2213,7 +2226,7 @@ int vcodec_sysmmu_fault_hdl(struct device *dev,
 		pr_alert("vcodec, page fault occur, reset hw\n");
 
 		/* reg->reg[101] = 1; */
-		vpu_reset(data);
+		_vpu_reset(data);
 	}
 
 	return 0;
@@ -2291,6 +2304,8 @@ static int vcodec_subdev_probe(struct platform_device *pdev,
 			(dev, vcodec_sysmmu_fault_hdl);
 	}
 
+	dev_info(dev, "vpu mmu dec %p\n", data->mmu_dev);
+
 	clear_bit(MMU_ACTIVATED, &data->state);
 	vpu_service_power_on(data, pservice);
 
@@ -2345,8 +2360,11 @@ static int vcodec_subdev_probe(struct platform_device *pdev,
 	atomic_set(&data->enc_dev.irq_count_pp, 0);
 
 	vcodec_enter_mode(data);
+	of_property_read_u32(np, "allocator", (u32 *)&pservice->alloc_type);
 	data->iommu_info = vcodec_iommu_info_create(dev, data->mmu_dev,
 						    pservice->alloc_type);
+	dev_info(dev, "allocator is %s\n", pservice->alloc_type == 1 ? "drm" :
+		(pservice->alloc_type == 2 ? "ion" : "null"));
 	get_hw_info(data);
 	pservice->auto_freq = true;
 

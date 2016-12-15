@@ -181,7 +181,7 @@ void vcodec_iommu_clear(struct vcodec_iommu_info *iommu_info,
 
 	session_info = vcodec_iommu_get_session_info(iommu_info, session);
 
-	if (!iommu_info || !iommu_info->ops->dump || !session_info)
+	if (!iommu_info || !iommu_info->ops->clear || !session_info)
 		return;
 
 	iommu_info->ops->clear(session_info);
