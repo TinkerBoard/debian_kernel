@@ -129,7 +129,11 @@ struct vpu_task_info {
 	struct timeval start;
 	struct timeval end;
 
-	/* input stream */
+	/*
+	 * input stream register
+	 * use for map/unmap drm buffer for avoiding
+	 * cache sync issue
+	 */
 	int reg_rlc;
 	/*
 	 * task enable register

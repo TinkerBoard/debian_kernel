@@ -31,7 +31,7 @@
 #include "vcodec_iommu_ops.h"
 
 struct vcodec_ion_buffer {
-	struct list_head buffer;
+	struct list_head list;
 	struct ion_handle *handle;
 	int index;
 };
@@ -42,12 +42,13 @@ struct vcodec_iommu_ion_info {
 };
 
 static struct vcodec_ion_buffer *
-vcodec_ion_get_buffer(struct vcodec_iommu_session_info *session_info, int idx)
+vcodec_ion_get_buffer_no_lock(struct vcodec_iommu_session_info *session_info,
+			      int idx)
 {
 	struct vcodec_ion_buffer *ion_buffer = NULL, *n;
 
 	list_for_each_entry_safe(ion_buffer, n,
-				 &session_info->buffer_list, buffer) {
+				 &session_info->buffer_list, list) {
 		if (ion_buffer->index == idx)
 			return ion_buffer;
 	}
@@ -60,7 +61,6 @@ vcodec_ion_clear_session(struct vcodec_iommu_session_info *session_info)
 {
 	/* do nothing */
 }
-
 
 static int vcodec_ion_attach(struct vcodec_iommu_info *iommu_info)
 {
@@ -117,7 +117,7 @@ vcodec_ion_free(struct vcodec_iommu_session_info *session_info, int idx)
 	struct vcodec_ion_buffer *ion_buffer;
 
 	mutex_lock(&session_info->list_mutex);
-	ion_buffer = vcodec_ion_get_buffer(session_info, idx);
+	ion_buffer = vcodec_ion_get_buffer_no_lock(session_info, idx);
 
 	if (!ion_buffer) {
 		mutex_unlock(&session_info->list_mutex);
@@ -126,7 +126,7 @@ vcodec_ion_free(struct vcodec_iommu_session_info *session_info, int idx)
 		return -EINVAL;
 	}
 
-	list_del_init(&ion_buffer->buffer);
+	list_del_init(&ion_buffer->list);
 	mutex_unlock(&session_info->list_mutex);
 	kfree(ion_buffer);
 
@@ -141,7 +141,7 @@ vcodec_ion_unmap_iommu(struct vcodec_iommu_session_info *session_info, int idx)
 	struct vcodec_iommu_ion_info *ion_info = iommu_info->private;
 
 	mutex_lock(&session_info->list_mutex);
-	ion_buffer = vcodec_ion_get_buffer(session_info, idx);
+	ion_buffer = vcodec_ion_get_buffer_no_lock(session_info, idx);
 	mutex_unlock(&session_info->list_mutex);
 
 	if (!ion_buffer) {
@@ -157,7 +157,7 @@ vcodec_ion_unmap_iommu(struct vcodec_iommu_session_info *session_info, int idx)
 
 static int
 vcodec_ion_map_iommu(struct vcodec_iommu_session_info *session_info, int idx,
-				unsigned long *iova, unsigned long *size)
+		     unsigned long *iova, unsigned long *size)
 {
 	struct vcodec_ion_buffer *ion_buffer;
 	struct device *dev = session_info->dev;
@@ -166,11 +166,10 @@ vcodec_ion_map_iommu(struct vcodec_iommu_session_info *session_info, int idx,
 	int ret = 0;
 
 	/* Force to flush iommu table */
-	//if (of_machine_is_compatible("rockchip,rk3288"))
 	rockchip_iovmm_invalidate_tlb(session_info->dev);
 
 	mutex_lock(&session_info->list_mutex);
-	ion_buffer = vcodec_ion_get_buffer(session_info, idx);
+	ion_buffer = vcodec_ion_get_buffer_no_lock(session_info, idx);
 	mutex_unlock(&session_info->list_mutex);
 
 	if (!ion_buffer) {
@@ -184,19 +183,19 @@ vcodec_ion_map_iommu(struct vcodec_iommu_session_info *session_info, int idx,
 				    ion_buffer->handle, iova, size);
 	else
 		ret = ion_phys(ion_info->ion_client, ion_buffer->handle,
-			       iova, (size_t *) size);
+			       iova, size);
 
 	return ret;
 }
 
 static int
 vcodec_ion_unmap_kernel(struct vcodec_iommu_session_info *session_info,
-				   int idx)
+			int idx)
 {
 	struct vcodec_ion_buffer *ion_buffer;
 
 	mutex_lock(&session_info->list_mutex);
-	ion_buffer = vcodec_ion_get_buffer(session_info, idx);
+	ion_buffer = vcodec_ion_get_buffer_no_lock(session_info, idx);
 	mutex_unlock(&session_info->list_mutex);
 
 	if (!ion_buffer) {
@@ -218,7 +217,7 @@ vcodec_ion_map_kernel(struct vcodec_iommu_session_info *session_info, int idx)
 	rockchip_iovmm_invalidate_tlb(session_info->dev);
 
 	mutex_lock(&session_info->list_mutex);
-	ion_buffer = vcodec_ion_get_buffer(session_info, idx);
+	ion_buffer = vcodec_ion_get_buffer_no_lock(session_info, idx);
 	mutex_unlock(&session_info->list_mutex);
 
 	if (!ion_buffer) {
@@ -243,12 +242,12 @@ vcodec_ion_import(struct vcodec_iommu_session_info *session_info, int fd)
 
 	ion_buffer->handle = ion_import_dma_buf(ion_info->ion_client, fd);
 
-	INIT_LIST_HEAD(&ion_buffer->buffer);
+	INIT_LIST_HEAD(&ion_buffer->list);
 	mutex_lock(&session_info->list_mutex);
 	ion_buffer->index = session_info->max_idx;
-	list_add_tail(&ion_buffer->buffer, &session_info->buffer_list);
+	list_add_tail(&ion_buffer->list, &session_info->buffer_list);
 	session_info->max_idx++;
-	if (session_info->max_idx % 0x100000000L == 0)
+	if ((session_info->max_idx & 0xfffffff) == 0)
 		session_info->max_idx = 0;
 	mutex_unlock(&session_info->list_mutex);
 
@@ -289,6 +288,12 @@ static struct vcodec_iommu_ops ion_ops = {
 	.clear = vcodec_ion_clear_session,
 };
 
+/*
+ * we do not manage the ref number ourselves,
+ * since ion will help us to do that. what we
+ * need to do is just map/unmap and import/free
+ * every time
+ */
 void vcodec_iommu_ion_set_ops(struct vcodec_iommu_info *iommu_info)
 {
 	if (!iommu_info)

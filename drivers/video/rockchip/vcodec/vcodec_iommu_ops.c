@@ -223,16 +223,22 @@ vcodec_iommu_info_create(struct device *dev,
 	INIT_LIST_HEAD(&iommu_info->session_list);
 	mutex_init(&iommu_info->list_mutex);
 	mutex_init(&iommu_info->iommu_mutex);
-	if (alloc_type == ALLOCATOR_USE_DRM)
+	switch (alloc_type) {
+#ifdef CONFIG_DRM
+	case ALLOCATOR_USE_DRM:
 		vcodec_iommu_drm_set_ops(iommu_info);
-#ifdef CONFIG_ION
-	else
-		vcodec_iommu_ion_set_ops(iommu_info);
-#else
-	/* Unpported allocator */
-	else
-		iommu_info->ops = NULL;
+		break;
 #endif
+#ifdef CONFIG_ION
+	case ALLOCATOR_USE_ION:
+		vcodec_iommu_ion_set_ops(iommu_info);
+		break;
+#endif
+	default:
+		iommu_info->ops = NULL;
+		break;
+	}
+
 	iommu_info->mmu_dev = mmu_dev;
 
 	vcodec_iommu_create(iommu_info);

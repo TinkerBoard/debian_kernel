@@ -19,8 +19,8 @@
 #include <linux/platform_device.h>
 #include "vcodec_service.h"
 
+#define ALLOCATOR_USE_ION		0x00000000
 #define ALLOCATOR_USE_DRM		0x00000001
-#define ALLOCATOR_USE_ION		0x00000002
 
 #define DEBUG_IOMMU_OPS_DUMP	0x00020000
 
@@ -85,9 +85,11 @@ struct vcodec_iommu_info {
 	void *private;
 };
 
-void vcodec_iommu_drm_set_ops (struct vcodec_iommu_info *iommu_info);
+#ifdef CONFIG_DRM
+void vcodec_iommu_drm_set_ops(struct vcodec_iommu_info *iommu_info);
+#endif
 #ifdef CONFIG_ION
-void vcodec_iommu_ion_set_ops (struct vcodec_iommu_info *iommu_info);
+void vcodec_iommu_ion_set_ops(struct vcodec_iommu_info *iommu_info);
 #endif
 
 struct vcodec_iommu_info *vcodec_iommu_info_create(struct device *dev,

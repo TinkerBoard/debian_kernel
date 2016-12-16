@@ -790,7 +790,8 @@ static void vpu_service_power_on(struct vpu_subdev_data *data,
 	int ret;
 	ktime_t now = ktime_get();
 
-	if (ktime_to_ns(ktime_sub(now, pservice->last)) > 0) {
+	if (ktime_to_ns(ktime_sub(now, pservice->last)) > NSEC_PER_SEC ||
+	    atomic_read(&pservice->power_on_cnt)) {
 		/* NSEC_PER_SEC */
 		cancel_delayed_work_sync(&pservice->power_off_work);
 		vpu_queue_power_off_work(pservice);
@@ -996,6 +997,10 @@ static int vcodec_bufid_to_iova(struct vpu_subdev_data *data,
 		if (usr_fd == 0)
 			continue;
 
+		/*
+		 * for avoiding cache sync issue, we need to map/unmap
+		 * input buffer every time. FIX ME, if it is unnecessary
+		 */
 		if (task->reg_rlc == tbl[i])
 			vcodec_iommu_free_fd(data->iommu_info, session, usr_fd);
 		/*
@@ -2422,6 +2427,7 @@ static void vcodec_subdev_remove(struct vpu_subdev_data *data)
 	struct vpu_service_info *pservice = data->pservice;
 
 	vcodec_iommu_info_destroy(data->iommu_info);
+	data->iommu_info = NULL;
 
 	mutex_lock(&pservice->lock);
 	cancel_delayed_work_sync(&pservice->power_off_work);
@@ -2523,7 +2529,7 @@ static void vcodec_init_drvdata(struct vpu_service_info *pservice)
 	INIT_DELAYED_WORK(&pservice->power_off_work, vpu_power_off_work);
 	pservice->last.tv64 = 0;
 
-	pservice->alloc_type = 1;
+	pservice->alloc_type = 0;
 }
 
 static int vcodec_probe(struct platform_device *pdev)
@@ -2797,13 +2803,6 @@ static irqreturn_t vdpu_irq(int irq, void *dev_id)
 
 		writel_relaxed(0, dev->regs + task->reg_irq);
 
-		/*
-		 * NOTE: rkvdec need to reset after each task to avoid timeout
-		 *       error on H.264 switch to H.265
-		 */
-		//if (data->mode == VCODEC_RUNNING_MODE_RKVDEC)
-		//	writel(0x100000, dev->regs + task->reg_irq);
-
 		/* set clock gating to save power */
 		writel(task->gating_mask, dev->regs + task->reg_en);
 
@@ -2854,10 +2853,8 @@ static irqreturn_t vdpu_isr(int irq, void *dev_id)
 		} else {
 			reg_from_run_to_done(data, pservice->reg_codec);
 			/* avoid vpu timeout and can't recover problem */
-			if (data->mode == VCODEC_RUNNING_MODE_VPU) {
-			//	vpu_err("isr reset... ...\n");
+			if (data->mode == VCODEC_RUNNING_MODE_VPU)
 				VDPU_SOFT_RESET(data->regs);
-			}
 		}
 	}
 
