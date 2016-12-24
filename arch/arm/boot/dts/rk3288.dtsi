@@ -1152,6 +1152,9 @@
 		power-domains = <&power RK3288_PD_GPU>;
 		status = "disabled";
 
+		cpu-limit-freq = <1416000>;
+		gpu-limit-freq = <600000>;
+
 		gpu_power_model: power_model {
 			compatible = "arm,mali-simple-power-model";
 			voltage = <950>;
