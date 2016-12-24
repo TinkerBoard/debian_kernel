@@ -26,6 +26,7 @@
 #endif
 
 #include <linux/clk.h>
+#include <linux/cpufreq.h>
 #include <linux/devfreq.h>
 #ifdef CONFIG_DEVFREQ_THERMAL
 #include <linux/devfreq_cooling.h>
@@ -46,6 +47,11 @@
 #define dev_pm_opp_find_freq_ceil opp_find_freq_ceil
 #endif /* Linux >= 3.13 */
 
+#define MAX_CLUSTERS	2
+
+static struct cpumask allowed_cpus[MAX_CLUSTERS];
+static unsigned int cpu_max_freq[MAX_CLUSTERS] = {UINT_MAX, UINT_MAX};
+static unsigned int cpu_clipped_freq[MAX_CLUSTERS] = {UINT_MAX, UINT_MAX};
 
 static int
 kbase_devfreq_target(struct device *dev, unsigned long *target_freq, u32 flags)
@@ -192,6 +198,63 @@ static void kbase_devfreq_exit(struct device *dev)
 	kbase_devfreq_term_freq_table(kbdev);
 }
 
+static int kbase_devfreq_trans_notifier(struct notifier_block *nb,
+					unsigned long val, void *data)
+{
+	struct kbase_device *kbdev = container_of(nb, struct kbase_device,
+						  gpu_trans_nb);
+	struct devfreq_freqs *freqs = data;
+	unsigned int new_rate = (unsigned int)(freqs->new / 1000);
+	int i, cpu;
+
+	if (!kbdev)
+		goto out;
+
+	dev_dbg(kbdev->dev, "%lu-->%lu cpu limit=%u, gpu limit=%u\n",
+		freqs->old, freqs->new,
+		kbdev->cpu_limit_freq,
+		kbdev->gpu_limit_freq);
+
+	if (val == DEVFREQ_PRECHANGE &&
+	    new_rate >= kbdev->gpu_limit_freq) {
+		for (i = 0; i < MAX_CLUSTERS; i++) {
+			if (cpu_max_freq[i] > kbdev->cpu_limit_freq) {
+				/* change policy->max right now */
+				cpu_clipped_freq[i] = kbdev->cpu_limit_freq;
+				if (cpumask_empty(&allowed_cpus[i]))
+					goto out;
+				cpu = cpumask_any_and(&allowed_cpus[i],
+						      cpu_online_mask);
+				if (cpu >= nr_cpu_ids)
+					goto out;
+				cpufreq_update_policy(cpu);
+			} else {
+				/* avoid someone changing policy->max */
+				cpu_clipped_freq[i] = kbdev->cpu_limit_freq;
+			}
+		}
+	} else if (val == DEVFREQ_POSTCHANGE &&
+		   new_rate < kbdev->gpu_limit_freq) {
+		for (i = 0; i < MAX_CLUSTERS; i++) {
+			if (cpu_clipped_freq[i] != UINT_MAX) {
+				/* recover  policy->max  right now */
+				cpu_clipped_freq[i] = UINT_MAX;
+				if (cpumask_empty(&allowed_cpus[i]))
+					goto out;
+				cpu = cpumask_any_and(&allowed_cpus[i],
+						      cpu_online_mask);
+				if (cpu >= nr_cpu_ids)
+					goto out;
+				cpufreq_update_policy(cpu);
+			}
+		}
+	}
+
+out:
+
+	return NOTIFY_OK;
+}
+
 int kbase_devfreq_init(struct kbase_device *kbdev)
 {
 	struct devfreq_dev_profile *dp;
@@ -227,6 +290,23 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 			"Failed to register OPP notifier (%d)\n", err);
 		goto opp_notifier_failed;
 	}
+
+	if (of_property_read_u32(kbdev->dev->of_node, "cpu-limit-freq",
+				 &kbdev->cpu_limit_freq)) {
+		dev_err(kbdev->dev, "Failed to get prop cpu-limit-freq\n");
+		kbdev->cpu_limit_freq = UINT_MAX;
+	}
+	if (of_property_read_u32(kbdev->dev->of_node, "gpu-limit-freq",
+				 &kbdev->gpu_limit_freq)) {
+		dev_err(kbdev->dev, "Failed to get prop gpu-limit-freq\n");
+		kbdev->gpu_limit_freq = UINT_MAX;
+	}
+
+	kbdev->gpu_trans_nb.notifier_call = kbase_devfreq_trans_notifier;
+	err = devfreq_register_notifier(kbdev->devfreq, &kbdev->gpu_trans_nb,
+					DEVFREQ_TRANSITION_NOTIFIER);
+	if (err)
+		dev_err(kbdev->dev, "register gpu trans notifier (%d)\n", err);
 
 #ifdef CONFIG_DEVFREQ_THERMAL
 	err = kbase_power_model_simple_init(kbdev);
@@ -290,3 +370,57 @@ void kbase_devfreq_term(struct kbase_device *kbdev)
 	else
 		kbdev->devfreq = NULL;
 }
+
+static int kbase_cpufreq_policy_notifier(struct notifier_block *nb,
+					 unsigned long val, void *data)
+{
+	struct cpufreq_policy *policy = data;
+	int i;
+
+	if (val == CPUFREQ_START) {
+		for (i = 0; i < MAX_CLUSTERS; i++) {
+			if (cpumask_test_cpu(policy->cpu,
+					     &allowed_cpus[i]))
+				break;
+			if (cpumask_empty(&allowed_cpus[i])) {
+				cpumask_copy(&allowed_cpus[i],
+					     policy->related_cpus);
+				break;
+			}
+		}
+		goto out;
+	}
+
+	if (val != CPUFREQ_ADJUST)
+		goto out;
+
+	for (i = 0; i < MAX_CLUSTERS; i++) {
+		if (cpumask_test_cpu(policy->cpu, &allowed_cpus[i]))
+			break;
+	}
+	if (i == MAX_CLUSTERS)
+		goto out;
+
+	if (policy->max > cpu_clipped_freq[i])
+		cpufreq_verify_within_limits(policy, 0, cpu_clipped_freq[i]);
+
+	cpu_max_freq[i] = policy->max;
+	pr_debug("cluster%d max=%u, gpu limit=%u\n", i, cpu_max_freq[i],
+		 cpu_clipped_freq[i]);
+
+out:
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block notifier_policy_block = {
+	.notifier_call = kbase_cpufreq_policy_notifier
+};
+
+static int __init kbase_cpufreq_init(void)
+{
+	return cpufreq_register_notifier(&notifier_policy_block,
+					 CPUFREQ_POLICY_NOTIFIER);
+}
+
+subsys_initcall(kbase_cpufreq_init);

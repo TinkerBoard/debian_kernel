@@ -1050,6 +1050,10 @@ struct kbase_device {
 #endif
 	/* Boolean indicating if an IRQ flush during reset is in progress. */
 	bool irq_reset_flush;
+
+	struct notifier_block gpu_trans_nb;
+	unsigned int gpu_limit_freq;
+	unsigned int cpu_limit_freq;
 };
 
 /* JSCTX ringbuffer size must always be a power of 2 */
