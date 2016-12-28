@@ -279,6 +279,7 @@
 				regulator-min-microvolt = <750000>;
 				regulator-max-microvolt = <1350000>;
 				regulator-name = "vdd_arm";
+				regulator-ramp-delay = <6000>;
 				regulator-state-mem {
 					regulator-off-in-suspend;
 				};
