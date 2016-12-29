@@ -96,6 +96,8 @@
 			operating-points-v2 = <&cpu0_opp_table>;
 			#cooling-cells = <2>; /* min followed by max */
 			clocks = <&cru ARMCLK>;
+			nvmem-cells = <&package_info>;
+			nvmem-cell-names = "package_info";
 		};
 		cpu1: cpu@501 {
 			device_type = "cpu";
@@ -1329,6 +1331,9 @@
 
 		cpu_leakage: cpu_leakage@17 {
 			reg = <0x17 0x1>;
+		};
+		package_info: package-info {
+			reg = <0x05 0x1>;
 		};
 	};
 
