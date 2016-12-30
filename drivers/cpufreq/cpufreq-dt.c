@@ -112,7 +112,7 @@ static int set_opp_info(struct device *dev)
 	if (count == 0)
 		return 0;
 
-	if ((package_info & 0xc0) == 0xc0) {
+	if ((package_info & 0xf0) == 0xc0) {
 		chip_vesion = 1;
 		apll_safefreq = ULONG_MAX;
 	} else {
