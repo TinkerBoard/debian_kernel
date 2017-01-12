@@ -134,7 +134,7 @@ int hci_uart_tx_wakeup(struct hci_uart *hu)
 
 	BT_DBG("");
 
-	schedule_work(&hu->write_work);
+	schedule_work_on(0, &hu->write_work);
 
 	return 0;
 }
