@@ -1180,6 +1180,10 @@ struct kbase_device {
 	/* Boolean indicating if an IRQ flush during reset is in progress. */
 	bool irq_reset_flush;
 
+	struct notifier_block gpu_trans_nb;
+	unsigned int gpu_limit_freq;
+	unsigned int cpu_limit_freq;
+
 	/* list of inited sub systems. Used during terminate/error recovery */
 	u32 inited_subsys;
 };
