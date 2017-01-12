@@ -255,6 +255,7 @@
 #define HDMI_FC_MASK2                           0x10DA
 #define HDMI_FC_POL2                            0x10DB
 #define HDMI_FC_PRCONF                          0x10E0
+#define HDMI_FC_SCRAMBLER_CTRL			0x10E1
 
 #define HDMI_FC_GMD_STAT                        0x1100
 #define HDMI_FC_GMD_EN                          0x1101
@@ -838,6 +839,9 @@ enum {
 	HDMI_FC_AVICONF3_QUANT_RANGE_MASK = 0x0C,
 	HDMI_FC_AVICONF3_QUANT_RANGE_LIMITED = 0x00,
 	HDMI_FC_AVICONF3_QUANT_RANGE_FULL = 0x04,
+
+/* FC_SCRAMBLER_CTRL field values */
+	HDMI_FC_SCRAMBLER_CTRL_EN = 0x01,
 
 /* FC_DBGFORCE field values */
 	HDMI_FC_DBGFORCE_FORCEAUDIO = 0x10,

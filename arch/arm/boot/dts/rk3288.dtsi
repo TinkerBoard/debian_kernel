@@ -93,23 +93,8 @@
 			compatible = "arm,cortex-a12";
 			reg = <0x500>;
 			resets = <&cru SRST_CORE0>;
-			operating-points = <
-				/* KHz    uV */
-				1608000 1350000
-				1512000 1300000
-				1416000 1200000
-				1200000 1100000
-				1008000 1050000
-				 816000 1000000
-				 696000  950000
-				 600000  900000
-				 408000  900000
-				 312000  900000
-				 216000  900000
-				 126000  900000
-			>;
+			operating-points-v2 = <&cpu0_opp_table>;
 			#cooling-cells = <2>; /* min followed by max */
-			clock-latency = <40000>;
 			clocks = <&cru ARMCLK>;
 		};
 		cpu1: cpu@501 {
@@ -117,18 +102,83 @@
 			compatible = "arm,cortex-a12";
 			reg = <0x501>;
 			resets = <&cru SRST_CORE1>;
+			operating-points-v2 = <&cpu0_opp_table>;
 		};
 		cpu2: cpu@502 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a12";
 			reg = <0x502>;
 			resets = <&cru SRST_CORE2>;
+			operating-points-v2 = <&cpu0_opp_table>;
 		};
 		cpu3: cpu@503 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a12";
 			reg = <0x503>;
 			resets = <&cru SRST_CORE3>;
+			operating-points-v2 = <&cpu0_opp_table>;
+		};
+	};
+
+	cpu0_opp_table: opp_table0 {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp@126000000 {
+			opp-hz = /bits/ 64 <126000000>;
+			opp-microvolt = <900000>;
+			clock-latency-ns = <40000>;
+		};
+		opp@216000000 {
+			opp-hz = /bits/ 64 <216000000>;
+			opp-microvolt = <900000>;
+			clock-latency-ns = <40000>;
+		};
+		opp@408000000 {
+			opp-hz = /bits/ 64 <408000000>;
+			opp-microvolt = <900000>;
+			clock-latency-ns = <40000>;
+		};
+		opp@600000000 {
+			opp-hz = /bits/ 64 <600000000>;
+			opp-microvolt = <900000>;
+			clock-latency-ns = <40000>;
+		};
+		opp@696000000 {
+			opp-hz = /bits/ 64 <696000000>;
+			opp-microvolt = <950000>;
+			clock-latency-ns = <40000>;
+		};
+		opp@816000000 {
+			opp-hz = /bits/ 64 <816000000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <40000>;
+			opp-suspend;
+		};
+		opp@1008000000 {
+			opp-hz = /bits/ 64 <1008000000>;
+			opp-microvolt = <1050000>;
+			clock-latency-ns = <40000>;
+		};
+		opp@1200000000 {
+			opp-hz = /bits/ 64 <1200000000>;
+			opp-microvolt = <1100000>;
+			clock-latency-ns = <40000>;
+		};
+		opp@1416000000 {
+			opp-hz = /bits/ 64 <1416000000>;
+			opp-microvolt = <1200000>;
+			clock-latency-ns = <40000>;
+		};
+		opp@1512000000 {
+			opp-hz = /bits/ 64 <1512000000>;
+			opp-microvolt = <1300000>;
+			clock-latency-ns = <40000>;
+		};
+		opp@1608000000 {
+			opp-hz = /bits/ 64 <1608000000>;
+			opp-microvolt = <1350000>;
+			clock-latency-ns = <40000>;
 		};
 	};
 
@@ -659,6 +709,76 @@
 		reg = <0xff720000 0x1000>;
 	};
 
+	qos_gpu_r: qos@ffaa0000 {
+		compatible = "syscon";
+		reg = <0xffaa0000 0x20>;
+	};
+
+	qos_gpu_w: qos@ffaa0080 {
+		compatible = "syscon";
+		reg = <0xffaa0080 0x20>;
+	};
+
+	qos_vio1_vop: qos@ffad0000 {
+		compatible = "syscon";
+		reg = <0xffad0000 0x20>;
+	};
+
+	qos_vio1_isp_w0: qos@ffad0100 {
+		compatible = "syscon";
+		reg = <0xffad0100 0x20>;
+	};
+
+	qos_vio1_isp_w1: qos@ffad0180 {
+		compatible = "syscon";
+		reg = <0xffad0180 0x20>;
+	};
+
+	qos_vio0_vop: qos@ffad0400 {
+		compatible = "syscon";
+		reg = <0xffad0400 0x20>;
+	};
+
+	qos_vio0_vip: qos@ffad0480 {
+		compatible = "syscon";
+		reg = <0xffad0480 0x20>;
+	};
+
+	qos_vio0_iep: qos@ffad0500 {
+		compatible = "syscon";
+		reg = <0xffad0500 0x20>;
+	};
+
+	qos_vio2_rga_r: qos@ffad0800 {
+		compatible = "syscon";
+		reg = <0xffad0800 0x20>;
+	};
+
+	qos_vio2_rga_w: qos@ffad0880 {
+		compatible = "syscon";
+		reg = <0xffad0880 0x20>;
+	};
+
+	qos_vio1_isp_r: qos@ffad0900 {
+		compatible = "syscon";
+		reg = <0xffad0900 0x20>;
+	};
+
+	qos_video: qos@ffae0000 {
+		compatible = "syscon";
+		reg = <0xffae0000 0x20>;
+	};
+
+	qos_hevc_r: qos@ffaf0000 {
+		compatible = "syscon";
+		reg = <0xffaf0000 0x20>;
+	};
+
+	qos_hevc_w: qos@ffaf0080 {
+		compatible = "syscon";
+		reg = <0xffaf0080 0x20>;
+	};
+
 	pmu: power-management@ff730000 {
 		compatible = "rockchip,rk3288-pmu", "syscon", "simple-mfd";
 		reg = <0xff730000 0x100>;
@@ -719,6 +839,15 @@
 					 <&cru SCLK_ISP_JPE>,
 					 <&cru SCLK_ISP>,
 					 <&cru SCLK_RGA>;
+				pm_qos = <&qos_vio0_iep>,
+					 <&qos_vio1_vop>,
+					 <&qos_vio1_isp_w0>,
+					 <&qos_vio1_isp_w1>,
+					 <&qos_vio0_vop>,
+					 <&qos_vio0_vip>,
+					 <&qos_vio2_rga_r>,
+					 <&qos_vio2_rga_w>,
+					 <&qos_vio1_isp_r>;
 			};
 
 			/*
@@ -730,6 +859,8 @@
 				clocks = <&cru ACLK_HEVC>,
 					 <&cru SCLK_HEVC_CABAC>,
 					 <&cru SCLK_HEVC_CORE>;
+				pm_qos = <&qos_hevc_r>,
+					 <&qos_hevc_w>;
 			};
 
 			/*
@@ -741,6 +872,7 @@
 				reg = <RK3288_PD_VIDEO>;
 				clocks = <&cru ACLK_VCODEC>,
 					 <&cru HCLK_VCODEC>;
+				pm_qos = <&qos_video>;
 			};
 
 			/*
@@ -750,6 +882,8 @@
 			pd_gpu {
 				reg = <RK3288_PD_GPU>;
 				clocks = <&cru ACLK_GPU>;
+				pm_qos = <&qos_gpu_r>,
+					 <&qos_gpu_w>;
 			};
 		};
 	};
@@ -1067,6 +1201,19 @@
 		#cooling-cells = <2>; /* min followed by max */
 		power-domains = <&power RK3288_PD_GPU>;
 		status = "disabled";
+
+		cpu-limit-freq = <1416000>;
+		gpu-limit-freq = <600000>;
+
+		gpu_power_model: power_model {
+			compatible = "arm,mali-simple-power-model";
+			voltage = <950>;
+			frequency = <500>;
+			static-power = <300>;
+			dynamic-power = <396>;
+			ts = <32000 4700 (-80) 2>;
+			thermal-zone = "gpu_thermal";
+		};
 	};
 
 	noc: syscon@ffac0000 {
@@ -1089,12 +1236,73 @@
 		status = "disabled";
 	};
 
+	vpu_service: vpu-service@ff9a0000 {
+		compatible = "rockchip,vpu_service";
+		reg = <0xff9a0000 0x800>;
+		interrupts = <GIC_SPI 9 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "irq_enc", "irq_dec";
+		clocks = <&cru ACLK_VCODEC>, <&cru HCLK_VCODEC>;
+		clock-names = "aclk_vcodec", "hclk_vcodec";
+		power-domains = <&power RK3288_PD_VIDEO>;
+		rockchip,grf = <&grf>;
+		resets = <&cru SRST_VCODEC_AXI>, <&cru SRST_VCODEC_AHB>;
+		reset-names = "video_a", "video_h";
+		iommus = <&vpu_mmu>;
+		iommu_enabled = <1>;
+		dev_mode = <0>;
+		status = "disabled";
+		/* 0 means ion, 1 means drm */
+		allocator = <1>;
+	};
+
 	vpu_mmu: iommu@ff9a0800 {
 		compatible = "rockchip,iommu";
 		reg = <0xff9a0800 0x100>;
 		interrupts = <GIC_SPI 11 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "vpu_mmu";
 		power-domains = <&power RK3288_PD_VIDEO>;
+		#iommu-cells = <0>;
+	};
+
+	hevc_service: hevc-service@ff9c0000 {
+		compatible = "rockchip,hevc_service";
+		reg = <0xff9c0000 0x400>;
+		interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "irq_dec";
+		clocks = <&cru ACLK_HEVC>, <&cru HCLK_HEVC>,
+			<&cru SCLK_HEVC_CORE>,
+			<&cru SCLK_HEVC_CABAC>;
+		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_core",
+			"clk_cabac";
+		/*
+		 * The 4K hevc would also work well with 500/125/300/300,
+		 * no more err irq and reset request.
+		 */
+		assigned-clocks = <&cru ACLK_HEVC>, <&cru HCLK_HEVC>,
+				  <&cru SCLK_HEVC_CORE>,
+				  <&cru SCLK_HEVC_CABAC>;
+		assigned-clock-rates = <400000000>, <100000000>,
+				       <300000000>, <300000000>;
+
+		resets = <&cru SRST_HEVC>;
+		reset-names = "video";
+		power-domains = <&power RK3288_PD_HEVC>;
+		rockchip,grf = <&grf>;
+		dev_mode = <1>;
+		iommus = <&hevc_mmu>;
+		iommu_enabled = <1>;
+		status = "disabled";
+		/* 0 means ion, 1 means drm */
+		allocator = <1>;
+	};
+
+	hevc_mmu: iommu@ff9c0440 {
+		compatible = "rockchip,iommu";
+		reg = <0xff9c0440 0x40>, <0xff9c0480 0x40>;
+		interrupts = <GIC_SPI 111 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "hevc_mmu";
+		power-domains = <&power RK3288_PD_HEVC>;
 		#iommu-cells = <0>;
 	};
 

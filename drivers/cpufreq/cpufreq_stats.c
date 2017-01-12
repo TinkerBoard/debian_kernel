@@ -211,6 +211,10 @@ static int __cpufreq_stats_create_table(struct cpufreq_policy *policy)
 	stats->state_num = i;
 	stats->last_time = get_jiffies_64();
 	stats->last_index = freq_table_get_index(stats, policy->cur);
+#ifdef CONFIG_ARCH_ROCKCHIP
+	if (stats->last_index == -1)
+		stats->last_index = 0;
+#endif
 
 	policy->stats = stats;
 	ret = sysfs_create_group(&policy->kobj, &stats_attr_group);

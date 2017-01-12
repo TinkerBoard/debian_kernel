@@ -23,6 +23,21 @@
 #define VOP_MAJOR(version) 	((version) >> 8)
 #define VOP_MINOR(version) 	((version) & 0xff)
 
+#define AFBDC_FMT_RGB565	0x0
+#define AFBDC_FMT_U8U8U8U8	0x5
+#define AFBDC_FMT_U8U8U8	0x4
+
+enum vop_csc_format {
+	CSC_BT601,
+	CSC_BT709,
+	CSC_BT2020,
+};
+
+enum vop_csc_mode {
+	CSC_RGB,
+	CSC_YUV,
+};
+
 enum vop_data_format {
 	VOP_FMT_ARGB8888 = 0,
 	VOP_FMT_RGB888,
@@ -45,6 +60,16 @@ struct vop_reg {
 	uint32_t end_minor:4;
 	uint32_t major:3;
 	uint32_t write_mask:1;
+};
+
+struct vop_csc {
+	struct vop_reg y2r_en;
+	struct vop_reg r2r_en;
+	struct vop_reg r2y_en;
+
+	uint32_t y2r_offset;
+	uint32_t r2r_offset;
+	uint32_t r2y_offset;
 };
 
 struct vop_ctrl {
@@ -92,6 +117,15 @@ struct vop_ctrl {
 	struct vop_reg ymirror;
 	struct vop_reg dsp_background;
 
+       /* AFBDC */
+	struct vop_reg afbdc_en;
+	struct vop_reg afbdc_sel;
+	struct vop_reg afbdc_format;
+	struct vop_reg afbdc_hreg_block_split;
+	struct vop_reg afbdc_pic_size;
+	struct vop_reg afbdc_hdr_ptr;
+	struct vop_reg afbdc_rstn;
+
 	struct vop_reg line_flag_num[2];
 
 	struct vop_reg cfg_done;
@@ -100,7 +134,7 @@ struct vop_ctrl {
 struct vop_intr {
 	const int *intrs;
 	uint32_t nintrs;
-	struct vop_reg line_flag_num;
+	struct vop_reg line_flag_num[2];
 	struct vop_reg enable;
 	struct vop_reg clear;
 	struct vop_reg status;
@@ -139,6 +173,39 @@ struct vop_scl_regs {
 	struct vop_reg scale_cbcr_y;
 };
 
+struct vop_csc_table {
+	const uint32_t *y2r_bt601;
+	const uint32_t *y2r_bt601_12_235;
+	const uint32_t *y2r_bt601_10bit;
+	const uint32_t *y2r_bt601_10bit_12_235;
+	const uint32_t *r2y_bt601;
+	const uint32_t *r2y_bt601_12_235;
+	const uint32_t *r2y_bt601_10bit;
+	const uint32_t *r2y_bt601_10bit_12_235;
+
+	const uint32_t *y2r_bt709;
+	const uint32_t *y2r_bt709_10bit;
+	const uint32_t *r2y_bt709;
+	const uint32_t *r2y_bt709_10bit;
+
+	const uint32_t *y2r_bt2020;
+	const uint32_t *r2y_bt2020;
+
+	const uint32_t *r2r_bt709_to_bt2020;
+	const uint32_t *r2r_bt2020_to_bt709;
+};
+
+enum {
+	VOP_CSC_Y2R_BT601,
+	VOP_CSC_Y2R_BT709,
+	VOP_CSC_Y2R_BT2020,
+	VOP_CSC_R2Y_BT601,
+	VOP_CSC_R2Y_BT709,
+	VOP_CSC_R2Y_BT2020,
+	VOP_CSC_R2R_BT2020_TO_BT709,
+	VOP_CSC_R2R_BT709_TO_2020,
+};
+
 struct vop_win_phy {
 	const struct vop_scl_regs *scl;
 	const uint32_t *data_formats;
@@ -147,6 +214,7 @@ struct vop_win_phy {
 	struct vop_reg gate;
 	struct vop_reg enable;
 	struct vop_reg format;
+	struct vop_reg fmt_10;
 	struct vop_reg xmirror;
 	struct vop_reg ymirror;
 	struct vop_reg rb_swap;
@@ -171,10 +239,12 @@ struct vop_win_data {
 	enum drm_plane_type type;
 	const struct vop_win_phy *phy;
 	const struct vop_win_phy **area;
+	const struct vop_csc *csc;
 	unsigned int area_size;
 };
 
-#define VOP_FEATURE_OUTPUT_10BIT BIT(0)
+#define VOP_FEATURE_OUTPUT_10BIT	BIT(0)
+#define VOP_FEATURE_AFBDC		BIT(1)
 
 struct vop_data {
 	const struct vop_reg_data *init_table;
@@ -182,6 +252,7 @@ struct vop_data {
 	const struct vop_ctrl *ctrl;
 	const struct vop_intr *intr;
 	const struct vop_win_data *win;
+	const struct vop_csc_table *csc_table;
 	unsigned int win_size;
 	uint32_t version;
 	u64 feature;

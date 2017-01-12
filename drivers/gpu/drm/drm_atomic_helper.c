@@ -108,7 +108,6 @@ steal_encoder(struct drm_atomic_state *state,
 	struct drm_crtc_state *crtc_state;
 	struct drm_connector *connector;
 	struct drm_connector_state *connector_state;
-	int ret;
 
 	/*
 	 * We can only steal an encoder coming from a connector, which means we
@@ -139,9 +138,6 @@ steal_encoder(struct drm_atomic_state *state,
 		if (IS_ERR(connector_state))
 			return PTR_ERR(connector_state);
 
-		ret = drm_atomic_set_crtc_for_connector(connector_state, NULL);
-		if (ret)
-			return ret;
 		connector_state->best_encoder = NULL;
 	}
 
@@ -1511,7 +1507,7 @@ retry:
 	if (plane == crtc->cursor)
 		state->legacy_cursor_update = true;
 
-	ret = drm_atomic_commit(state);
+	ret = drm_atomic_async_commit(state);
 	if (ret != 0)
 		goto fail;
 

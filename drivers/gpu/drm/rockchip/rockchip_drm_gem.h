@@ -21,9 +21,10 @@ struct rockchip_gem_object {
 	struct drm_gem_object base;
 	unsigned int flags;
 
-	struct sg_table *sgt;
 	void *kvaddr;
 	dma_addr_t dma_addr;
+
+	/* Used when IOMMU is disabled */
 	struct dma_attrs dma_attrs;
 
 #ifdef CONFIG_DRM_DMA_SYNC
@@ -31,6 +32,12 @@ struct rockchip_gem_object {
 	atomic_t acquire_shared_count;
 	bool acquire_exclusive;
 #endif
+	/* Used when IOMMU is enabled */
+	struct drm_mm_node mm;
+	unsigned long num_pages;
+	struct page **pages;
+	struct sg_table *sgt;
+	size_t size;
 };
 
 /*
@@ -48,7 +55,7 @@ struct sg_table *rockchip_gem_prime_get_sg_table(struct drm_gem_object *obj);
 struct drm_gem_object *
 rockchip_gem_prime_import_sg_table(struct drm_device *dev,
 				   struct dma_buf_attachment *attach,
-				   struct sg_table *sgt);
+				   struct sg_table *sg);
 void *rockchip_gem_prime_vmap(struct drm_gem_object *obj);
 void rockchip_gem_prime_vunmap(struct drm_gem_object *obj, void *vaddr);
 

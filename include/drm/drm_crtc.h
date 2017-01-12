@@ -645,6 +645,11 @@ struct drm_encoder {
  * @audio_latency: audio latency info from ELD, if found
  * @null_edid_counter: track sinks that give us all zeros for the EDID
  * @bad_edid_counter: track sinks that give us an EDID with invalid checksum
+ * @max_tmds_char: indicates the maximum TMDS Character Rate supported
+ * @scdc_present: when set the sink supports SCDC functionality
+ * @rr_capable: when set the sink is capable of initiating an SCDC read request
+ * @supports_scramble: when set the sink supports less than 340Mcsc scrambling
+ * @flags_3d: 3D view(s) supported by the sink, see drm_edid.h (DRM_EDID_3D_*)
  * @edid_corrupt: indicates whether the last read EDID was corrupt
  * @debugfs_entry: debugfs directory for this connector
  * @state: current atomic state for this connector
@@ -708,6 +713,7 @@ struct drm_connector {
 	bool override_edid;
 	uint32_t encoder_ids[DRM_CONNECTOR_MAX_ENCODER];
 	struct drm_encoder *encoder; /* currently active encoder */
+	bool loader_protect;
 
 	/* EDID bits */
 	uint8_t eld[MAX_ELD_BYTES];
@@ -718,6 +724,13 @@ struct drm_connector {
 	int audio_latency[2];
 	int null_edid_counter; /* needed to workaround some HW bugs where we get all 0s */
 	unsigned bad_edid_counter;
+
+	/* EDID bits HDMI 2.0 */
+	int max_tmds_char;	/* in Mcsc */
+	bool scdc_present;
+	bool rr_capable;
+	bool supports_scramble;
+	int flags_3d;
 
 	/* Flag for raw EDID header corruption - used in Displayport
 	 * compliance testing - * Displayport Link CTS Core 1.2 rev1.1 4.2.2.6
@@ -1511,6 +1524,7 @@ extern int drm_mode_atomic_ioctl(struct drm_device *dev,
 extern void drm_fb_get_bpp_depth(uint32_t format, unsigned int *depth,
 				 int *bpp);
 extern int drm_format_num_planes(uint32_t format);
+extern int drm_format_plane_bpp(uint32_t format, int plane);
 extern int drm_format_plane_cpp(uint32_t format, int plane);
 extern int drm_format_horz_chroma_subsampling(uint32_t format);
 extern int drm_format_vert_chroma_subsampling(uint32_t format);

@@ -57,7 +57,7 @@ static void __dma_rx_complete(void *param)
 	unsigned long	flags;
 
 	spin_lock_irqsave(&p->port.lock, flags);
-	del_timer(&dma->dma_rx_timer);
+	del_timer_sync(&dma->dma_rx_timer);
 	dma->rx_running = 0;
 	dmaengine_tx_status(dma->rxchan, dma->rx_cookie, &state);
 
@@ -189,7 +189,7 @@ int serial8250_rx_dma(struct uart_8250_port *p, unsigned int iir)
 	dma_async_issue_pending(dma->rxchan);
 	dma->rx_index = 0;
 
-	add_timer(&dma->dma_rx_timer);
+	mod_timer(&dma->dma_rx_timer, jiffies + msecs_to_jiffies(10));
 
 	return 0;
 }
@@ -277,7 +277,7 @@ void serial8250_release_dma(struct uart_8250_port *p)
 	if (!dma)
 		return;
 
-	del_timer(&dma->dma_rx_timer);
+	del_timer_sync(&dma->dma_rx_timer);
 
 	/* Release RX resources */
 	dmaengine_terminate_all(dma->rxchan);

@@ -18,6 +18,7 @@
 /* Default constants for DevFreq-Simple-Ondemand (DFSO) */
 #define DFSO_UPTHRESHOLD	(90)
 #define DFSO_DOWNDIFFERENCTIAL	(5)
+#define HISPEED_FREQ	(400000000)
 static int devfreq_simple_ondemand_func(struct devfreq *df,
 					unsigned long *freq)
 {
@@ -48,7 +49,7 @@ static int devfreq_simple_ondemand_func(struct devfreq *df,
 	/* Assume MAX if it is going to be divided by zero */
 	if (stat->total_time == 0) {
 		*freq = max;
-		return 0;
+		goto out;
 	}
 
 	/* Prevent overflow */
@@ -61,13 +62,13 @@ static int devfreq_simple_ondemand_func(struct devfreq *df,
 	if (stat->busy_time * 100 >
 	    stat->total_time * dfso_upthreshold) {
 		*freq = max;
-		return 0;
+		goto out;
 	}
 
 	/* Set MAX if we do not know the initial frequency */
 	if (stat->current_frequency == 0) {
 		*freq = max;
-		return 0;
+		goto out;
 	}
 
 	/* Keep the current frequency */
@@ -89,6 +90,11 @@ static int devfreq_simple_ondemand_func(struct devfreq *df,
 		*freq = df->min_freq;
 	if (df->max_freq && *freq > df->max_freq)
 		*freq = df->max_freq;
+
+out:
+
+	if (*freq > HISPEED_FREQ && stat->current_frequency < HISPEED_FREQ)
+		*freq = HISPEED_FREQ;
 
 	return 0;
 }
