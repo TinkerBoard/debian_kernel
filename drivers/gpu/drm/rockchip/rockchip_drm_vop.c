@@ -920,8 +920,8 @@ static void vop_enable(struct drm_crtc *crtc)
 	}
 
 #ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
-	if (!vop->dmc_disabled_rk3288 && vop->vblank_time <= DMC_SET_RATE_TIME_NS +
-	    DMC_PAUSE_CPU_TIME_NS) {
+	if (!vop->dmc_disabled_rk3288 && ( vop->vblank_time <= DMC_SET_RATE_TIME_NS +
+	    DMC_PAUSE_CPU_TIME_NS || num_enabled_crtc > 1)) {
 		rockchip_dmc_disable();
 		vop->dmc_disabled_rk3288 = true;
 	}
@@ -1503,6 +1503,7 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 	u16 vact_end = vact_st + vdisplay;
 	uint32_t version = vop->data->version;
 	uint32_t val;
+	int num_enabled_crtc = 0;
 
 #ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
 	u64 vblank_time;
@@ -1635,8 +1636,14 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 
 	VOP_CTRL_SET(vop, standby, 0);
 
+	/* check how many vop we use now */
+	drm_for_each_crtc(crtc, vop->drm_dev) {
+		if (crtc->state->enable)
+			num_enabled_crtc++;
+	}
+
 #ifdef CONFIG_ARM_RK3288_DMC_DEVFREQ
-	if (vblank_time > DMC_SET_RATE_TIME_NS + DMC_PAUSE_CPU_TIME_NS) {
+	if (vblank_time > DMC_SET_RATE_TIME_NS + DMC_PAUSE_CPU_TIME_NS && num_enabled_crtc != 2) {
 		rockchip_dmc_lock();
 		vop->vblank_time = vblank_time;
 		rockchip_dmc_unlock();
