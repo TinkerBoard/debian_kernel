@@ -1014,7 +1014,13 @@ static const struct drm_display_mode edid_4k_modes[] = {
 		   2160, 2168, 2178, 2250, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
 	  .vrefresh = 24, },
-	/* 5 - 3840x2160@60Hz */
+	/* 5 - 3840x2160@50Hz */
+	{ DRM_MODE("3840x2160", DRM_MODE_TYPE_DRIVER, 594000,
+		   3840, 4896, 4984, 5280, 0,
+		   2160, 2168, 2178, 2250, 0,
+		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
+	  .vrefresh = 50, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
+	/* 6 - 3840x2160@60Hz */
 	{ DRM_MODE("3840x2160", DRM_MODE_TYPE_DRIVER, 594000,
 		   3840, 4016, 4104, 4400, 0,
 		   2160, 2168, 2178, 2250, 0,
@@ -3555,6 +3561,41 @@ bool drm_detect_hdmi_monitor(struct edid *edid)
 	return false;
 }
 EXPORT_SYMBOL(drm_detect_hdmi_monitor);
+
+/**
+ * drm_detect_hdmi_scdc - detect whether an HDMI sink supports SCDC
+ * @edid: sink EDID information
+ *
+ * Parse the CEA extension according to CEA-861-B to find an HF-VSDB as
+ * defined in HDMI 2.0, section 10.3.2 "HDMI Forum Vendor Specific Data
+ * Block" and checks if the SCDC_Present bit (bit 7 of byte 6) is set.
+ *
+ * Returns:
+ * True if the sink supports SCDC, false otherwise.
+ */
+bool drm_detect_hdmi_scdc(struct edid *edid)
+{
+	unsigned int start, end, i;
+	const u8 *cea;
+
+	cea = drm_find_cea_extension(edid);
+	if (!cea)
+		return false;
+
+	if (cea_db_offsets(cea, &start, &end))
+		return false;
+
+	for_each_cea_db(cea, i, start, end) {
+		if (cea_db_is_hdmi_hf_vsdb(&cea[i])) {
+			if (cea[i + 6] & 0x80){
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(drm_detect_hdmi_scdc);
 
 /**
  * drm_detect_monitor_audio - check monitor audio capability
