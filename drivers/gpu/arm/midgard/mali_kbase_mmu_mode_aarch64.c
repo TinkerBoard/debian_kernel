@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2010-2016 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2014, 2016 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -23,19 +23,20 @@
 #include "mali_midg_regmap.h"
 
 #define ENTRY_TYPE_MASK     3ULL
-#define ENTRY_IS_ATE        1ULL
+/* For valid ATEs bit 1 = (level == 3) ? 1 : 0.
+ * The MMU is only ever configured by the driver so that ATEs
+ * are at level 3, so bit 1 should always be set
+ */
+#define ENTRY_IS_ATE        3ULL
 #define ENTRY_IS_INVAL      2ULL
 #define ENTRY_IS_PTE        3ULL
 
 #define ENTRY_ATTR_BITS (7ULL << 2)	/* bits 4:2 */
-#define ENTRY_RD_BIT (1ULL << 6)
-#define ENTRY_WR_BIT (1ULL << 7)
+#define ENTRY_ACCESS_RW (1ULL << 6)     /* bits 6:7 */
+#define ENTRY_ACCESS_RO (3ULL << 6)
 #define ENTRY_SHARE_BITS (3ULL << 8)	/* bits 9:8 */
 #define ENTRY_ACCESS_BIT (1ULL << 10)
 #define ENTRY_NX_BIT (1ULL << 54)
-
-#define ENTRY_FLAGS_MASK (ENTRY_ATTR_BITS | ENTRY_RD_BIT | ENTRY_WR_BIT | \
-		ENTRY_SHARE_BITS | ENTRY_ACCESS_BIT | ENTRY_NX_BIT)
 
 /* Helper Function to perform assignment of page table entries, to
  * ensure the use of strd, which is required on LPAE systems.
@@ -47,8 +48,7 @@ static inline void page_table_entry_set(u64 *pte, u64 phy)
 #elif defined(CONFIG_ARM)
 	/*
 	 * In order to prevent the compiler keeping cached copies of
-	 * memory, we have to explicitly say that we have updated
-	 * memory.
+	 * memory, we have to explicitly say that we have updated memory.
 	 *
 	 * Note: We could manually move the data ourselves into R0 and
 	 * R1 by specifying register variables that are explicitly
@@ -72,30 +72,22 @@ static void mmu_get_as_setup(struct kbase_context *kctx,
 		struct kbase_mmu_setup * const setup)
 {
 	/* Set up the required caching policies at the correct indices
-	 * in the memattr register. */
+	 * in the memattr register.
+	 */
 	setup->memattr =
-		(AS_MEMATTR_LPAE_IMPL_DEF_CACHE_POLICY <<
-		(AS_MEMATTR_INDEX_IMPL_DEF_CACHE_POLICY * 8)) |
-		(AS_MEMATTR_LPAE_FORCE_TO_CACHE_ALL    <<
-		(AS_MEMATTR_INDEX_FORCE_TO_CACHE_ALL * 8))    |
-		(AS_MEMATTR_LPAE_WRITE_ALLOC           <<
-		(AS_MEMATTR_INDEX_WRITE_ALLOC * 8))           |
-		(AS_MEMATTR_LPAE_OUTER_IMPL_DEF        <<
-		(AS_MEMATTR_INDEX_OUTER_IMPL_DEF * 8))        |
-		(AS_MEMATTR_LPAE_OUTER_WA              <<
-		(AS_MEMATTR_INDEX_OUTER_WA * 8))              |
-		0; /* The other indices are unused for now */
+		(AS_MEMATTR_IMPL_DEF_CACHE_POLICY <<
+			(AS_MEMATTR_INDEX_IMPL_DEF_CACHE_POLICY * 8)) |
+		(AS_MEMATTR_FORCE_TO_CACHE_ALL    <<
+			(AS_MEMATTR_INDEX_FORCE_TO_CACHE_ALL * 8)) |
+		(AS_MEMATTR_WRITE_ALLOC           <<
+			(AS_MEMATTR_INDEX_WRITE_ALLOC * 8)) |
+		(AS_MEMATTR_AARCH64_OUTER_IMPL_DEF   <<
+			(AS_MEMATTR_INDEX_OUTER_IMPL_DEF * 8)) |
+		(AS_MEMATTR_AARCH64_OUTER_WA         <<
+			(AS_MEMATTR_INDEX_OUTER_WA * 8));
 
-	setup->transtab = ((u64)kctx->pgd &
-		((0xFFFFFFFFULL << 32) | AS_TRANSTAB_LPAE_ADDR_SPACE_MASK)) |
-		AS_TRANSTAB_LPAE_ADRMODE_TABLE |
-		AS_TRANSTAB_LPAE_READ_INNER;
-
-#ifdef CONFIG_MALI_GPU_MMU_AARCH64
-	setup->transcfg = AS_TRANSCFG_ADRMODE_LEGACY;
-#else
-	setup->transcfg = 0;
-#endif
+	setup->transtab = (u64)kctx->pgd & AS_TRANSTAB_BASE_MASK;
+	setup->transcfg = AS_TRANSCFG_ADRMODE_AARCH64_4K;
 }
 
 static void mmu_update(struct kbase_context *kctx)
@@ -115,11 +107,8 @@ static void mmu_disable_as(struct kbase_device *kbdev, int as_nr)
 	struct kbase_as * const as = &kbdev->as[as_nr];
 	struct kbase_mmu_setup * const current_setup = &as->current_setup;
 
-	current_setup->transtab = AS_TRANSTAB_LPAE_ADRMODE_UNMAPPED;
-
-#ifdef CONFIG_MALI_GPU_MMU_AARCH64
-	current_setup->transcfg = AS_TRANSCFG_ADRMODE_LEGACY;
-#endif
+	current_setup->transtab = 0ULL;
+	current_setup->transcfg = AS_TRANSCFG_ADRMODE_UNMAPPED;
 
 	/* Apply the address space setting */
 	kbase_mmu_hw_configure(kbdev, as, NULL);
@@ -153,10 +142,14 @@ static u64 get_mmu_flags(unsigned long flags)
 	/* store mem_attr index as 4:2 (macro called ensures 3 bits already) */
 	mmu_flags = KBASE_REG_MEMATTR_VALUE(flags) << 2;
 
-	/* write perm if requested */
-	mmu_flags |= (flags & KBASE_REG_GPU_WR) ? ENTRY_WR_BIT : 0;
-	/* read perm if requested */
-	mmu_flags |= (flags & KBASE_REG_GPU_RD) ? ENTRY_RD_BIT : 0;
+	/* Set access flags - note that AArch64 stage 1 does not support
+	 * write-only access, so we use read/write instead
+	 */
+	if (flags & KBASE_REG_GPU_WR)
+		mmu_flags |= ENTRY_ACCESS_RW;
+	else if (flags & KBASE_REG_GPU_RD)
+		mmu_flags |= ENTRY_ACCESS_RO;
+
 	/* nx if requested */
 	mmu_flags |= (flags & KBASE_REG_GPU_NX) ? ENTRY_NX_BIT : 0;
 
@@ -174,13 +167,14 @@ static u64 get_mmu_flags(unsigned long flags)
 static void entry_set_ate(u64 *entry, phys_addr_t phy, unsigned long flags)
 {
 	page_table_entry_set(entry, (phy & ~0xFFF) |
-		get_mmu_flags(flags) |
-		ENTRY_IS_ATE);
+			get_mmu_flags(flags) |
+			ENTRY_ACCESS_BIT | ENTRY_IS_ATE);
 }
 
 static void entry_set_pte(u64 *entry, phys_addr_t phy)
 {
-	page_table_entry_set(entry, (phy & ~0xFFF) | ENTRY_IS_PTE);
+	page_table_entry_set(entry, (phy & ~0xFFF) |
+			ENTRY_ACCESS_BIT | ENTRY_IS_PTE);
 }
 
 static void entry_invalidate(u64 *entry)
@@ -188,7 +182,7 @@ static void entry_invalidate(u64 *entry)
 	page_table_entry_set(entry, ENTRY_IS_INVAL);
 }
 
-static struct kbase_mmu_mode const lpae_mode = {
+static struct kbase_mmu_mode const aarch64_mode = {
 	.update = mmu_update,
 	.get_as_setup = mmu_get_as_setup,
 	.disable_as = mmu_disable_as,
@@ -200,7 +194,7 @@ static struct kbase_mmu_mode const lpae_mode = {
 	.entry_invalidate = entry_invalidate
 };
 
-struct kbase_mmu_mode const *kbase_mmu_mode_get_lpae(void)
+struct kbase_mmu_mode const *kbase_mmu_mode_get_aarch64(void)
 {
-	return &lpae_mode;
+	return &aarch64_mode;
 }

@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2014-2015 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2014-2016 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -26,7 +26,6 @@
 #endif
 
 #include <linux/clk.h>
-#include <linux/cpufreq.h>
 #include <linux/devfreq.h>
 #ifdef CONFIG_DEVFREQ_THERMAL
 #include <linux/devfreq_cooling.h>
@@ -47,11 +46,6 @@
 #define dev_pm_opp_find_freq_ceil opp_find_freq_ceil
 #endif /* Linux >= 3.13 */
 
-#define MAX_CLUSTERS	2
-
-static struct cpumask allowed_cpus[MAX_CLUSTERS];
-static unsigned int cpu_max_freq[MAX_CLUSTERS] = {UINT_MAX, UINT_MAX};
-static unsigned int cpu_clipped_freq[MAX_CLUSTERS] = {UINT_MAX, UINT_MAX};
 
 static int
 kbase_devfreq_target(struct device *dev, unsigned long *target_freq, u32 flags)
@@ -59,8 +53,9 @@ kbase_devfreq_target(struct device *dev, unsigned long *target_freq, u32 flags)
 	struct kbase_device *kbdev = dev_get_drvdata(dev);
 	struct dev_pm_opp *opp;
 	unsigned long freq = 0;
+	unsigned long old_freq = kbdev->current_freq;
 	unsigned long voltage;
-	int err;
+	int err = 0;
 
 	freq = *target_freq;
 
@@ -76,15 +71,25 @@ kbase_devfreq_target(struct device *dev, unsigned long *target_freq, u32 flags)
 	/*
 	 * Only update if there is a change of frequency
 	 */
-	if (kbdev->current_freq == freq) {
+	if (old_freq == freq) {
 		*target_freq = freq;
+#ifdef CONFIG_REGULATOR
+		if (kbdev->current_voltage == voltage)
+			return 0;
+		err = regulator_set_voltage(kbdev->regulator, voltage, INT_MAX);
+		if (err) {
+			dev_err(dev, "Failed to set voltage (%d)\n", err);
+			return err;
+		}
+#else
 		return 0;
+#endif
 	}
 
 #ifdef CONFIG_REGULATOR
-	if (kbdev->regulator && kbdev->current_voltage != voltage
-			&& kbdev->current_freq < freq) {
-		err = regulator_set_voltage(kbdev->regulator, voltage, voltage);
+	if (kbdev->regulator && kbdev->current_voltage != voltage &&
+	    old_freq < freq) {
+		err = regulator_set_voltage(kbdev->regulator, voltage, INT_MAX);
 		if (err) {
 			dev_err(dev, "Failed to increase voltage (%d)\n", err);
 			return err;
@@ -92,17 +97,23 @@ kbase_devfreq_target(struct device *dev, unsigned long *target_freq, u32 flags)
 	}
 #endif
 
-	err = clk_set_rate(kbdev->clock, freq);
+	mutex_lock(&kbdev->mutex_for_clk);
+	if (!kbdev->is_power_off)
+		err = clk_set_rate(kbdev->clock, freq);
+	kbdev->freq = freq;
+	mutex_unlock(&kbdev->mutex_for_clk);
 	if (err) {
 		dev_err(dev, "Failed to set clock %lu (target %lu)\n",
 				freq, *target_freq);
 		return err;
 	}
+	*target_freq = freq;
+	kbdev->current_freq = freq;
 
 #ifdef CONFIG_REGULATOR
-	if (kbdev->regulator && kbdev->current_voltage != voltage
-			&& kbdev->current_freq > freq) {
-		err = regulator_set_voltage(kbdev->regulator, voltage, voltage);
+	if (kbdev->regulator && kbdev->current_voltage != voltage &&
+	    old_freq > freq) {
+		err = regulator_set_voltage(kbdev->regulator, voltage, INT_MAX);
 		if (err) {
 			dev_err(dev, "Failed to decrease voltage (%d)\n", err);
 			return err;
@@ -110,9 +121,7 @@ kbase_devfreq_target(struct device *dev, unsigned long *target_freq, u32 flags)
 	}
 #endif
 
-	*target_freq = freq;
 	kbdev->current_voltage = voltage;
-	kbdev->current_freq = freq;
 
 	kbase_pm_reset_dvfs_utilisation(kbdev);
 
@@ -140,6 +149,14 @@ kbase_devfreq_status(struct device *dev, struct devfreq_dev_status *stat)
 			&stat->total_time, &stat->busy_time);
 
 	stat->private_data = NULL;
+
+#ifdef CONFIG_DEVFREQ_THERMAL
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
+	if (kbdev->devfreq_cooling)
+		memcpy(&kbdev->devfreq_cooling->last_status, stat,
+				sizeof(*stat));
+#endif
+#endif
 
 	return 0;
 }
@@ -198,63 +215,6 @@ static void kbase_devfreq_exit(struct device *dev)
 	kbase_devfreq_term_freq_table(kbdev);
 }
 
-static int kbase_devfreq_trans_notifier(struct notifier_block *nb,
-					unsigned long val, void *data)
-{
-	struct kbase_device *kbdev = container_of(nb, struct kbase_device,
-						  gpu_trans_nb);
-	struct devfreq_freqs *freqs = data;
-	unsigned int new_rate = (unsigned int)(freqs->new / 1000);
-	int i, cpu;
-
-	if (!kbdev)
-		goto out;
-
-	dev_dbg(kbdev->dev, "%lu-->%lu cpu limit=%u, gpu limit=%u\n",
-		freqs->old, freqs->new,
-		kbdev->cpu_limit_freq,
-		kbdev->gpu_limit_freq);
-
-	if (val == DEVFREQ_PRECHANGE &&
-	    new_rate >= kbdev->gpu_limit_freq) {
-		for (i = 0; i < MAX_CLUSTERS; i++) {
-			if (cpu_max_freq[i] > kbdev->cpu_limit_freq) {
-				/* change policy->max right now */
-				cpu_clipped_freq[i] = kbdev->cpu_limit_freq;
-				if (cpumask_empty(&allowed_cpus[i]))
-					goto out;
-				cpu = cpumask_any_and(&allowed_cpus[i],
-						      cpu_online_mask);
-				if (cpu >= nr_cpu_ids)
-					goto out;
-				cpufreq_update_policy(cpu);
-			} else {
-				/* avoid someone changing policy->max */
-				cpu_clipped_freq[i] = kbdev->cpu_limit_freq;
-			}
-		}
-	} else if (val == DEVFREQ_POSTCHANGE &&
-		   new_rate < kbdev->gpu_limit_freq) {
-		for (i = 0; i < MAX_CLUSTERS; i++) {
-			if (cpu_clipped_freq[i] != UINT_MAX) {
-				/* recover  policy->max  right now */
-				cpu_clipped_freq[i] = UINT_MAX;
-				if (cpumask_empty(&allowed_cpus[i]))
-					goto out;
-				cpu = cpumask_any_and(&allowed_cpus[i],
-						      cpu_online_mask);
-				if (cpu >= nr_cpu_ids)
-					goto out;
-				cpufreq_update_policy(cpu);
-			}
-		}
-	}
-
-out:
-
-	return NOTIFY_OK;
-}
-
 int kbase_devfreq_init(struct kbase_device *kbdev)
 {
 	struct devfreq_dev_profile *dp;
@@ -264,11 +224,17 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 		return -ENODEV;
 
 	kbdev->current_freq = clk_get_rate(kbdev->clock);
+#ifdef CONFIG_REGULATOR
+	if (kbdev->regulator)
+		kbdev->current_voltage =
+			regulator_get_voltage(kbdev->regulator);
+#endif
 
 	dp = &kbdev->devfreq_profile;
 
 	dp->initial_freq = kbdev->current_freq;
-	dp->polling_ms = 100;
+	/* .KP : set devfreq_dvfs_interval_in_ms */
+	dp->polling_ms = 20;
 	dp->target = kbase_devfreq_target;
 	dp->get_dev_status = kbase_devfreq_status;
 	dp->get_cur_freq = kbase_devfreq_cur_freq;
@@ -290,23 +256,6 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 			"Failed to register OPP notifier (%d)\n", err);
 		goto opp_notifier_failed;
 	}
-
-	if (of_property_read_u32(kbdev->dev->of_node, "cpu-limit-freq",
-				 &kbdev->cpu_limit_freq)) {
-		dev_err(kbdev->dev, "Failed to get prop cpu-limit-freq\n");
-		kbdev->cpu_limit_freq = UINT_MAX;
-	}
-	if (of_property_read_u32(kbdev->dev->of_node, "gpu-limit-freq",
-				 &kbdev->gpu_limit_freq)) {
-		dev_err(kbdev->dev, "Failed to get prop gpu-limit-freq\n");
-		kbdev->gpu_limit_freq = UINT_MAX;
-	}
-
-	kbdev->gpu_trans_nb.notifier_call = kbase_devfreq_trans_notifier;
-	err = devfreq_register_notifier(kbdev->devfreq, &kbdev->gpu_trans_nb,
-					DEVFREQ_TRANSITION_NOTIFIER);
-	if (err)
-		dev_err(kbdev->dev, "register gpu trans notifier (%d)\n", err);
 
 #ifdef CONFIG_DEVFREQ_THERMAL
 	err = kbase_power_model_simple_init(kbdev);
@@ -370,57 +319,3 @@ void kbase_devfreq_term(struct kbase_device *kbdev)
 	else
 		kbdev->devfreq = NULL;
 }
-
-static int kbase_cpufreq_policy_notifier(struct notifier_block *nb,
-					 unsigned long val, void *data)
-{
-	struct cpufreq_policy *policy = data;
-	int i;
-
-	if (val == CPUFREQ_START) {
-		for (i = 0; i < MAX_CLUSTERS; i++) {
-			if (cpumask_test_cpu(policy->cpu,
-					     &allowed_cpus[i]))
-				break;
-			if (cpumask_empty(&allowed_cpus[i])) {
-				cpumask_copy(&allowed_cpus[i],
-					     policy->related_cpus);
-				break;
-			}
-		}
-		goto out;
-	}
-
-	if (val != CPUFREQ_ADJUST)
-		goto out;
-
-	for (i = 0; i < MAX_CLUSTERS; i++) {
-		if (cpumask_test_cpu(policy->cpu, &allowed_cpus[i]))
-			break;
-	}
-	if (i == MAX_CLUSTERS)
-		goto out;
-
-	if (policy->max > cpu_clipped_freq[i])
-		cpufreq_verify_within_limits(policy, 0, cpu_clipped_freq[i]);
-
-	cpu_max_freq[i] = policy->max;
-	pr_debug("cluster%d max=%u, gpu limit=%u\n", i, cpu_max_freq[i],
-		 cpu_clipped_freq[i]);
-
-out:
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block notifier_policy_block = {
-	.notifier_call = kbase_cpufreq_policy_notifier
-};
-
-static int __init kbase_cpufreq_init(void)
-{
-	return cpufreq_register_notifier(&notifier_policy_block,
-					 CPUFREQ_POLICY_NOTIFIER);
-}
-
-subsys_initcall(kbase_cpufreq_init);
