@@ -1122,9 +1122,12 @@ static int hdmi_phy_configure(struct dw_hdmi *hdmi, unsigned char prep,
 	dw_hdmi_phy_gen2_pddq(hdmi, 1);
 
 	/* Control for TMDS Bit Period/TMDS Clock-Period Ratio */
-	if(mpll_config->mpixelclock > 340000000 && hdmi->connector.scdc_present){
+	if(hdmi->connector.scdc_present) {
 		drm_scdc_readb(hdmi->ddc, SCDC_TMDS_CONFIG, &tmds_cfg);
-		tmds_cfg |= 2;
+		if(mpll_config->mpixelclock > 340000000)
+			tmds_cfg |= 2;
+		else
+			tmds_cfg &= 0x1;
 		drm_scdc_writeb(hdmi->ddc, SCDC_TMDS_CONFIG, tmds_cfg);
 	}
 
@@ -1154,6 +1157,9 @@ static int hdmi_phy_configure(struct dw_hdmi *hdmi, unsigned char prep,
 
 	/* REMOVE CLK TERM */
 	hdmi_phy_i2c_write(hdmi, 0x8000, 0x05);  /* CKCALCTRL */
+
+	if(mpll_config->mpixelclock > 340000000)
+		msleep(100);
 
 	dw_hdmi_phy_enable_powerdown(hdmi, false);
 
@@ -1345,7 +1351,7 @@ static void hdmi_av_composer(struct dw_hdmi *hdmi,
 	/* Set up HDMI_FC_INVIDCONF */
 	inv_val = (hdmi->hdmi_data.hdcp_enable ?
 		HDMI_FC_INVIDCONF_HDCP_KEEPOUT_ACTIVE :
-		HDMI_FC_INVIDCONF_HDCP_KEEPOUT_INACTIVE);
+		HDMI_FC_INVIDCONF_HDCP_KEEPOUT_ACTIVE);
 
 	inv_val |= mode->flags & DRM_MODE_FLAG_PVSYNC ?
 		HDMI_FC_INVIDCONF_VSYNC_IN_POLARITY_ACTIVE_HIGH :
@@ -1393,12 +1399,19 @@ static void hdmi_av_composer(struct dw_hdmi *hdmi,
 	}
 
 	/* Scrambling Control */
-	if(vmode->mpixelclock > 297000000 && hdmi->connector.supports_scramble){
-		drm_scdc_readb(hdmi->ddc, SCDC_SINK_VERSION, &bytes);
-		drm_scdc_writeb(hdmi->ddc, SCDC_SOURCE_VERSION, 1);
-		drm_scdc_writeb(hdmi->ddc, SCDC_TMDS_CONFIG, 1);
+	if (vmode->mpixelclock > 340000000) {
+		drm_scdc_readb(& hdmi->i2c->adap, SCDC_SINK_VERSION, &bytes);
+		drm_scdc_writeb(& hdmi->i2c->adap, SCDC_SOURCE_VERSION, bytes);
+		drm_scdc_writeb(& hdmi->i2c->adap, SCDC_TMDS_CONFIG, 1);
+		mdelay(100);
 		hdmi_writeb(hdmi, (u8)~HDMI_MC_SWRSTZ_TMDSSWRST_REQ, HDMI_MC_SWRSTZ);
-		hdmi_writeb(hdmi, HDMI_FC_SCRAMBLER_CTRL_EN, HDMI_FC_SCRAMBLER_CTRL);
+		hdmi_writeb(hdmi, 1, HDMI_FC_SCRAMBLER_CTRL);
+	}
+	else {
+		hdmi_writeb(hdmi, 0, HDMI_FC_SCRAMBLER_CTRL);
+		hdmi_writeb(hdmi, (u8)~HDMI_MC_SWRSTZ_TMDSSWRST_REQ, HDMI_MC_SWRSTZ);
+		drm_scdc_writeb(& hdmi->i2c->adap, SCDC_TMDS_CONFIG, 0);
+		mdelay(100);
 	}
 
 	/* Set up horizontal active pixel width */
