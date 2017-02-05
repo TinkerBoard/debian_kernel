@@ -425,7 +425,6 @@
 			};
 
 			vcc33_sd: SWITCH_REG1 {
-				regulator-always-on;
 				regulator-boot-on;
 				regulator-name = "vcc33_sd";
 				regulator-state-mem {
