@@ -411,9 +411,9 @@
 		dma-names = "tx", "rx";
 		interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&spi2_clk &spi2_tx &spi2_rx &spi2_cs0>;
+		pinctrl-0 = <&spi2_clk &spi2_tx &spi2_rx &spi2_cs0 &spi2_cs1>;
 		reg = <0xff130000 0x1000>;
-		#address-cells = <1>;
+		#address-cells = <2>;
 		#size-cells = <0>;
 		status = "disabled";
 	};
