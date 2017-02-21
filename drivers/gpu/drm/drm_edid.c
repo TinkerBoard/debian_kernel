@@ -1014,12 +1014,6 @@ static const struct drm_display_mode edid_4k_modes[] = {
 		   2160, 2168, 2178, 2250, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
 	  .vrefresh = 24, },
-	/* 5 - 3840x2160@50Hz */
-	{ DRM_MODE("3840x2160", DRM_MODE_TYPE_DRIVER, 594000,
-		   3840, 4896, 4984, 5280, 0,
-		   2160, 2168, 2178, 2250, 0,
-		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC),
-	  .vrefresh = 50, .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9, },
 	/* 6 - 3840x2160@60Hz */
 	{ DRM_MODE("3840x2160", DRM_MODE_TYPE_DRIVER, 594000,
 		   3840, 4016, 4104, 4400, 0,
@@ -2644,6 +2638,13 @@ static u8 drm_match_hdmi_mode(const struct drm_display_mode *to_match)
 		clock1 = hdmi_mode->clock;
 		clock2 = hdmi_mode_alternate_clock(hdmi_mode);
 
+		/* Hack For Acer Screen */
+		if(to_match->hdisplay == 3840 && to_match->hsync_start == 3888 && 
+		   to_match->hsync_end == 3920 && to_match->htotal  == 4000 &&
+		   to_match->vsync_start ==2163 && to_match->vsync_end == 2168 &&
+		   to_match->vtotal == 2222){
+			return 5;
+		}
 		if ((KHZ2PICOS(to_match->clock) == KHZ2PICOS(clock1) ||
 		     KHZ2PICOS(to_match->clock) == KHZ2PICOS(clock2)) &&
 		    drm_mode_equal_no_clocks_no_stereo(to_match, hdmi_mode))
