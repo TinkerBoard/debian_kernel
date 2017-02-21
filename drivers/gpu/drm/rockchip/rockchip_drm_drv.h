@@ -42,6 +42,9 @@ struct rockchip_crtc_funcs {
 	void (*disable_vblank)(struct drm_crtc *crtc);
 	void (*wait_for_update)(struct drm_crtc *crtc);
 	void (*cancel_pending_vblank)(struct drm_crtc *crtc, struct drm_file *file_priv);
+	enum drm_mode_status (*mode_valid)(struct drm_crtc *crtc,
+					   const struct drm_display_mode *mode,
+					   int output_type);
 };
 
 struct drm_rockchip_subdrv {
