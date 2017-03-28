@@ -138,14 +138,19 @@
 		compatible = "gpio-leds";
 
 		pwr-led {
-			gpios = <&gpio2 2 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
 			linux,default-trigger = "default-on";
 		};
 
-		act-led {
-			gpios=<&gpio2 3 GPIO_ACTIVE_LOW>;
-			linux,default-trigger="mmc0";
-		};
+                act-led {
+                        gpios=<&gpio1 24 GPIO_ACTIVE_LOW>;
+                        linux,default-trigger="mmc0";
+                };
+
+                cpu0-led {
+                        gpios=<&gpio1 25 GPIO_ACTIVE_LOW>;
+                        linux,default-trigger="cpu0";
+                };
 	};
 
 	sound {
