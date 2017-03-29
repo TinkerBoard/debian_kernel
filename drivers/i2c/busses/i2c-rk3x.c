@@ -204,6 +204,7 @@ struct rk3x_i2c {
 
 	/* Settings */
 	struct i2c_timings t;
+	int bus_nr;
 
 	/* Synchronization & notification */
 	spinlock_t lock;
@@ -969,7 +970,7 @@ static int rk3x_i2c_clk_notifier_cb(struct notifier_block *nb, unsigned long
  *
  * returns: Number of I2C msgs processed or negative in case of error
  */
-static int rk3x_i2c_setup(struct rk3x_i2c *i2c, struct i2c_msg *msgs, int num)
+static int rk3x_i2c_setup(struct rk3x_i2c *i2c, struct i2c_msg *msgs, int num, bool nostart)
 {
 	u32 addr = (msgs[0].addr & 0x7f) << 1;
 	int ret = 0;
@@ -982,13 +983,14 @@ static int rk3x_i2c_setup(struct rk3x_i2c *i2c, struct i2c_msg *msgs, int num)
 	 */
 
 	if (num >= 2 && msgs[0].len < 4 &&
-	    !(msgs[0].flags & I2C_M_RD) && (msgs[1].flags & I2C_M_RD)) {
+	    !(msgs[0].flags & I2C_M_RD) && (msgs[1].flags & I2C_M_RD) && !nostart) {
 		u32 reg_addr = 0;
 		int i;
 
 		dev_dbg(i2c->dev, "Combined write/read from addr 0x%x\n",
 			addr >> 1);
 
+		dev_err(i2c->dev, "flags from: %d, %d, addr: 0x%x\n", msgs[0].flags, msgs[1].flags, msgs[0].addr);
 		/* Fill MRXRADDR with the register address(es) */
 		for (i = 0; i < msgs[0].len; ++i) {
 			reg_addr |= msgs[0].buf[i] << (i * 8);
@@ -1049,6 +1051,7 @@ static int rk3x_i2c_xfer(struct i2c_adapter *adap,
 	u32 val;
 	int ret = 0;
 	int i;
+	bool nostart;
 
 	spin_lock_irqsave(&i2c->lock, flags);
 
@@ -1062,14 +1065,19 @@ static int rk3x_i2c_xfer(struct i2c_adapter *adap,
 	 * rk3x_i2c_setup()).
 	 */
 	for (i = 0; i < num; i += ret) {
-		ret = rk3x_i2c_setup(i2c, msgs + i, num - i);
+		if ((i2c->bus_nr == 1) || (i2c->bus_nr == 4))
+			nostart = true;
+		else
+			nostart = false;
+
+		ret = rk3x_i2c_setup(i2c, msgs + i, num - i, nostart);
 
 		if (ret < 0) {
 			dev_err(i2c->dev, "rk3x_i2c_setup() failed\n");
 			break;
 		}
 
-		if (i + ret >= num)
+		if ((i + ret >= num) || nostart)
 			i2c->is_last_msg = true;
 
 		spin_unlock_irqrestore(&i2c->lock, flags);
@@ -1213,6 +1221,7 @@ static int rk3x_i2c_probe(struct platform_device *pdev)
 
 	/* Try to set the I2C adapter number from dt */
 	bus_nr = of_alias_get_id(np, "i2c");
+	i2c->bus_nr = bus_nr;
 
 	/*
 	 * Switch to new interface if the SoC also offers the old one.
