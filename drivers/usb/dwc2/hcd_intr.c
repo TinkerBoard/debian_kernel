@@ -691,6 +691,7 @@ static void dwc2_release_channel(struct dwc2_hsotg *hsotg,
 	enum dwc2_transaction_type tr_type;
 	u32 haintmsk;
 	int free_qtd = 0;
+	int continue_trans = 1;
 
 	if (dbg_hc(chan))
 		dev_vdbg(hsotg->dev, "  %s: channel %d, halt_status %d\n",
@@ -719,6 +720,7 @@ static void dwc2_release_channel(struct dwc2_hsotg *hsotg,
 		 * deactivated. Don't want to do anything except release the
 		 * host channel and try to queue more transfers.
 		 */
+		continue_trans = 0;
 		goto cleanup;
 	case DWC2_HC_XFER_PERIODIC_INCOMPLETE:
 		dev_vdbg(hsotg->dev, "  Complete URB with I/O error\n");
@@ -730,6 +732,10 @@ static void dwc2_release_channel(struct dwc2_hsotg *hsotg,
 		break;
 	}
 
+       if (chan->csplit_nak) {
+               continue_trans = 0;
+               chan->csplit_nak = 0;
+       }
 	dwc2_deactivate_qh(hsotg, chan->qh, free_qtd);
 
 cleanup:
@@ -767,11 +773,13 @@ cleanup:
 	dwc2_writel(haintmsk, hsotg->regs + HAINTMSK);
 
 	/* Try to queue more transfers now that there's a free channel */
-	tr_type = dwc2_hcd_select_transactions(hsotg);
-	if (tr_type != DWC2_TRANSACTION_NONE)
-		dwc2_hcd_queue_transactions(hsotg, tr_type);
-}
-
+	if (continue_trans) {
+		tr_type = dwc2_hcd_select_transactions(hsotg);
+		if (tr_type != DWC2_TRANSACTION_NONE)
+			dwc2_hcd_queue_transactions(hsotg, tr_type);
+	}
+ }
+ 
 /*
  * Halts a host channel. If the channel cannot be halted immediately because
  * the request queue is full, this function ensures that the FIFO empty
@@ -1199,6 +1207,7 @@ static void dwc2_hc_nak_intr(struct dwc2_hsotg *hsotg,
 	if (chan->do_split) {
 		if (chan->complete_split)
 			qtd->error_count = 0;
+		chan->csplit_nak = 1;
 		qtd->complete_split = 0;
 		dwc2_halt_channel(hsotg, chan, qtd, DWC2_HC_XFER_NAK);
 		goto handle_nak_done;

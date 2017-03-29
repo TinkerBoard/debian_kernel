@@ -2700,6 +2700,8 @@ static int dwc2_assign_and_init_hc(struct dwc2_hsotg *hsotg, struct dwc2_qh *qh)
 	chan->xfer_len = urb->length - urb->actual_length;
 	chan->xfer_count = 0;
 
+	chan->csplit_nak = 0;
+
 	/* Set the split attributes if required */
 	if (qh->do_split)
 		dwc2_hc_init_split(hsotg, chan, qtd, urb);

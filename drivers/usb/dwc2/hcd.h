@@ -142,6 +142,7 @@ struct dwc2_host_chan {
 	u8 halt_pending;
 	u8 do_split;
 	u8 complete_split;
+	u8 csplit_nak;
 	u8 hub_addr;
 	u8 hub_port;
 	u8 xact_pos;
