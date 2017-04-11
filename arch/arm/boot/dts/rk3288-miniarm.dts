@@ -143,13 +143,13 @@
 		};
 
                 act-led {
-                        gpios=<&gpio1 24 GPIO_ACTIVE_LOW>;
+                        gpios=<&gpio1 24 GPIO_ACTIVE_HIGH>;
                         linux,default-trigger="mmc0";
                 };
 
-                cpu0-led {
-                        gpios=<&gpio1 25 GPIO_ACTIVE_LOW>;
-                        linux,default-trigger="cpu0";
+                led1-led {
+                        gpios=<&gpio1 25 GPIO_ACTIVE_HIGH>;
+                        linux,default-trigger="default-off";
                 };
 	};
 
