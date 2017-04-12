@@ -1754,13 +1754,6 @@ backoff:
 }
 EXPORT_SYMBOL(drm_atomic_helper_set_config);
 
-
-
-#define WIDTH_4K		3840
-#define HEIGHT_4K		2160
-#define WIDTH_FAKE		1920
-#define HEIGHT_FAKE		1080
-
 /* just used from fb-helper and atomic-helper: */
 int __drm_atomic_helper_set_config(struct drm_mode_set *set,
 		struct drm_atomic_state *state)
@@ -1828,13 +1821,6 @@ int __drm_atomic_helper_set_config(struct drm_mode_set *set,
 		primary_state->src_w = hdisplay << 16;
 	}
 
-
-	if (hdisplay==WIDTH_4K && vdisplay==HEIGHT_4K) {
-		DRM_INFO("set primary src: (%ux%u)->(%ux%u)\n", primary_state->src_w>>16,
-		primary_state->src_h>>16, WIDTH_FAKE, HEIGHT_FAKE);
-		primary_state->src_w = WIDTH_FAKE<<16;
-		primary_state->src_h = HEIGHT_FAKE<<16;
-	}
 commit:
 	ret = update_output_state(state, set);
 	if (ret)

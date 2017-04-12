@@ -973,27 +973,18 @@ drm_mode_validate_basic(const struct drm_display_mode *mode)
 	if (mode->clock == 0)
 		return MODE_CLOCK_LOW;
 
-
 	if (mode->hdisplay == 0 ||
 	    mode->hsync_start < mode->hdisplay ||
 	    mode->hsync_end < mode->hsync_start ||
-	    mode->htotal < mode->hsync_end) {
-		printk("drm_mode_validate_basic hdisplay = %d\n",mode->hdisplay);
-		printk("drm_mode_validate_basic hsync_start = %d\n",mode->hsync_start);
-		printk("drm_mode_validate_basic hsync_end = %d\n",mode->hsync_end);
-		printk("drm_mode_validate_basic htotal = %d\n",mode->htotal);
-	}
-
+	    mode->htotal < mode->hsync_end)
+		return MODE_H_ILLEGAL;
 
 	if (mode->vdisplay == 0 ||
 	    mode->vsync_start < mode->vdisplay ||
 	    mode->vsync_end < mode->vsync_start ||
-	    mode->vtotal < mode->vsync_end) {
-		printk("drm_mode_validate_basic vdisplay = %d\n",mode->vdisplay);
-		printk("drm_mode_validate_basic vsync_start = %d\n",mode->vsync_start);
-		printk("drm_mode_validate_basic vsync_end = %d\n",mode->vsync_end);
-		printk("drm_mode_validate_basic vtotal = %d\n",mode->vtotal);
-}
+	    mode->vtotal < mode->vsync_end)
+		return MODE_V_ILLEGAL;
+
 	return MODE_OK;
 }
 EXPORT_SYMBOL(drm_mode_validate_basic);

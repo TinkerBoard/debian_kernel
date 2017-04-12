@@ -2709,14 +2709,8 @@ int drm_crtc_check_viewport(const struct drm_crtc *crtc,
 
 {
 	int hdisplay, vdisplay;
-	drm_crtc_get_hv_timing(mode, &hdisplay, &vdisplay);
 
-	if (hdisplay == 3840 && vdisplay == 2160) {
-		pr_info("%s: skip check\n", __func__);
-		pr_info("drm_crtc_check_viewport x= %d,  y=%d,  fb x=%d, y=%d, \n",x, y ,fb->width, fb->height);
-		pr_info("drm_crtc_check_viewport hdisplay %d,  vdisplay= %d \n",hdisplay, vdisplay);
-		return 0;
-	}
+	drm_crtc_get_hv_timing(mode, &hdisplay, &vdisplay);
 
 	if (crtc->state &&
 	    crtc->primary->state->rotation & (BIT(DRM_ROTATE_90) |
