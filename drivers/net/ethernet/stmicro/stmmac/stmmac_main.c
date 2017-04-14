@@ -679,6 +679,38 @@ static void stmmac_release_ptp(struct stmmac_priv *priv)
 	stmmac_ptp_unregister(priv);
 }
 
+void setLedConfiguration(struct phy_device *phydev) {
+
+  // To switch to extension Page44
+  phy_write(phydev, 31, 0x0007);
+  phy_write(phydev, 30, 0x002c);
+
+  printk("%s: #### before setting led, Reg26 = 0x%x , Reg28 = 0x%x\n", __func__, phy_read(phydev, 26), phy_read(phydev, 28));
+
+  //LED Link speed default setting
+  phy_write(phydev, 28, (phy_read(phydev, 28) & 0xf000));
+  //LED1 & LED2 not blinking
+  phy_write(phydev, 26, (phy_read(phydev, 26) & ~(BIT(5)|BIT(6))) );
+
+  switch (phydev->speed) {
+    case 1000:
+      //LED green
+      phy_write(phydev, 28, (phy_read(phydev, 28) | BIT(6)) );
+      break;
+    case 100:
+      //LED orange
+      phy_write(phydev, 28, (phy_read(phydev, 28) | BIT(9)) );
+      break;
+    default:
+      break;
+  }
+
+  printk("%s: #### after setting led, Reg26 = 0x%x , Reg28 = 0x%x\n", __func__, phy_read(phydev, 26), phy_read(phydev, 28));
+
+  //switch to PHY`s Page0
+  phy_write(phydev, 31, 0);
+}
+
 /**
  * stmmac_adjust_link - adjusts the link parameters
  * @dev: net device structure
@@ -721,6 +753,7 @@ static void stmmac_adjust_link(struct net_device *dev)
 
 		if (phydev->speed != priv->speed) {
 			new_state = 1;
+			setLedConfiguration(phydev);
 			switch (phydev->speed) {
 			case 1000:
 				if (likely(priv->plat->has_gmac))
