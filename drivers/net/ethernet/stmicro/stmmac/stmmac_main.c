@@ -53,6 +53,7 @@
 #include "stmmac.h"
 #include <linux/reset.h>
 #include <linux/of_mdio.h>
+#include "eth_mac_tinker.h"
 
 #define STMMAC_ALIGN(x)	L1_CACHE_ALIGN(x)
 
@@ -1619,8 +1620,9 @@ static int stmmac_get_hw_features(struct stmmac_priv *priv)
 static void stmmac_check_ether_addr(struct stmmac_priv *priv)
 {
 	if (!is_valid_ether_addr(priv->dev->dev_addr)) {
-		priv->hw->mac->get_umac_addr(priv->hw,
-					     priv->dev->dev_addr, 0);
+	/*	priv->hw->mac->get_umac_addr(priv->hw,
+					     priv->dev->dev_addr, 0);*/
+		eth_mac_eeprom(priv->dev->dev_addr);
 		if (!is_valid_ether_addr(priv->dev->dev_addr))
 			eth_hw_addr_random(priv->dev);
 		pr_info("%s: device MAC address %pM\n", priv->dev->name,
