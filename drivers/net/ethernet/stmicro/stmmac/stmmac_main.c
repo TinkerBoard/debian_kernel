@@ -681,6 +681,13 @@ static void stmmac_release_ptp(struct stmmac_priv *priv)
 
 void setLedConfiguration(struct phy_device *phydev) {
 
+
+  // disable EEE LED mode
+  phy_write(phydev, 31, 0x0005);
+  phy_write(phydev, 5, 0x8b82);
+  phy_write(phydev, 6, 0x052b);
+  phy_write(phydev, 31, 0x0000);
+
   // To switch to extension Page44
   phy_write(phydev, 31, 0x0007);
   phy_write(phydev, 30, 0x002c);
