@@ -1074,7 +1074,7 @@
 				<&cru ACLK_VIO0>, <&cru ACLK_VIO1>,
 				<&cru ACLK_GPU>;
 		assigned-clock-rates =
-				<594000000>, <1250000000>,
+				<594000000>, <0>,
 				<300000000>, <150000000>,
 				<75000000>, <300000000>,
 				<150000000>, <75000000>,
@@ -1432,6 +1432,8 @@
 		resets = <&cru SRST_LCDC0_AXI>, <&cru SRST_LCDC0_AHB>, <&cru SRST_LCDC0_DCLK>;
 		reset-names = "axi", "ahb", "dclk";
 		iommus = <&vopb_mmu>;
+		assigned-clocks = <&cru DCLK_VOP0>;
+		assigned-clock-parents = <&cru PLL_NPLL>;
 		status = "disabled";
 
 		vopb_out: port {
