@@ -990,7 +990,7 @@ static int rk3x_i2c_setup(struct rk3x_i2c *i2c, struct i2c_msg *msgs, int num, b
 		dev_dbg(i2c->dev, "Combined write/read from addr 0x%x\n",
 			addr >> 1);
 
-		dev_err(i2c->dev, "flags from: %d, %d, addr: 0x%x\n", msgs[0].flags, msgs[1].flags, msgs[0].addr);
+		dev_dbg(i2c->dev, "flags from: %d, %d, addr: 0x%x\n", msgs[0].flags, msgs[1].flags, msgs[0].addr);
 		/* Fill MRXRADDR with the register address(es) */
 		for (i = 0; i < msgs[0].len; ++i) {
 			reg_addr |= msgs[0].buf[i] << (i * 8);
