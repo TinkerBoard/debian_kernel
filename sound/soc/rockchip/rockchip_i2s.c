@@ -23,6 +23,9 @@
 
 #include "rockchip_i2s.h"
 
+#define I2S_XFER_MODE	0
+#define PCM_XFER_MODE	1
+
 #define DRV_NAME "rockchip-i2s"
 
 struct rk_i2s_pins {
@@ -50,6 +53,7 @@ struct rk_i2s_dev {
 	bool tx_start;
 	bool rx_start;
 	bool is_master_mode;
+	int xfer_mode; /* 0: i2s, 1: pcm */
 	const struct rk_i2s_pins *pins;
 };
 
@@ -638,6 +642,18 @@ static int rockchip_i2s_probe(struct platform_device *pdev)
 		return ret;
 	}
 
+	ret = of_property_read_u32(node, "rockchip,xfer-mode", &i2s->xfer_mode);
+	if (ret < 0)
+		i2s->xfer_mode = I2S_XFER_MODE;
+
+	if (PCM_XFER_MODE == i2s->xfer_mode) {
+		regmap_update_bits(i2s->regmap, I2S_TXCR,
+				   I2S_TXCR_TFS_MASK,
+				   I2S_TXCR_TFS_PCM);
+		regmap_update_bits(i2s->regmap, I2S_RXCR,
+				   I2S_RXCR_TFS_MASK,
+				   I2S_RXCR_TFS_PCM);
+	}
 	return 0;
 
 err_suspend:
@@ -682,6 +698,14 @@ static int rockchip_i2s_resume(struct device *dev)
 	if (ret < 0)
 		return ret;
 	ret = regcache_sync(i2s->regmap);
+	if (PCM_XFER_MODE == i2s->xfer_mode) {
+		regmap_update_bits(i2s->regmap, I2S_TXCR,
+				   I2S_TXCR_TFS_MASK,
+				   I2S_TXCR_TFS_PCM);
+		regmap_update_bits(i2s->regmap, I2S_RXCR,
+				   I2S_RXCR_TFS_MASK,
+				   I2S_RXCR_TFS_PCM);
+	}
 	pm_runtime_put(dev);
 
 	return ret;
