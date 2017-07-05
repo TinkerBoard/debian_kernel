@@ -23,6 +23,8 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <asm/system_info.h>
+#include <linux/crc32.h>
 
 #define EFUSE_A_SHIFT			6
 #define EFUSE_A_MASK			0x3ff
@@ -93,12 +95,26 @@ static const struct of_device_id rockchip_efuse_match[] = {
 	{ /* sentinel */},
 };
 MODULE_DEVICE_TABLE(of, rockchip_efuse_match);
+static u8 efuse_buf[32] = {};
+static void rk3288_set_system_serial(void) {
+	int i;
+	u8 buf[16];
+
+	for (i = 0; i < 8; i++) {
+		buf[i] = efuse_buf[8 + (i << 1)];
+		buf[i + 8] = efuse_buf[7 + (i << 1)];
+	}
+
+	system_serial_low = crc32(0, buf, 8);
+	system_serial_high = crc32(system_serial_low, buf + 8, 8);
+}
 
 static int __init rockchip_efuse_probe(struct platform_device *pdev)
 {
 	struct resource *res;
 	struct nvmem_device *nvmem;
 	struct rockchip_efuse_chip *efuse;
+	int ret;
 
 	efuse = devm_kzalloc(&pdev->dev, sizeof(struct rockchip_efuse_chip),
 			     GFP_KERNEL);
@@ -124,6 +140,11 @@ static int __init rockchip_efuse_probe(struct platform_device *pdev)
 		return PTR_ERR(nvmem);
 
 	platform_set_drvdata(pdev, nvmem);
+	ret = rockchip_efuse_read(efuse, 0, efuse_buf, 32);
+	if (ret < 0) {
+		printk(" failed to rockchip_efuse_read\n");
+	}
+	rk3288_set_system_serial();
 
 	return 0;
 }
