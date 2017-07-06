@@ -153,7 +153,7 @@
                 };
 	};
 
-	sound {
+	sound-simple-card {
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,name = "rockchip,miniarm-codec";
@@ -498,13 +498,6 @@
 
 &i2c1 {
         status = "okay";
-
-	pcm5122: pcm5122@4c {
-		#sound-dai-cells = <0>;
-		compatible = "ti,pcm5122";
-		reg = <0x4c>;
-		status = "disabled";
-	};
 };
 
 &i2c3 {
