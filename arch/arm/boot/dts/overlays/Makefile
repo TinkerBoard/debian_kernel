@@ -1,0 +1,10 @@
+# Overlays for the Tinker board platform
+
+dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
+	hifiberry-dac-amp.dtbo \
+
+targets += dtbs dtbs_install
+targets += $(dtbo-y)
+
+always		:= $(dtbo-y)
+clean-files	:= *.dtbo

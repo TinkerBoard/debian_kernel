@@ -783,20 +783,21 @@ dtb-$(CONFIG_ARCH_MEDIATEK) += \
 	mt8127-moose.dtb \
 	mt8135-evbp1.dtb
 dtb-$(CONFIG_ARCH_ZX) += zx296702-ad1.dtb
+
+targets += dtbs dtbs_install
+targets += $(dtb-y)
+
 endif
 
 dtstree		:= $(srctree)/$(src)
 dtb-$(CONFIG_OF_ALL_DTBS) := $(patsubst $(dtstree)/%.dts,%.dtb, $(wildcard $(dtstree)/*.dts))
 
-DTB_NAMES := $(subst $\",,$(CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE_NAMES))
-ifneq ($(DTB_NAMES),)
-DTB_LIST := $(addsuffix .dtb,$(DTB_NAMES))
-else
-DTB_LIST := $(dtb-y)
-endif
-
-targets += dtbs dtbs_install
-targets += $(DTB_LIST)
-
-always		:= $(DTB_LIST)
+always		:= $(dtb-y)
+subdir-y	:= overlays
 clean-files	:= *.dtb
+
+# Enable fixups to support overlays on BCM2835 platforms
+ifeq ($(CONFIG_ARCH_ROCKCHIP),y)
+	DTC_FLAGS ?= -@ -H epapr
+	dts-dirs += overlays
+endif

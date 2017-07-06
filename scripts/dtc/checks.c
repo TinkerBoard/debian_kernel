@@ -294,6 +294,30 @@ static void check_node_name_format(struct check *c, struct node *dt,
 }
 NODE_ERROR(node_name_format, NULL, &node_name_chars);
 
+static void check_unit_address_vs_reg(struct check *c, struct node *dt,
+			     struct node *node)
+{
+	const char *unitname = get_unitname(node);
+	struct property *prop = get_property(node, "reg");
+
+	if (!prop) {
+		prop = get_property(node, "ranges");
+		if (prop && !prop->val.len)
+			prop = NULL;
+	}
+
+	if (prop) {
+		if (!unitname[0])
+			FAIL(c, "Node %s has a reg or ranges property, but no unit name",
+			    node->fullpath);
+	} else {
+		if (unitname[0])
+			FAIL(c, "Node %s has a unit name, but no reg property",
+			    node->fullpath);
+	}
+}
+NODE_WARNING(unit_address_vs_reg, NULL);
+
 static void check_property_name_chars(struct check *c, struct node *dt,
 				      struct node *node, struct property *prop)
 {
@@ -458,6 +482,8 @@ static void fixup_phandle_references(struct check *c, struct node *dt,
 				     struct node *node, struct property *prop)
 {
 	struct marker *m = prop->val.markers;
+	struct fixup *f, **fp;
+	struct fixup_entry *fe, **fep;
 	struct node *refnode;
 	cell_t phandle;
 
@@ -466,9 +492,68 @@ static void fixup_phandle_references(struct check *c, struct node *dt,
 
 		refnode = get_node_by_ref(dt, m->ref);
 		if (! refnode) {
-			FAIL(c, "Reference to non-existent node or label \"%s\"\n",
-			     m->ref);
+			if (!dt->is_plugin) {
+				FAIL(c, "Reference to non-existent node or label \"%s\"\n",
+					m->ref);
+				continue;
+			}
+
+			/* allocate fixup entry */
+			fe = xmalloc(sizeof(*fe));
+
+			fe->node = node;
+			fe->prop = prop;
+			fe->offset = m->offset;
+			fe->next = NULL;
+
+			/* search for an already existing fixup */
+			for_each_fixup(dt, f)
+				if (strcmp(f->ref, m->ref) == 0)
+					break;
+
+			/* no fixup found, add new */
+			if (f == NULL) {
+				f = xmalloc(sizeof(*f));
+				f->ref = m->ref;
+				f->entries = NULL;
+				f->next = NULL;
+
+				/* add it to the tree */
+				fp = &dt->fixups;
+				while (*fp)
+					fp = &(*fp)->next;
+				*fp = f;
+			}
+
+			/* and now append fixup entry */
+			fep = &f->entries;
+			while (*fep)
+				fep = &(*fep)->next;
+			*fep = fe;
+
+			/* mark the entry as unresolved */
+			*((cell_t *)(prop->val.val + m->offset)) =
+				cpu_to_fdt32(0xdeadbeef);
 			continue;
+		}
+
+		/* if it's a local reference, we need to record it */
+		if (symbol_fixup_support && dt->is_plugin) {
+
+			/* allocate a new local fixup entry */
+			fe = xmalloc(sizeof(*fe));
+
+			fe->node = node;
+			fe->prop = prop;
+			fe->offset = m->offset;
+			fe->next = NULL;
+			fe->local_fixup_generated = false;
+
+			/* append it to the local fixups */
+			fep = &dt->local_fixups;
+			while (*fep)
+				fep = &(*fep)->next;
+			*fep = fe;
 		}
 
 		phandle = get_node_phandle(dt, refnode);
@@ -560,7 +645,7 @@ static void check_reg_format(struct check *c, struct node *dt,
 	size_cells = node_size_cells(node->parent);
 	entrylen = (addr_cells + size_cells) * sizeof(cell_t);
 
-	if ((prop->val.len % entrylen) != 0)
+	if (!entrylen || (prop->val.len % entrylen) != 0)
 		FAIL(c, "\"reg\" property in %s has invalid length (%d bytes) "
 		     "(#address-cells == %d, #size-cells == %d)",
 		     node->fullpath, prop->val.len, addr_cells, size_cells);
@@ -652,6 +737,45 @@ static void check_obsolete_chosen_interrupt_controller(struct check *c,
 }
 TREE_WARNING(obsolete_chosen_interrupt_controller, NULL);
 
+static void check_auto_label_phandles(struct check *c, struct node *dt,
+				       struct node *node)
+{
+	struct label *l;
+	struct symbol *s, **sp;
+	int has_label;
+
+	if (!symbol_fixup_support)
+		return;
+
+	has_label = 0;
+	for_each_label(node->labels, l) {
+		has_label = 1;
+		break;
+	}
+
+	if (!has_label)
+		return;
+
+	/* force allocation of a phandle for this node */
+	(void)get_node_phandle(dt, node);
+
+	/* add the symbol */
+	for_each_label(node->labels, l) {
+
+		s = xmalloc(sizeof(*s));
+		s->label = l;
+		s->node = node;
+		s->next = NULL;
+
+		/* add it to the symbols list */
+		sp = &dt->symbols;
+		while (*sp)
+			sp = &((*sp)->next);
+		*sp = s;
+	}
+}
+NODE_WARNING(auto_label_phandles, NULL);
+
 static struct check *check_table[] = {
 	&duplicate_node_names, &duplicate_property_names,
 	&node_name_chars, &node_name_format, &property_name_chars,
@@ -667,8 +791,12 @@ static struct check *check_table[] = {
 
 	&addr_size_cells, &reg_format, &ranges_format,
 
+	&unit_address_vs_reg,
+
 	&avoid_default_addr_size,
 	&obsolete_chosen_interrupt_controller,
+
+	&auto_label_phandles,
 
 	&always_fail,
 };
