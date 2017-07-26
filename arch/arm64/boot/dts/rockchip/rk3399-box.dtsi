@@ -43,6 +43,7 @@
 #include <dt-bindings/input/input.h>
 #include "rk3399.dtsi"
 #include "rk3399-android.dtsi"
+#include "rk3399-opp.dtsi"
 
 / {
 	compatible = "rockchip,rk3399-box","rockchip,rk3399";
@@ -86,11 +87,12 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&host_vbus_drv>;
 		regulator-name = "vcc5v0_host";
+		regulator-always-on;
 	};
 
 	vdd_log: vdd-log {
 		compatible = "pwm-regulator";
-		pwms = <&pwm2 0 25000 0>;
+		pwms = <&pwm2 0 25000 1>;
 		regulator-name = "vdd_log";
 		regulator-min-microvolt = <800000>;
 		regulator-max-microvolt = <1400000>;
@@ -111,23 +113,6 @@
 		#clock-cells = <0>;
 	};
 
-	io-domains {
-		compatible = "rockchip,rk3399-io-voltage-domain";
-		rockchip,grf = <&grf>;
-
-		bt656-supply = <&vcc1v8_s0>; /* bt656_gpio2ab_ms */
-		audio-supply = <&vcc1v8_s0>; /* audio_gpio3d4a_ms */
-		sdmmc-supply = <&vcc_sd>; /* sdmmc_gpio4b_ms */
-		gpio1830-supply = <&vcc_3v0>; /* gpio1833_gpio4cd_ms */
-	};
-
-	pmu-io-domains {
-		compatible = "rockchip,rk3399-pmu-io-voltage-domain";
-		rockchip,grf = <&pmugrf>;
-
-		pmu1830-supply = <&vcc_1v8>;
-	};
-
 	spdif-sound {
 		status = "okay";
 		compatible = "simple-audio-card";
@@ -143,26 +128,6 @@
 	spdif_out: spdif-out {
 		status = "okay";
 		compatible = "linux,spdif-dit";
-		#sound-dai-cells = <0>;
-	};
-
-	hdmi_sound: hdmi-sound {
-		status = "okay";
-		compatible = "simple-audio-card";
-		simple-audio-card,format = "i2s";
-		simple-audio-card,mclk-fs = <256>;
-		simple-audio-card,name = "rockchip,hdmi";
-		simple-audio-card,cpu {
-			sound-dai = <&i2s2>;
-		};
-		simple-audio-card,codec {
-			sound-dai = <&dw_hdmi_audio>;
-		};
-	};
-
-	dw_hdmi_audio: dw-hdmi-audio {
-		status = "okay";
-		compatible = "rockchip,dw-hdmi-audio";
 		#sound-dai-cells = <0>;
 	};
 
@@ -193,6 +158,8 @@
 
 	wireless-bluetooth {
 		compatible = "bluetooth-platdata";
+		clocks = <&rk808 1>;
+		clock-names = "ext_clock";
 		/* wifi-bt-power-toggle; */
 		uart_rts_gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default", "rts_gpio";
@@ -204,6 +171,14 @@
 		BT,wake_host_irq = <&gpio0 4 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
+
+	test-power {
+		status = "okay";
+	};
+};
+
+&hdmi_dp_sound {
+	status = "okay";
 };
 
 &sdmmc {
@@ -215,10 +190,11 @@
 	cap-sd-highspeed;
 	disable-wp;
 	num-slots = <1>;
-	sd-uhs-sdr104;
+	//sd-uhs-sdr104;
 	vqmmc-supply = <&vcc_sd>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc_clk &sdmmc_cmd &sdmmc_cd &sdmmc_bus4>;
+	card-detect-delay = <800>;
 	status = "okay";
 };
 
@@ -241,9 +217,6 @@
 };
 
 &emmc_phy {
-	freq-sel = <200000000>;
-	dr-sel = <50>;
-	opdelay = <4>;
 	status = "okay";
 };
 
@@ -274,177 +247,6 @@
 	#sound-dai-cells = <0>;
 };
 
-&cluster0_opp {
-	opp@408000000 {
-		opp-hz = /bits/ 64 <408000000>;
-		opp-microvolt = <800000>;
-		clock-latency-ns = <40000>;
-	};
-	opp@600000000 {
-		opp-hz = /bits/ 64 <600000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@816000000 {
-		opp-hz = /bits/ 64 <816000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@1008000000 {
-		opp-hz = /bits/ 64 <1008000000>;
-		opp-microvolt = <875000>;
-	};
-	opp@1200000000 {
-		opp-hz = /bits/ 64 <1200000000>;
-		opp-microvolt = <925000>;
-	};
-	opp@1416000000 {
-		opp-hz = /bits/ 64 <1416000000>;
-		opp-microvolt = <1050000>;
-	};
-	opp@1512000000 {
-		opp-hz = /bits/ 64 <1512000000>;
-		opp-microvolt = <1075000>;
-	};
-};
-
-&cluster1_opp {
-	opp@408000000 {
-		opp-hz = /bits/ 64 <408000000>;
-		opp-microvolt = <800000>;
-		clock-latency-ns = <40000>;
-	};
-	opp@600000000 {
-		opp-hz = /bits/ 64 <600000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@816000000 {
-		opp-hz = /bits/ 64 <816000000>;
-		opp-microvolt = <825000>;
-	};
-	opp@1008000000 {
-		opp-hz = /bits/ 64 <1008000000>;
-		opp-microvolt = <875000>;
-	};
-	opp@1200000000 {
-		opp-hz = /bits/ 64 <1200000000>;
-		opp-microvolt = <950000>;
-	};
-	opp@1416000000 {
-		opp-hz = /bits/ 64 <1416000000>;
-		opp-microvolt = <1025000>;
-	};
-	opp@1608000000 {
-		opp-hz = /bits/ 64 <1608000000>;
-		opp-microvolt = <1100000>;
-	};
-	opp@1800000000 {
-		opp-hz = /bits/ 64 <1800000000>;
-		opp-microvolt = <1175000>;
-	};
-	opp@1992000000 {
-		opp-hz = /bits/ 64 <1992000000>;
-		opp-microvolt = <1250000>;
-	};
-};
-
-&CPU_COST_A72 {
-	busy-cost-data = <
-		210   129	/*  408MHz */
-		308   184	/*  600MHz */
-		419   246	/*  816MHz */
-		518   335	/* 1008MHz */
-		617   428	/* 1200MHz */
-		728   573	/* 1416MHz */
-		827   724	/* 1608MHz */
-		925   900	/* 1800MHz */
-		1024  1108	/* 1992MHz */
-	>;
-	idle-cost-data = <
-	      15
-	      15
-	       0
-	>;
-};
-
-&CPU_COST_A53 {
-	busy-cost-data = <
-		108    46	/*  408M */
-		159    67	/*  600M */
-		216    90	/*  816M */
-		267    120	/* 1008M */
-		318    153	/* 1200M */
-		375    198	/* 1416M */
-		401    222	/* 1512M */
-	>;
-	idle-cost-data = <
-	      6
-	      6
-	      0
-	>;
-};
-
-&CLUSTER_COST_A72 {
-	busy-cost-data = <
-		210   129	/*  408MHz */
-		308   184	/*  600MHz */
-		419   246	/*  816MHz */
-		518   335	/* 1008MHz */
-		617   428	/* 1200MHz */
-		728   573	/* 1416MHz */
-		827   724	/* 1608MHz */
-		925   900	/* 1800MHz */
-		1024  1108	/* 1992MHz */
-	>;
-	idle-cost-data = <
-		 65
-		 65
-		 65
-	>;
-};
-
-&CLUSTER_COST_A53 {
-	busy-cost-data = <
-		108    46	/*  408M */
-		159    67	/*  600M */
-		216    90	/*  816M */
-		267    120	/* 1008M */
-		318    153	/* 1200M */
-		375    198	/* 1416M */
-		401    222	/* 1512M */
-	>;
-	idle-cost-data = <
-		56
-		56
-		56
-	>;
-};
-
-&gpu_opp_table {
-	opp@200000000 {
-		opp-hz = /bits/ 64 <200000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@300000000 {
-		opp-hz = /bits/ 64 <300000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@400000000 {
-		opp-hz = /bits/ 64 <400000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@500000000 {
-		opp-hz = /bits/ 64 <500000000>;
-		opp-microvolt = <900000>;
-	};
-	opp@600000000 {
-		opp-hz = /bits/ 64 <600000000>;
-		opp-microvolt = <900000>;
-	};
-	opp@800000000 {
-		opp-hz = /bits/ 64 <800000000>;
-		opp-microvolt = <1000000>;
-	};
-};
-
 &i2c0 {
 	status = "okay";
 	i2c-scl-rising-time-ns = <168>;
@@ -455,11 +257,13 @@
 		compatible = "silergy,syr827";
 		reg = <0x40>;
 		regulator-compatible = "fan53555-reg";
+		pinctrl-0 = <&vsel1_gpio>;
+		vsel-gpios = <&gpio1 17 GPIO_ACTIVE_HIGH>;
 		regulator-name = "vdd_cpu_b";
 		regulator-min-microvolt = <712500>;
 		regulator-max-microvolt = <1500000>;
 		regulator-ramp-delay = <1000>;
-		fcs,suspend-voltage-selector = <0>;
+		fcs,suspend-voltage-selector = <1>;
 		regulator-always-on;
 		regulator-boot-on;
 		vin-supply = <&vcc_sys>;
@@ -472,6 +276,8 @@
 		compatible = "silergy,syr828";
 		reg = <0x41>;
 		regulator-compatible = "fan53555-reg";
+		pinctrl-0 = <&vsel2_gpio>;
+		vsel-gpios = <&gpio1 14 GPIO_ACTIVE_HIGH>;
 		regulator-name = "vdd_gpu";
 		regulator-min-microvolt = <712500>;
 		regulator-max-microvolt = <1500000>;
@@ -480,6 +286,7 @@
 		regulator-always-on;
 		regulator-boot-on;
 		vin-supply = <&vcc_sys>;
+		regulator-initial-mode = <1>; /* 1:force PWM 2:auto */
 		regulator-state-mem {
 			regulator-off-in-suspend;
 		};
@@ -515,6 +322,7 @@
 				regulator-name = "vdd_center";
 				regulator-min-microvolt = <750000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <6001>;
 				regulator-always-on;
 				regulator-boot-on;
 				regulator-state-mem {
@@ -526,6 +334,7 @@
 				regulator-name = "vdd_cpu_l";
 				regulator-min-microvolt = <750000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <6001>;
 				regulator-always-on;
 				regulator-boot-on;
 				regulator-state-mem {
@@ -700,10 +509,6 @@
 	mali-supply = <&vdd_gpu>;
 };
 
-&rga {
-	status = "okay";
-};
-
 &threshold {
 	temperature = <85000>;
 };
@@ -718,6 +523,10 @@
 
 &tcphy0 {
 	extcon = <&fusb0>;
+	status = "okay";
+};
+
+&tcphy1 {
 	status = "okay";
 };
 
@@ -789,7 +598,7 @@
 };
 
 &usbdrd_dwc3_0 {
-	dr_mode = "peripheral";
+	dr_mode = "otg";
 	status = "okay";
 };
 
@@ -812,7 +621,7 @@
 	interrupts = <GIC_SPI 61 IRQ_TYPE_LEVEL_HIGH 0>;
 	compatible = "rockchip,remotectl-pwm";
 	remote_pwm_id = <3>;
-	handle_cpu_id = <0>;
+	handle_cpu_id = <1>;
 
 	ir_key1 {
 		rockchip,usercode = <0x4040>;
@@ -863,6 +672,7 @@
 			<0xa5	KEY_VOLUMEDOWN>,
 			<0xab	183>,
 			<0xb7	388>,
+			<0xe8	388>,
 			<0xf8	184>,
 			<0xaf	185>,
 			<0xed	KEY_VOLUMEDOWN>,
@@ -917,8 +727,9 @@
 	snps,reset-delays-us = <0 10000 50000>;
 	assigned-clocks = <&cru SCLK_RMII_SRC>;
 	assigned-clock-parents = <&clkin_gmac>;
-	pinctrl-names = "default";
+	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&rgmii_pins>;
+	pinctrl-1 = <&rgmii_sleep_pins>;
 	tx_delay = <0x28>;
 	rx_delay = <0x11>;
 	status = "okay";
@@ -928,30 +739,17 @@
 	status = "okay";
 };
 
-&rk_screen {
-	#include <dt-bindings/display/screen-timing/lcd-box.dtsi>
-};
-
-&disp_timings {
-	native-mode = <&timing1>; /* 1080p */
-};
-
-&vopb_rk_fb {
-	status = "okay";
-};
-
-&fb {
-	rockchip,disp-mode = <NO_DUAL>;
-	rockchip,disp-policy = <DISPLAY_POLICY_BOX>;
-};
-
-&hdmi_rk_fb {
-	status = "okay";
-	rockchip,hdmi_video_source = <DISPLAY_SOURCE_LCDC0>;
-};
-
 &i2s2 {
 	status = "okay";
+};
+
+&io_domains {
+	status = "okay";
+
+	bt656-supply = <&vcc1v8_s0>; /* bt656_gpio2ab_ms */
+	audio-supply = <&vcc1v8_s0>; /* audio_gpio3d4a_ms */
+	sdmmc-supply = <&vcc_sd>; /* sdmmc_gpio4b_ms */
+	gpio1830-supply = <&vcc_3v0>; /* gpio1833_gpio4cd_ms */
 };
 
 &pinctrl {
@@ -981,5 +779,74 @@
 			rockchip,pins =
 				<1 21 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
+
+		vsel1_gpio: vsel1-gpio {
+			rockchip,pins =
+				<1 17 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+
+		vsel2_gpio: vsel2-gpio {
+			rockchip,pins =
+				<1 14 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
 	};
+
+	gmac {
+		rgmii_sleep_pins: rgmii-sleep-pins {
+			rockchip,pins =
+				<3 15 RK_FUNC_GPIO &pcfg_output_low>;
+		};
+	};
+};
+
+&pvtm {
+	status = "okay";
+};
+
+&pmu_pvtm {
+	status = "okay";
+};
+
+&pmu_io_domains {
+	status = "okay";
+	pmu1830-supply = <&vcc_1v8>;
+};
+
+&rockchip_suspend {
+	status = "okay";
+	rockchip,sleep-debug-en = <0>;
+	rockchip,sleep-mode-config = <
+		(0
+		| RKPM_SLP_ARMPD
+		| RKPM_SLP_PERILPPD
+		| RKPM_SLP_DDR_RET
+		| RKPM_SLP_PLLPD
+		| RKPM_SLP_CENTER_PD
+		| RKPM_SLP_AP_PWROFF
+		)
+	>;
+	rockchip,wakeup-config = <
+		(0
+		| RKPM_GPIO_WKUP_EN
+		| RKPM_PWM_WKUP_EN
+		)
+	>;
+	rockchip,pwm-regulator-config = <
+		(0
+		| PWM2_REGULATOR_EN
+		)
+	>;
+	rockchip,power-ctrl =
+		<&gpio1 17 GPIO_ACTIVE_HIGH>,
+		<&gpio1 14 GPIO_ACTIVE_HIGH>;
+};
+
+&vopb {
+	assigned-clocks = <&cru DCLK_VOP0_DIV>;
+	assigned-clock-parents = <&cru PLL_VPLL>;
+};
+
+&vopl {
+	assigned-clocks = <&cru DCLK_VOP1_DIV>;
+	assigned-clock-parents = <&cru PLL_CPLL>;
 };

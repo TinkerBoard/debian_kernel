@@ -118,8 +118,7 @@ static int crb_recv(struct tpm_chip *chip, u8 *buf, size_t count)
 
 	memcpy_fromio(buf, priv->rsp, 6);
 	expected = be32_to_cpup((__be32 *) &buf[2]);
-
-	if (expected > count)
+	if (expected > count || expected < 6)
 		return -EIO;
 
 	memcpy_fromio(&buf[6], &priv->rsp[6], expected - 6);
@@ -148,6 +147,11 @@ static int crb_send(struct tpm_chip *chip, u8 *buf, size_t len)
 {
 	struct crb_priv *priv = chip->vendor.priv;
 	int rc = 0;
+
+	/* Zero the cancel register so that the next command will not get
+	 * canceled.
+	 */
+	iowrite32(0, &priv->cca->cancel);
 
 	if (len > le32_to_cpu(ioread32(&priv->cca->cmd_size))) {
 		dev_err(&chip->dev,
@@ -182,8 +186,6 @@ static void crb_cancel(struct tpm_chip *chip)
 
 	if ((priv->flags & CRB_FL_ACPI_START) && crb_do_acpi_start(chip))
 		dev_err(&chip->dev, "ACPI Start failed\n");
-
-	iowrite32(0, &priv->cca->cancel);
 }
 
 static bool crb_req_canceled(struct tpm_chip *chip, u8 status)

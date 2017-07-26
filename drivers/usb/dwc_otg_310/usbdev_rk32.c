@@ -4,6 +4,14 @@
 #include "dwc_otg_regs.h"
 static struct dwc_otg_control_usb *control_usb;
 
+int is_rk3288_usb(void)
+{
+	if (!control_usb)
+		return false;
+
+	return control_usb->chip_id == RK3288_USB_CTLR ? true : false;
+}
+
 #ifdef CONFIG_USB20_OTG
 static void usb20otg_hw_init(void)
 {
@@ -172,15 +180,18 @@ static void dwc_otg_uart_mode(void *pdata, int enter_usb_uart_mode)
 static void usb20otg_power_enable(int enable)
 {
 	if (0 == enable) {
-		rk_battery_charger_detect_cb(USB_OTG_POWER_OFF);
 		/* disable otg_drv power */
 		if (gpio_is_valid(control_usb->otg_gpios->gpio))
 			gpio_set_value(control_usb->otg_gpios->gpio, 0);
+
+		rk_battery_charger_detect_cb(USB_OTG_POWER_OFF);
 	} else if (1 == enable) {
-		rk_battery_charger_detect_cb(USB_OTG_POWER_ON);
 		/* enable otg_drv power */
 		if (gpio_is_valid(control_usb->otg_gpios->gpio))
 			gpio_set_value(control_usb->otg_gpios->gpio, 1);
+
+		if (!usb20otg_get_status(USB_STATUS_BVABLID))
+			rk_battery_charger_detect_cb(USB_OTG_POWER_ON);
 	}
 }
 
@@ -958,17 +969,6 @@ static int usb_grf_ioremap(struct platform_device *pdev)
 	return ret;
 }
 
-#ifdef CONFIG_OF
-
-static const struct of_device_id rk_usb_control_id_table[] = {
-	{
-	 .compatible = "rockchip,rk3288-usb-control",
-	 },
-	{},
-};
-
-#endif
-
 static int rk_usb_control_probe(struct platform_device *pdev)
 {
 	int gpio, err;
@@ -1004,7 +1004,7 @@ static int rk_usb_control_probe(struct platform_device *pdev)
 	control_usb->host_gpios->gpio = gpio;
 
 	if (!gpio_is_valid(gpio)) {
-		dev_err(&pdev->dev, "invalid host gpio%d\n", gpio);
+		dev_warn(&pdev->dev, "host_drv_gpio is not specified or invalid\n");
 	} else {
 		err = devm_gpio_request(&pdev->dev, gpio, "host_drv_gpio");
 		if (err) {
@@ -1029,7 +1029,7 @@ static int rk_usb_control_probe(struct platform_device *pdev)
 	control_usb->otg_gpios->gpio = gpio;
 
 	if (!gpio_is_valid(gpio)) {
-		dev_err(&pdev->dev, "invalid otg gpio%d\n", gpio);
+		dev_warn(&pdev->dev, "otg_drv_gpio is not specified or invalid\n");
 	} else {
 		err = devm_gpio_request(&pdev->dev, gpio, "otg_drv_gpio");
 		if (err) {
@@ -1045,71 +1045,35 @@ out:
 	return ret;
 }
 
-static int rk_usb_control_remove(struct platform_device *pdev)
-{
-	return 0;
-}
-
-static struct platform_driver rk_usb_control_driver = {
-	.probe = rk_usb_control_probe,
-	.remove = rk_usb_control_remove,
-	.driver = {
-		   .name = "rk3288-usb-control",
-		   .owner = THIS_MODULE,
-		   .of_match_table = of_match_ptr(rk_usb_control_id_table),
-		   },
-};
-
 #ifdef CONFIG_OF
-
 static const struct of_device_id dwc_otg_control_usb_id_table[] = {
 	{
 	 .compatible = "rockchip,rk3288-dwc-control-usb",
 	 },
 	{},
 };
-
 #endif
 
 static int dwc_otg_control_usb_probe(struct platform_device *pdev)
 {
-	struct clk *hclk_usb_peri, *phyclk_480m, *phyclk480m_parent;
 	int ret = 0;
 
-	if (!control_usb) {
-		dev_err(&pdev->dev, "unable to alloc memory for control usb\n");
-		ret = -ENOMEM;
-		goto err1;
+	ret = rk_usb_control_probe(pdev);
+	if (ret)
+		return ret;
+
+	control_usb->hclk_usb_peri = devm_clk_get(&pdev->dev, "hclk_usb_peri");
+	if (IS_ERR(control_usb->hclk_usb_peri)) {
+		dev_info(&pdev->dev, "no hclk_usb_peri specified\n");
+		control_usb->hclk_usb_peri = NULL;
 	}
 
-	hclk_usb_peri = devm_clk_get(&pdev->dev, "hclk_usb_peri");
-	if (IS_ERR(hclk_usb_peri)) {
-		dev_err(&pdev->dev, "Failed to get hclk_usb_peri\n");
-		ret = -EINVAL;
-		goto err1;
-	}
-
-	control_usb->hclk_usb_peri = hclk_usb_peri;
-	clk_prepare_enable(hclk_usb_peri);
-
-	phyclk480m_parent = devm_clk_get(&pdev->dev, "usbphy2_480m");
-	if (IS_ERR(phyclk480m_parent)) {
-		dev_err(&pdev->dev, "Failed to get usbphy2_480m\n");
-		goto err2;
-	}
-
-	phyclk_480m = devm_clk_get(&pdev->dev, "usbphy_480m");
-	if (IS_ERR(phyclk_480m)) {
-		dev_err(&pdev->dev, "Failed to get usbphy_480m\n");
-		goto err2;
-	}
-
-	clk_set_parent(phyclk_480m, phyclk480m_parent);
+	clk_prepare_enable(control_usb->hclk_usb_peri);
 
 	ret = usb_grf_ioremap(pdev);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to ioremap usb grf\n");
-		goto err2;
+		goto err;
 	}
 #ifdef CONFIG_USB20_OTG
 	if (usb20otg_get_status(USB_STATUS_BVABLID))
@@ -1119,13 +1083,12 @@ static int dwc_otg_control_usb_probe(struct platform_device *pdev)
 
 	ret = otg_irq_detect_init(pdev);
 	if (ret < 0)
-		goto err2;
+		goto err;
 
 	return 0;
 
-err2:
-	clk_disable_unprepare(hclk_usb_peri);
-err1:
+err:
+	clk_disable_unprepare(control_usb->hclk_usb_peri);
 	return ret;
 }
 
@@ -1149,12 +1112,6 @@ static int __init dwc_otg_control_usb_init(void)
 {
 	int retval = 0;
 
-	retval = platform_driver_register(&rk_usb_control_driver);
-	if (retval < 0) {
-		printk(KERN_ERR "%s retval=%d\n", __func__, retval);
-		return retval;
-	}
-
 	retval = platform_driver_register(&dwc_otg_control_usb_driver);
 
 	if (retval < 0) {
@@ -1168,7 +1125,6 @@ subsys_initcall(dwc_otg_control_usb_init);
 
 static void __exit dwc_otg_control_usb_exit(void)
 {
-	platform_driver_unregister(&rk_usb_control_driver);
 	platform_driver_unregister(&dwc_otg_control_usb_driver);
 }
 

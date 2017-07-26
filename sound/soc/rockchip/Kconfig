@@ -15,6 +15,15 @@ config SND_SOC_ROCKCHIP_I2S
 	  Rockchip I2S device. The device supports upto maximum of
 	  8 channels each for play and record.
 
+config SND_SOC_ROCKCHIP_PDM
+	tristate "Rockchip PDM Controller Driver"
+	depends on CLKDEV_LOOKUP && SND_SOC_ROCKCHIP
+	select SND_SOC_GENERIC_DMAENGINE_PCM
+	help
+	  Say Y or M if you want to add support for PDM driver for
+	  Rockchip PDM Controller. The Controller supports up to maximum of
+	  8 channels record.
+
 config SND_SOC_ROCKCHIP_SPDIF
 	tristate "Rockchip SPDIF Device Driver"
 	depends on CLKDEV_LOOKUP && SND_SOC_ROCKCHIP
@@ -31,6 +40,24 @@ config SND_SOC_ROCKCHIP_DA7219
 	help
 	  Say Y or M here if you want to add support for SoC audio on Rockchip
 	  boards using the DA7219 codec, such as Veyron.
+
+config SND_SOC_ROCKCHIP_HDMI_ANALOG
+	tristate "ASoC support for Rockchip built-in HDMI and CODEC IC"
+	select SND_SOC_ROCKCHIP_I2S
+	select SND_SOC_HDMI_CODEC
+	help
+	  Say Y or M here if you want to add support for SoC audio on Rockchip
+	  boards using built-in HDMI and CODEC IC, such as RK3368 boards.
+
+config SND_SOC_ROCKCHIP_HDMI_DP
+	tristate "ASoC support for Rockchip built-in HDMI and DP"
+	depends on SND_SOC_ROCKCHIP && CLKDEV_LOOKUP
+	depends on ROCKCHIP_CDN_DP || DRM_DW_HDMI_I2S_AUDIO
+	select SND_SOC_ROCKCHIP_I2S
+	select SND_SOC_HDMI_CODEC
+	help
+	  Say Y or M here if you want to add support for SoC audio on Rockchip
+	  boards using built-in HDMI and DP, such as RK3399 boards.
 
 config SND_SOC_ROCKCHIP_MAX98090
 	tristate "ASoC support for Rockchip boards using a MAX98090 codec"
@@ -50,3 +77,21 @@ config SND_SOC_ROCKCHIP_RT5645
 	help
 	  Say Y or M here if you want to add support for SoC audio on Rockchip
 	  boards using the RT5645/RT5650 codec, such as Veyron.
+
+config SND_SOC_ROCKCHIP_RT5651_TC358749
+	tristate "ASoC support for Rockchip boards RT5651 TC358749 HDMIIN"
+	depends on SND_SOC_ROCKCHIP && I2C && GPIOLIB && CLKDEV_LOOKUP
+	select SND_SOC_ROCKCHIP_I2S
+	select SND_SOC_RT5651
+	select SND_SOC_TC358749X
+	help
+	  Say Y or M here if you want to add support for SoC audio on Rockchip
+	  boards for RT5651 TC358749 HDMIIn
+
+config SND_SOC_ROCKCHIP_CDNDP
+	tristate "ASoC support for Rockchip CDN DP common codec"
+	depends on SND_SOC_ROCKCHIP && CLKDEV_LOOKUP
+	select SND_SOC_ROCKCHIP_I2S
+	help
+	  Say Y or M here if you want to add support for SoC audio on Rockchip
+	  boards using CDN DP, such as RK3399 boards.

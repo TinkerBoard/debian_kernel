@@ -815,7 +815,7 @@ static struct imx_camera_module_custom_config imx219_custom_config = {
 	.check_camera_id = imx219_check_camera_id,
 	.set_flip = imx219_set_flip,
 	.configs = imx219_configs,
-	.num_configs = sizeof(imx219_configs) / sizeof(imx219_configs[0]),
+	.num_configs = ARRAY_SIZE(imx219_configs),
 	.power_up_delays_ms = {5, 20, 0}
 };
 
@@ -823,22 +823,14 @@ static int imx219_probe(
 	struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret = 0;
-
 	dev_info(&client->dev, "probing...\n");
 
 	imx219_filltimings(&imx219_custom_config);
 	v4l2_i2c_subdev_init(&imx219.sd, client, &imx219_camera_module_ops);
-	ret = imx_camera_module_init(&imx219, &imx219_custom_config);
-	if (IS_ERR_VALUE(ret))
-		goto err;
+	imx219.custom = imx219_custom_config;
 
 	dev_info(&client->dev, "probing successful\n");
 	return 0;
-err:
-	dev_err(&client->dev, "probing failed with error (%d)\n", ret);
-	imx_camera_module_release(&imx219);
-	return -22;
 }
 
 static int imx219_remove(struct i2c_client *client)

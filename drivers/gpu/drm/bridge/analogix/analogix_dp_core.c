@@ -871,6 +871,11 @@ static irqreturn_t analogix_dp_irq_thread(int irq, void *arg)
 	struct analogix_dp_device *dp = arg;
 	enum dp_irq_type irq_type;
 
+	if (dp->dpms_mode != DRM_MODE_DPMS_ON)
+		return IRQ_HANDLED;
+
+	pm_runtime_get_sync(dp->dev);
+
 	irq_type = analogix_dp_get_irq_type(dp);
 	if (irq_type & DP_IRQ_TYPE_HP_CABLE_IN ||
 	    irq_type & DP_IRQ_TYPE_HP_CABLE_OUT) {
@@ -883,6 +888,8 @@ static irqreturn_t analogix_dp_irq_thread(int irq, void *arg)
 		analogix_dp_clear_hotplug_interrupts(dp);
 		analogix_dp_unmute_hpd_interrupt(dp);
 	}
+
+	pm_runtime_put(dp->dev);
 
 	return IRQ_HANDLED;
 }
@@ -931,13 +938,13 @@ int analogix_dp_get_modes(struct drm_connector *connector)
 
 	pm_runtime_get_sync(dp->dev);
 
-	if (analogix_dp_handle_edid(dp) == 0) {
+	if (dp->plat_data->panel)
+		num_modes += drm_panel_get_modes(dp->plat_data->panel);
+
+	if (!num_modes && !analogix_dp_handle_edid(dp)) {
 		drm_mode_connector_update_edid_property(&dp->connector, edid);
 		num_modes += drm_add_edid_modes(&dp->connector, edid);
 	}
-
-	if (dp->plat_data->panel)
-		num_modes += drm_panel_get_modes(dp->plat_data->panel);
 
 	if (dp->plat_data->get_modes)
 		num_modes += dp->plat_data->get_modes(dp->plat_data, connector);
@@ -959,18 +966,12 @@ static int analogix_dp_loader_protect(struct drm_connector *connector, bool on)
 {
 	struct analogix_dp_device *dp = to_dp(connector);
 
-	if (on == connector->loader_protect)
-		return 0;
-
-	if (on) {
+	if (dp->plat_data->panel)
+		drm_panel_loader_protect(dp->plat_data->panel, on);
+	if (on)
 		pm_runtime_get_sync(dp->dev);
-
-		connector->loader_protect = true;
-	} else {
+	else
 		pm_runtime_put(dp->dev);
-
-		connector->loader_protect = false;
-	}
 
 	return 0;
 }
@@ -1100,17 +1101,13 @@ static void analogix_dp_bridge_disable(struct drm_bridge *bridge)
 		}
 	}
 
-	disable_irq(dp->irq);
+	disable_irq_nosync(dp->irq);
 	phy_power_off(dp->phy);
 
 	if (dp->plat_data->power_off)
 		dp->plat_data->power_off(dp->plat_data);
 
 	pm_runtime_put_sync(dp->dev);
-	if (dp->connector.loader_protect) {
-		pm_runtime_put_sync(dp->dev);
-		dp->connector.loader_protect = false;
-	}
 
 	dp->dpms_mode = DRM_MODE_DPMS_OFF;
 }
@@ -1373,8 +1370,6 @@ int analogix_dp_bind(struct device *dev, struct drm_device *drm_dev,
 			return -EBUSY;
 		}
 	}
-
-	analogix_dp_init_dp(dp);
 
 	ret = devm_request_threaded_irq(&pdev->dev, dp->irq,
 					analogix_dp_hardirq,

@@ -27,6 +27,17 @@
 #define AFBDC_FMT_U8U8U8U8	0x5
 #define AFBDC_FMT_U8U8U8	0x4
 
+enum cabc_stage_mode {
+	LAST_FRAME_PWM_VAL	= 0x0,
+	CUR_FRAME_PWM_VAL	= 0x1,
+	STAGE_BY_STAGE		= 0x2
+};
+
+enum cabc_stage_up_mode {
+	MUL_MODE,
+	ADD_MODE,
+};
+
 enum vop_csc_format {
 	CSC_BT601,
 	CSC_BT709,
@@ -92,25 +103,36 @@ struct vop_ctrl {
 	struct vop_reg dsp_layer_sel;
 	struct vop_reg overlay_mode;
 	struct vop_reg core_dclk_div;
+	struct vop_reg dclk_ddr;
 	struct vop_reg p2i_en;
 	struct vop_reg rgb_en;
 	struct vop_reg edp_en;
 	struct vop_reg hdmi_en;
 	struct vop_reg mipi_en;
+	struct vop_reg dp_en;
 	struct vop_reg pin_pol;
 	struct vop_reg rgb_pin_pol;
 	struct vop_reg hdmi_pin_pol;
 	struct vop_reg edp_pin_pol;
 	struct vop_reg mipi_pin_pol;
-
+	struct vop_reg dp_pin_pol;
 	struct vop_reg dither_up;
 	struct vop_reg dither_down;
 
+	struct vop_reg sw_dac_sel;
+	struct vop_reg tve_sw_mode;
+	struct vop_reg tve_dclk_pol;
+	struct vop_reg tve_dclk_en;
+	struct vop_reg sw_genlock;
+	struct vop_reg sw_uv_offset_en;
+	struct vop_reg dsp_out_yuv;
 	struct vop_reg dsp_data_swap;
 	struct vop_reg dsp_ccir656_avg;
 	struct vop_reg dsp_black;
 	struct vop_reg dsp_blank;
 	struct vop_reg dsp_outzero;
+	struct vop_reg update_gamma_lut;
+	struct vop_reg lut_buffer_index;
 	struct vop_reg dsp_lut_en;
 
 	struct vop_reg out_mode;
@@ -119,7 +141,7 @@ struct vop_ctrl {
 	struct vop_reg ymirror;
 	struct vop_reg dsp_background;
 
-       /* AFBDC */
+	/* AFBDC */
 	struct vop_reg afbdc_en;
 	struct vop_reg afbdc_sel;
 	struct vop_reg afbdc_format;
@@ -128,7 +150,20 @@ struct vop_ctrl {
 	struct vop_reg afbdc_hdr_ptr;
 	struct vop_reg afbdc_rstn;
 
-	struct vop_reg line_flag_num[2];
+	/* CABC */
+	struct vop_reg cabc_total_num;
+	struct vop_reg cabc_config_mode;
+	struct vop_reg cabc_stage_up_mode;
+	struct vop_reg cabc_scale_cfg_value;
+	struct vop_reg cabc_scale_cfg_enable;
+	struct vop_reg cabc_global_dn_limit_en;
+	struct vop_reg cabc_lut_en;
+	struct vop_reg cabc_en;
+	struct vop_reg cabc_handle_en;
+	struct vop_reg cabc_stage_up;
+	struct vop_reg cabc_stage_down;
+	struct vop_reg cabc_global_dn;
+	struct vop_reg cabc_calc_pixel_num;
 
 	struct vop_reg cfg_done;
 };
@@ -208,6 +243,11 @@ enum {
 	VOP_CSC_R2R_BT709_TO_2020,
 };
 
+enum _vop_overlay_mode {
+	VOP_RGB_DOMAIN,
+	VOP_YUV_DOMAIN
+};
+
 struct vop_win_phy {
 	const struct vop_scl_regs *scl;
 	const uint32_t *data_formats;
@@ -228,6 +268,7 @@ struct vop_win_phy {
 	struct vop_reg yrgb_vir;
 	struct vop_reg uv_vir;
 
+	struct vop_reg channel;
 	struct vop_reg dst_alpha_ctl;
 	struct vop_reg src_alpha_ctl;
 	struct vop_reg alpha_mode;
@@ -262,11 +303,12 @@ struct vop_data {
 	const struct vop_csc_table *csc_table;
 	unsigned int win_size;
 	uint32_t version;
-	struct vop_rect max_input_fb;
-	struct vop_rect max_output_fb;
-	struct vop_rect max_disably_output;
+	struct vop_rect max_input;
+	struct vop_rect max_output;
 	u64 feature;
 };
+
+#define CVBS_PAL_VDISPLAY		288
 
 /* interrupt define */
 #define DSP_HOLD_VALID_INTR		(1 << 0)
@@ -324,11 +366,12 @@ struct vop_data {
 /*
  * display output interface supported by rockchip lcdc
  */
-#define ROCKCHIP_OUT_MODE_P888	0
-#define ROCKCHIP_OUT_MODE_P666	1
-#define ROCKCHIP_OUT_MODE_P565	2
+#define ROCKCHIP_OUT_MODE_P888		0
+#define ROCKCHIP_OUT_MODE_P666		1
+#define ROCKCHIP_OUT_MODE_P565		2
+#define ROCKCHIP_OUT_MODE_YUV420	14
 /* for use special outface */
-#define ROCKCHIP_OUT_MODE_AAAA	15
+#define ROCKCHIP_OUT_MODE_AAAA		15
 
 #define ROCKCHIP_OUT_MODE_TYPE(x)	((x) >> 16)
 #define ROCKCHIP_OUT_MODE(x)		((x) & 0xffff)
@@ -388,6 +431,28 @@ enum sacle_up_mode {
 enum scale_down_mode {
 	SCALE_DOWN_BIL = 0x0,
 	SCALE_DOWN_AVG = 0x1
+};
+
+enum dither_down_mode {
+	RGB888_TO_RGB565 = 0x0,
+	RGB888_TO_RGB666 = 0x1
+};
+
+enum dither_down_mode_sel {
+	DITHER_DOWN_ALLEGRO = 0x0,
+	DITHER_DOWN_FRC = 0x1
+};
+
+#define PRE_DITHER_DOWN_EN(x)	((x) << 0)
+#define DITHER_DOWN_EN(x)	((x) << 1)
+#define DITHER_DOWN_MODE(x)	((x) << 2)
+#define DITHER_DOWN_MODE_SEL(x)	((x) << 3)
+
+enum vop_pol {
+	HSYNC_POSITIVE = 0,
+	VSYNC_POSITIVE = 1,
+	DEN_NEGATIVE   = 2,
+	DCLK_INVERT    = 3
 };
 
 #define FRAC_16_16(mult, div)    (((mult) << 16) / (div))
@@ -459,6 +524,11 @@ static inline int scl_vop_cal_lb_mode(int width, bool is_yuv)
 		lb_mode = LB_YUV_2560X8;
 
 	return lb_mode;
+}
+
+static inline int us_to_vertical_line(struct drm_display_mode *mode, int us)
+{
+	return us * mode->clock / mode->htotal / 1000;
 }
 
 extern const struct component_ops vop_component_ops;

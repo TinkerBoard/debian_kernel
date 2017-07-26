@@ -20,25 +20,27 @@
 #include <linux/workqueue.h>
 #include <linux/platform_data/rk_isp10_platform_camera_module.h>
 #include <linux/platform_data/rk_isp10_platform.h>
-/* TODO: references to v4l2 should be reomved from here and go into a
-	platform dependent wrapper */
+/*
+ * TODO: references to v4l2 should be reomved from here and go into a
+ * platform dependent wrapper
+ */
 
 #define IMX_CAMERA_MODULE_REG_TYPE_DATA PLTFRM_CAMERA_MODULE_REG_TYPE_DATA
 #define IMX_CAMERA_MODULE_REG_TYPE_TIMEOUT PLTFRM_CAMERA_MODULE_REG_TYPE_TIMEOUT
 #define imx_camera_module_csi_config
 #define imx_camera_module_reg pltfrm_camera_module_reg
 
-#define IMX_FLIP_BIT_MASK				   0x2
-#define IMX_MIRROR_BIT_MASK				   0x1
+#define IMX_FLIP_BIT_MASK 0x2
+#define IMX_MIRROR_BIT_MASK 0x1
 
-#define IMX_CAMERA_MODULE_CTRL_UPDT_GAIN			0x01
-#define IMX_CAMERA_MODULE_CTRL_UPDT_EXP_TIME		0x02
-#define IMX_CAMERA_MODULE_CTRL_UPDT_WB_TEMPERATURE	0x04
-#define IMX_CAMERA_MODULE_CTRL_UPDT_AUTO_WB			0x08
-#define IMX_CAMERA_MODULE_CTRL_UPDT_AUTO_GAIN		0x10
-#define IMX_CAMERA_MODULE_CTRL_UPDT_AUTO_EXP		0x20
-#define IMX_CAMERA_MODULE_CTRL_UPDT_FOCUS_ABSOLUTE	0x40
-#define IMX_CAMERA_MODULE_CTRL_UPDT_PRESET_WB		0x80
+#define IMX_CAMERA_MODULE_CTRL_UPDT_GAIN 0x01
+#define IMX_CAMERA_MODULE_CTRL_UPDT_EXP_TIME 0x02
+#define IMX_CAMERA_MODULE_CTRL_UPDT_WB_TEMPERATURE 0x04
+#define IMX_CAMERA_MODULE_CTRL_UPDT_AUTO_WB 0x08
+#define IMX_CAMERA_MODULE_CTRL_UPDT_AUTO_GAIN 0x10
+#define IMX_CAMERA_MODULE_CTRL_UPDT_AUTO_EXP 0x20
+#define IMX_CAMERA_MODULE_CTRL_UPDT_FOCUS_ABSOLUTE 0x40
+#define IMX_CAMERA_MODULE_CTRL_UPDT_PRESET_WB 0x80
 
 enum imx_camera_module_state {
 	IMX_CAMERA_MODULE_POWER_OFF = 0,
@@ -48,6 +50,7 @@ enum imx_camera_module_state {
 };
 
 struct imx_camera_module;
+
 struct imx_camera_module_timings {
 	u32 coarse_integration_time_min;
 	u32 coarse_integration_time_max_margin;
@@ -67,6 +70,7 @@ struct imx_camera_module_timings {
 	u32 exp_time;
 	u32 gain;
 };
+
 struct imx_camera_module_config {
 	const char *name;
 	struct v4l2_mbus_framefmt frm_fmt;
@@ -120,25 +124,25 @@ struct imx_camera_module_ext_ctrls {
 };
 
 /*
-	start_streaming: (mandatory) will be called when sensor should be
-		put into streaming mode right after the base config has been
-		written to the sensor. After a successful call of this function
-		the sensor should start delivering frame data.
-
-	stop_streaming: (mandatory) will be called when sensor should stop
-		delivering data. After a successful call of this function the
-		sensor should not deliver any more frame data.
-
-	check_camera_id: (optional) will be called when the sensor is
-		powered on. If provided should check the sensor ID/version
-		required by the custom driver. Register access should be
-		possible when this function is invoked.
-
-	s_ctrl: (mandatory) will be called at the successful end of
-		imx_camera_module_s_ctrl with the ctrl_id as argument.
-
-	priv: (optional) for private data used by the custom driver.
-*/
+ * start_streaming: (mandatory) will be called when sensor should be
+ * put into streaming mode right after the base config has been
+ * written to the sensor. After a successful call of this function
+ * the sensor should start delivering frame data.
+ *
+ * stop_streaming: (mandatory) will be called when sensor should stop
+ * delivering data. After a successful call of this function the
+ * sensor should not deliver any more frame data.
+ *
+ * check_camera_id: (optional) will be called when the sensor is
+ * powered on. If provided should check the sensor ID/version
+ * required by the custom driver. Register access should be
+ * possible when this function is invoked.
+ *
+ * s_ctrl: (mandatory) will be called at the successful end of
+ * imx_camera_module_s_ctrl with the ctrl_id as argument.
+ *
+ * priv: (optional) for private data used by the custom driver.
+ */
 struct imx_camera_module_custom_config {
 	int (*start_streaming)(struct imx_camera_module *cam_mod);
 	int (*stop_streaming)(struct imx_camera_module *cam_mod);
@@ -156,9 +160,13 @@ struct imx_camera_module_custom_config {
 	u32 num_configs;
 	u32 power_up_delays_ms[3];
 	void *priv;
-	struct imx_camera_module_timings timings;
 };
 
+struct imx_camera_module_otp_work {
+	struct work_struct work;
+	struct workqueue_struct *wq;
+	void *cam_mod;
+};
 
 struct imx_camera_module {
 	/* public */
@@ -172,6 +180,7 @@ struct imx_camera_module {
 	enum imx_camera_module_state state;
 	enum imx_camera_module_state state_before_suspend;
 	struct imx_camera_module_config *active_config;
+	struct imx_camera_module_otp_work otp_work;
 	u32 ctrl_updt;
 	u32 vts_cur;
 	u32 vts_min;
@@ -218,7 +227,7 @@ int imx_camera_module_read_reg_table(
 
 int imx_camera_module_s_fmt(struct v4l2_subdev *sd,
 	struct v4l2_subdev_pad_config *cfg,
-	struct v4l2_subdev_format *format	);
+	struct v4l2_subdev_format *format);
 
 int imx_camera_module_g_fmt(struct v4l2_subdev *sd,
 	struct v4l2_subdev_pad_config *cfg,

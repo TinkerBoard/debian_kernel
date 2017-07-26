@@ -112,7 +112,6 @@ typedef unsigned long u64;
 
 //iomux
 #define OLD_RK_IOMUX 0
-#define CMD_LEN_MAX 0x100
 
 struct spi_t {
 	u32 cs;
@@ -238,7 +237,7 @@ struct mipi_dsi_screen {
 
 	/* MIPI DSI */
 	u8 dsi_lane;
-	u8 dsi_video_mode;
+	u16 refresh_mode;
 	u32 hs_tx_clk;
 	struct rk_screen *screen;
 
@@ -265,21 +264,26 @@ struct mipi_dcs_cmd_ctr_list {
 	struct dcs_cmd dcs_cmd;
 };
 
+enum {
+	VIDEO_MODE = 0,
+	COMMAND_MODE,
+};
+
 struct mipi_screen
 {
-    u8 screen_init; 
-    u8 mipi_dsi_num;
-    u8 lcd_rst_atv_val;
-    u8 lcd_en_atv_val;
-    u8 dsi_lane;
-    
-    u32 hs_tx_clk;
-    u32 lcd_en_gpio;
-    u32 lcd_en_delay;
-    u32 lcd_rst_gpio;
-    u32 lcd_rst_delay;
+	u8 screen_init;
+	u8 mipi_dsi_num;
+	u8 lcd_rst_atv_val;
+	u8 lcd_en_atv_val;
+	u8 dsi_lane;
+	u8 dsi_operate_mode;
+	u32 hs_tx_clk;
+	u32 lcd_en_gpio;
+	u32 lcd_en_delay;
+	u32 lcd_rst_gpio;
+	u32 lcd_rst_delay;
 
-    struct list_head cmdlist_head;
+	struct list_head cmdlist_head;
 };
 
 int register_dsi_ops(unsigned int id, struct mipi_dsi_ops *ops);

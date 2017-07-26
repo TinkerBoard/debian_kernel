@@ -519,13 +519,20 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3066a-rayeager.dtb \
 	rk3188-radxarock.dtb \
 	rk3228-evb.dtb \
+	rk3229-echo-v10.dtb \
 	rk3229-evb.dtb \
+	rk3229-gva-sdk.dtb \
 	rk3288-evb-act8846.dtb \
+	rk3288-evb-android-rk818-edp.dtb \
+	rk3288-evb-android-rk818-lvds.dtb \
+	rk3288-evb-android-rk818-mipi.dtb \
 	rk3288-evb-rk808.dtb \
 	rk3288-fennec.dtb \
 	rk3288-firefly-beta.dtb \
 	rk3288-firefly.dtb \
 	rk3288-miniarm.dtb \
+	rk3288-miqi.dtb \
+	rk3288-phycore-rdk.dtb \
 	rk3288-popmetal.dtb \
 	rk3288-r89.dtb \
 	rk3288-rock2-square.dtb \

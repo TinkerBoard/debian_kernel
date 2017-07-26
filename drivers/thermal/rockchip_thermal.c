@@ -319,6 +319,44 @@ static const struct tsadc_table rk3288_code_table[] = {
 	{3421, 125000},
 };
 
+static const struct tsadc_table rk3328_code_table[] = {
+	{0, -40000},
+	{296, -40000},
+	{304, -35000},
+	{313, -30000},
+	{331, -20000},
+	{340, -15000},
+	{349, -10000},
+	{359, -5000},
+	{368, 0},
+	{378, 5000},
+	{388, 10000},
+	{398, 15000},
+	{408, 20000},
+	{418, 25000},
+	{429, 30000},
+	{440, 35000},
+	{451, 40000},
+	{462, 45000},
+	{473, 50000},
+	{485, 55000},
+	{496, 60000},
+	{508, 65000},
+	{521, 70000},
+	{533, 75000},
+	{546, 80000},
+	{559, 85000},
+	{572, 90000},
+	{586, 95000},
+	{600, 100000},
+	{614, 105000},
+	{629, 110000},
+	{644, 115000},
+	{659, 120000},
+	{675, 125000},
+	{TSADCV2_DATA_MASK, 125000},
+};
+
 static const struct tsadc_table rk3368_code_table[] = {
 	{0, -40000},
 	{106, -40000},
@@ -525,11 +563,6 @@ static void rk_tsadcv2_initialize(struct regmap *grf, void __iomem *regs,
 		       regs + TSADCV2_AUTO_PERIOD_HT);
 	writel_relaxed(TSADCV2_HIGHT_TSHUT_DEBOUNCE_COUNT,
 		       regs + TSADCV2_HIGHT_TSHUT_DEBOUNCE);
-
-	if (IS_ERR(grf)) {
-		pr_warn("%s: Missing rockchip,grf property\n", __func__);
-		return;
-	}
 }
 
 /**
@@ -753,6 +786,29 @@ static const struct rockchip_tsadc_chip rk3288_tsadc_data = {
 	},
 };
 
+static const struct rockchip_tsadc_chip rk3328_tsadc_data = {
+	.chn_id[SENSOR_CPU] = 0, /* cpu sensor is channel 0 */
+	.chn_num = 1, /* one channels for tsadc */
+
+	.tshut_mode = TSHUT_MODE_CRU, /* default TSHUT via CRU */
+	.tshut_temp = 95000,
+
+	.initialize = rk_tsadcv2_initialize,
+	.irq_ack = rk_tsadcv3_irq_ack,
+	.control = rk_tsadcv3_control,
+	.get_temp = rk_tsadcv2_get_temp,
+	.set_alarm_temp = rk_tsadcv2_alarm_temp,
+	.set_tshut_temp = rk_tsadcv2_tshut_temp,
+	.set_tshut_mode = rk_tsadcv2_tshut_mode,
+
+	.table = {
+		.id = rk3328_code_table,
+		.length = ARRAY_SIZE(rk3328_code_table),
+		.data_mask = TSADCV2_DATA_MASK,
+		.mode = ADC_INCREMENT,
+	},
+};
+
 static const struct rockchip_tsadc_chip rk3366_tsadc_data = {
 	.chn_id[SENSOR_CPU] = 0, /* cpu sensor is channel 0 */
 	.chn_id[SENSOR_GPU] = 1, /* gpu sensor is channel 1 */
@@ -836,6 +892,10 @@ static const struct of_device_id of_rockchip_thermal_match[] = {
 	{
 		.compatible = "rockchip,rk3288-tsadc",
 		.data = (void *)&rk3288_tsadc_data,
+	},
+	{
+		.compatible = "rockchip,rk3328-tsadc",
+		.data = (void *)&rk3328_tsadc_data,
 	},
 	{
 		.compatible = "rockchip,rk3366-tsadc",
@@ -969,6 +1029,8 @@ static int rockchip_configure_from_dt(struct device *dev,
 	 * need this property.
 	 */
 	thermal->grf = syscon_regmap_lookup_by_phandle(np, "rockchip,grf");
+	if (IS_ERR(thermal->grf))
+		dev_warn(dev, "Missing rockchip,grf property\n");
 
 	return 0;
 }
@@ -1009,6 +1071,48 @@ static void rockchip_thermal_reset_controller(struct reset_control *reset)
 	usleep_range(10, 20);
 	reset_control_deassert(reset);
 }
+
+static struct platform_device *thermal_device;
+
+void rockchip_dump_temperature(void)
+{
+	struct rockchip_thermal_data *thermal;
+	struct platform_device *pdev;
+	int i;
+
+	if (!thermal_device)
+		return;
+
+	pdev = thermal_device;
+	thermal = platform_get_drvdata(pdev);
+
+	for (i = 0; i < thermal->chip->chn_num; i++) {
+		struct rockchip_thermal_sensor *sensor = &thermal->sensors[i];
+		struct thermal_zone_device *tz = sensor->tzd;
+
+		if (tz->temperature != THERMAL_TEMP_INVALID)
+			dev_warn(&pdev->dev, "channal %d: temperature(%d C)\n",
+				 i, tz->temperature / 1000);
+	}
+
+	if (thermal->regs) {
+		pr_warn("THERMAL REGS:\n");
+		print_hex_dump(KERN_WARNING, "", DUMP_PREFIX_OFFSET,
+			       32, 4, thermal->regs, 0x88, false);
+	}
+}
+EXPORT_SYMBOL_GPL(rockchip_dump_temperature);
+
+static int rockchip_thermal_panic(struct notifier_block *this,
+				  unsigned long ev, void *ptr)
+{
+	rockchip_dump_temperature();
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block rockchip_thermal_panic_block = {
+	.notifier_call = rockchip_thermal_panic,
+};
 
 static int rockchip_thermal_probe(struct platform_device *pdev)
 {
@@ -1121,6 +1225,11 @@ static int rockchip_thermal_probe(struct platform_device *pdev)
 		rockchip_thermal_toggle_sensor(&thermal->sensors[i], true);
 
 	platform_set_drvdata(pdev, thermal);
+
+	thermal_device = pdev;
+
+	atomic_notifier_chain_register(&panic_notifier_list,
+				       &rockchip_thermal_panic_block);
 
 	return 0;
 

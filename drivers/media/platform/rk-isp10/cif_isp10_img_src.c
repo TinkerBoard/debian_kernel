@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,7 +11,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 
 #include <linux/kernel.h>
@@ -34,7 +34,7 @@ struct cif_isp10_img_src *cif_isp10_img_src_to_img_src(
 	struct cif_isp10_img_src *img_src;
 
 	img_src = devm_kzalloc(dev, sizeof(*img_src), GFP_KERNEL);
-	if (NULL == img_src) {
+	if (!img_src) {
 		ret = -ENOMEM;
 		goto err;
 	}
@@ -48,7 +48,7 @@ struct cif_isp10_img_src *cif_isp10_img_src_to_img_src(
 			break;
 		}
 	}
-	if (NULL == img_src->ops) {
+	if (!img_src->ops) {
 		cif_isp10_pltfrm_pr_err(NULL,
 			"unsupported device type %s\n",
 			device_type);
@@ -56,13 +56,13 @@ struct cif_isp10_img_src *cif_isp10_img_src_to_img_src(
 		goto err;
 	}
 
-	BUG_ON(NULL == img_src->ops->to_img_src);
-	BUG_ON(NULL == img_src->ops->s_streaming);
-	BUG_ON(NULL == img_src->ops->s_power);
-	BUG_ON(NULL == img_src->ops->enum_strm_fmts);
-	BUG_ON(NULL == img_src->ops->s_strm_fmt);
-	BUG_ON(NULL == img_src->ops->g_ctrl);
-	BUG_ON(NULL == img_src->ops->s_ctrl);
+	WARN_ON(!img_src->ops->to_img_src);
+	WARN_ON(!img_src->ops->s_streaming);
+	WARN_ON(!img_src->ops->s_power);
+	WARN_ON(!img_src->ops->enum_strm_fmts);
+	WARN_ON(!img_src->ops->s_strm_fmt);
+	WARN_ON(!img_src->ops->g_ctrl);
+	WARN_ON(!img_src->ops->s_ctrl);
 
 	img_src->img_src = img_src->ops->to_img_src(dev, soc_cfg);
 	if (IS_ERR_OR_NULL(img_src->img_src)) {
@@ -109,7 +109,7 @@ int cif_isp10_img_src_s_strm_fmt(
 	struct cif_isp10_img_src *img_src,
 	struct cif_isp10_strm_fmt *strm_fmt)
 {
-	if (NULL == img_src) {
+	if (!img_src) {
 		cif_isp10_pltfrm_pr_err(NULL, "img_src is NULL\n");
 		return -EINVAL;
 	}
@@ -121,7 +121,7 @@ int cif_isp10_img_src_g_ctrl(
 	int id,
 	int *val)
 {
-	if (NULL == img_src) {
+	if (!img_src) {
 		cif_isp10_pltfrm_pr_err(NULL, "img_src is NULL\n");
 		return -EINVAL;
 	}
@@ -133,7 +133,7 @@ int cif_isp10_img_src_s_ctrl(
 	int id,
 	int val)
 {
-	if (NULL == img_src) {
+	if (!img_src) {
 		cif_isp10_pltfrm_pr_err(NULL, "img_src is NULL\n");
 		return -EINVAL;
 	}
@@ -144,7 +144,7 @@ int cif_isp10_img_src_s_ext_ctrls(
 	struct cif_isp10_img_src *img_src,
 	struct cif_isp10_img_src_ext_ctrl *ctrl)
 {
-	if (NULL == img_src) {
+	if (!img_src) {
 		cif_isp10_pltfrm_pr_err(NULL, "img_src is NULL\n");
 		return -EINVAL;
 	}
@@ -156,7 +156,7 @@ long cif_isp10_img_src_ioctl(
 	unsigned int cmd,
 	void *arg)
 {
-	if (NULL == img_src) {
+	if (!img_src) {
 		cif_isp10_pltfrm_pr_err(NULL, "img_src is NULL\n");
 		return -EINVAL;
 	}
@@ -166,7 +166,7 @@ long cif_isp10_img_src_ioctl(
 const char *cif_isp10_img_src_g_name(
 	struct cif_isp10_img_src *img_src)
 {
-	if (NULL == img_src) {
+	if (!img_src) {
 		cif_isp10_pltfrm_pr_err(NULL, "img_src is NULL\n");
 		return ERR_PTR(-EINVAL);
 	}

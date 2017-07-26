@@ -110,7 +110,12 @@ static ssize_t wifi_chip_read(struct class *cls, struct class_attribute *attr, c
 	if(type == WIFI_RTL8189ES) {
 	    count = sprintf(_buf, "%s", "RTL8189ES");
 	    printk("Current WiFi chip is RTL8189ES.\n");
-	}	
+	}
+
+        if(type == WIFI_RTL8189FS) {
+            count = sprintf(_buf, "%s", "RTL8189FS");
+            printk("Current WiFi chip is RTL8189FS.\n");
+        }
 
 	if(type == WIFI_ESP8089) {
 	    count = sprintf(_buf, "%s", "ESP8089");
@@ -148,36 +153,39 @@ extern int rockchip_wifi_init_module_esp8089(void);
 extern void rockchip_wifi_exit_module_esp8089(void);
 #endif
 static struct semaphore driver_sem;
+#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
+static int wifi_driver_insmod = 1;
+#else
 static int wifi_driver_insmod = 0;
+#endif
 
 static int wifi_init_exit_module(int enable)
 {
 	int ret = 0;
-	int type = 0;
 #ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
+	int type = 0;
 	type = get_wifi_chip_type();
 #else
-	type = get_wifi_chip_type();
-//#ifdef CONFIG_RKWIFI
+#ifdef CONFIG_AP6XXX
 	if (type < WIFI_AP6XXX_SERIES) {
-        if (enable > 0)
-            ret = rockchip_wifi_init_module_rkwifi();
-        else
-            rockchip_wifi_exit_module_rkwifi();
-        return ret;
-    }
-//#endif
-//#ifdef CONFIG_RTL_WIRELESS_SOLUTION
-    if (type < WIFI_RTL_SERIES) {
-        if (enable > 0)
-            ret = rockchip_wifi_init_module_rtkwifi();
-        else
-            rockchip_wifi_exit_module_rtkwifi();
-        return ret;
-    }
-//#endif
+		if (enable > 0)
+			ret = rockchip_wifi_init_module_rkwifi();
+		else
+			rockchip_wifi_exit_module_rkwifi();
+		return ret;
+	}
 #endif
-    return ret;
+#ifdef CONFIG_RTL_WIRELESS_SOLUTION
+	if (type < WIFI_RTL_SERIES) {
+		if (enable > 0)
+			ret = rockchip_wifi_init_module_rtkwifi();
+		else
+			rockchip_wifi_exit_module_rtkwifi();
+		return ret;
+	}
+#endif
+#endif
+	return ret;
 }
 
 static ssize_t wifi_driver_write(struct class *cls, struct class_attribute *attr, const char *_buf, size_t _count)

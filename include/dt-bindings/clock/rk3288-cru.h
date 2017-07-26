@@ -88,7 +88,8 @@
 #define SCLK_PVTM_GPU		124
 #define SCLK_CRYPTO		125
 #define SCLK_MIPIDSI_24M	126
-#define SCLK_CIFOUT	127
+#define SCLK_VIP_OUT		127
+#define SCLK_DDRCLK		128
 
 #define SCLK_MAC		151
 #define SCLK_MACREF_OUT		152
@@ -116,6 +117,8 @@
 #define ACLK_VCODEC		208
 #define ACLK_CPU		209
 #define ACLK_PERI		210
+#define ACLK_VIO0		211
+#define ACLK_VIO1		212
 
 /* pclk gates */
 #define PCLK_GPIO0		320
@@ -203,8 +206,10 @@
 #define HCLK_VCODEC		476
 #define HCLK_CPU		477
 #define HCLK_PERI		478
+#define HCLK_USB_PERI		479
+#define HCLK_VIO		480
 
-#define CLK_NR_CLKS		(HCLK_PERI + 1)
+#define CLK_NR_CLKS		(HCLK_VIO + 1)
 
 /* soft-reset indices */
 #define SRST_CORE0		0

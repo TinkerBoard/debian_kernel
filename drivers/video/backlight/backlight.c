@@ -46,7 +46,8 @@ static int fb_notifier_callback(struct notifier_block *self,
 	int fb_blank = 0;
 
 	/* If we aren't interested in this event, skip it immediately ... */
-	if (event != FB_EVENT_BLANK && event != FB_EVENT_CONBLANK)
+	if (event != FB_EVENT_BLANK && event != FB_EVENT_CONBLANK &&
+	    event != FB_EARLY_EVENT_BLANK)
 		return 0;
 
 	bd = container_of(self, struct backlight_device, fb_notif);
@@ -56,7 +57,8 @@ static int fb_notifier_callback(struct notifier_block *self,
 		    bd->ops->check_fb(bd, evdata->info)) {
 			fb_blank = *(int *)evdata->data;
 			if (fb_blank == FB_BLANK_UNBLANK &&
-			    !bd->fb_bl_on[node]) {
+			    !bd->fb_bl_on[node] &&
+			    event != FB_EARLY_EVENT_BLANK) {
 				bd->fb_bl_on[node] = true;
 				if (!bd->use_count++) {
 					bd->props.state &= ~BL_CORE_FBBLANK;
@@ -64,7 +66,8 @@ static int fb_notifier_callback(struct notifier_block *self,
 					backlight_update_status(bd);
 				}
 			} else if (fb_blank != FB_BLANK_UNBLANK &&
-				   bd->fb_bl_on[node]) {
+				   bd->fb_bl_on[node] &&
+				   event == FB_EARLY_EVENT_BLANK) {
 				bd->fb_bl_on[node] = false;
 				if (!(--bd->use_count)) {
 					bd->props.state |= BL_CORE_FBBLANK;
@@ -164,6 +167,30 @@ static ssize_t brightness_show(struct device *dev,
 	return sprintf(buf, "%d\n", bd->props.brightness);
 }
 
+int backlight_device_set_brightness(struct backlight_device *bd,
+				    unsigned long brightness)
+{
+	int rc = -ENXIO;
+
+	mutex_lock(&bd->ops_lock);
+	if (bd->ops) {
+		if (brightness > bd->props.max_brightness)
+			rc = -EINVAL;
+		else {
+			pr_debug("set brightness to %lu\n", brightness);
+			bd->props.brightness = brightness;
+			backlight_update_status(bd);
+			rc = 0;
+		}
+	}
+	mutex_unlock(&bd->ops_lock);
+
+	backlight_generate_event(bd, BACKLIGHT_UPDATE_SYSFS);
+
+	return rc;
+}
+EXPORT_SYMBOL(backlight_device_set_brightness);
+
 static ssize_t brightness_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -175,24 +202,9 @@ static ssize_t brightness_store(struct device *dev,
 	if (rc)
 		return rc;
 
-	rc = -ENXIO;
+	rc = backlight_device_set_brightness(bd, brightness);
 
-	mutex_lock(&bd->ops_lock);
-	if (bd->ops) {
-		if (brightness > bd->props.max_brightness)
-			rc = -EINVAL;
-		else {
-			pr_debug("set brightness to %lu\n", brightness);
-			bd->props.brightness = brightness;
-			backlight_update_status(bd);
-			rc = count;
-		}
-	}
-	mutex_unlock(&bd->ops_lock);
-
-	backlight_generate_event(bd, BACKLIGHT_UPDATE_SYSFS);
-
-	return rc;
+	return rc ? rc : count;
 }
 static DEVICE_ATTR_RW(brightness);
 
@@ -380,7 +392,7 @@ struct backlight_device *backlight_device_register(const char *name,
 }
 EXPORT_SYMBOL(backlight_device_register);
 
-bool backlight_device_registered(enum backlight_type type)
+struct backlight_device *backlight_device_get_by_type(enum backlight_type type)
 {
 	bool found = false;
 	struct backlight_device *bd;
@@ -394,9 +406,9 @@ bool backlight_device_registered(enum backlight_type type)
 	}
 	mutex_unlock(&backlight_dev_list_mutex);
 
-	return found;
+	return found ? bd : NULL;
 }
-EXPORT_SYMBOL(backlight_device_registered);
+EXPORT_SYMBOL(backlight_device_get_by_type);
 
 /**
  * backlight_device_unregister - unregisters a backlight device object.

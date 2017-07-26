@@ -50,7 +50,7 @@
 
 	memory{
 		device_type = "memory";
-		reg = <0 0x80000000>;
+		reg = <0x0 0x0 0x0 0x80000000>;
 	};
 
 	ext_gmac: external-gmac-clock {
@@ -77,22 +77,6 @@
 			gpio-key,wakeup = <1>;
 			debounce-interval = <100>;
 		};
-	};
-
-	io_domains: io-domains {
-		compatible = "rockchip,rk3288-io-voltage-domain";
-		rockchip,grf = <&grf>;
-
-		audio-supply = <&vcca_33>;
-		bb-supply = <&vcc_io>;
-		dvp-supply = <&vcc18_dvp>;
-		flash0-supply = <&vcc_flash>;
-		flash1-supply = <&vcc_lan>;
-		gpio30-supply = <&vcc_io>;
-		gpio1830-supply = <&vcc_io>;
-		lcdc-supply = <&vcc_io>;
-		sdcard-supply = <&vccio_sd>;
-		wifi-supply = <&vccio_wl>;
 	};
 
 	ir: ir-receiver {
@@ -186,6 +170,7 @@
 	vmmc-supply = <&vcc_sd>;
 	vqmmc-supply = <&vccio_sd>;
 	status = "okay";
+	supports-sd;
 };
 
 &gmac {
@@ -204,8 +189,16 @@
 	status = "ok";
 };
 
+&gpu {
+	mali-supply = <&vdd_gpu>;
+	status = "okay";
+};
+
 &hdmi {
-	ddc-i2c-bus = <&i2c5>;
+	status = "okay";
+};
+
+&hevc_service {
 	status = "okay";
 };
 
@@ -436,7 +429,22 @@
 	status = "okay";
 };
 
-&i2c5 {
+&io_domains {
+	status = "okay";
+
+	audio-supply = <&vcca_33>;
+	bb-supply = <&vcc_io>;
+	dvp-supply = <&vcc18_dvp>;
+	flash0-supply = <&vcc_flash>;
+	flash1-supply = <&vcc_lan>;
+	gpio30-supply = <&vcc_io>;
+	gpio1830-supply = <&vcc_io>;
+	lcdc-supply = <&vcc_io>;
+	sdcard-supply = <&vccio_sd>;
+	wifi-supply = <&vccio_wl>;
+};
+
+&rga {
 	status = "okay";
 };
 
@@ -506,6 +514,10 @@
 	status = "okay";
 };
 
+&vpu_service {
+	status = "okay";
+};
+
 &uart0 {
 	status = "okay";
 };
@@ -528,4 +540,17 @@
 
 &usbphy {
 	status = "okay";
+};
+
+&usb_host0_ehci {
+	no-relinquish-port;
+	status = "okay";
+};
+
+&usb_host1 {
+	status = "okay";
+};
+
+&usb_otg {
+	status= "okay";
 };

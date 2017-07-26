@@ -21,8 +21,10 @@
 #include <linux/platform_data/rk_isp10_platform_camera_module.h>
 #include <linux/platform_data/rk_isp10_platform.h>
 
-/* TODO: references to v4l2 should be reomved from here and go into a
-	platform dependent wrapper */
+/*
+ * TODO: references to v4l2 should be reomved from here and go into a
+ * platform dependent wrapper
+ */
 
 #define OV_CAMERA_MODULE_REG_TYPE_DATA PLTFRM_CAMERA_MODULE_REG_TYPE_DATA
 #define OV_CAMERA_MODULE_REG_TYPE_TIMEOUT PLTFRM_CAMERA_MODULE_REG_TYPE_TIMEOUT
@@ -39,7 +41,6 @@
 #define OV_CAMERA_MODULE_CTRL_UPDT_AUTO_EXP			0x20
 #define OV_CAMERA_MODULE_CTRL_UPDT_FOCUS_ABSOLUTE	0x40
 #define OV_CAMERA_MODULE_CTRL_UPDT_PRESET_WB		0x80
-
 
 enum ov_camera_module_state {
 	OV_CAMERA_MODULE_POWER_OFF = 0,
@@ -61,15 +62,16 @@ struct ov_camera_module_timings {
 	u32 vt_pix_clk_freq_hz;
 	u32 sensor_output_width;
 	u32 sensor_output_height;
-	u32 crop_horizontal_start; /* Sensor crop start cord. (x0,y0)*/
+	u32 crop_horizontal_start; /* Sensor crop start cord. (x0,y0) */
 	u32 crop_vertical_start;
-	u32 crop_horizontal_end; /* Sensor crop end cord. (x1,y1)*/
+	u32 crop_horizontal_end; /* Sensor crop end cord. (x1,y1) */
 	u32 crop_vertical_end;
 	u8 binning_factor_x;
 	u8 binning_factor_y;
 	u32 exp_time;
 	u32 gain;
 };
+
 struct ov_camera_module_config {
 	const char *name;
 	struct v4l2_mbus_framefmt frm_fmt;
@@ -125,25 +127,25 @@ struct ov_camera_module_ext_ctrls {
 };
 
 /*
-	start_streaming: (mandatory) will be called when sensor should be
-		put into streaming mode right after the base config has been
-		written to the sensor. After a successful call of this function
-		the sensor should start delivering frame data.
-
-	stop_streaming: (mandatory) will be called when sensor should stop
-		delivering data. After a successful call of this function the
-		sensor should not deliver any more frame data.
-
-	check_camera_id: (optional) will be called when the sensor is
-		powered on. If provided should check the sensor ID/version
-		required by the custom driver. Register access should be
-		possible when this function is invoked.
-
-	s_ctrl: (mandatory) will be called at the successful end of
-		ov_camera_module_s_ctrl with the ctrl_id as argument.
-
-	priv: (optional) for private data used by the custom driver.
-*/
+ *	start_streaming: (mandatory) will be called when sensor should be
+ *		put into streaming mode right after the base config has been
+ *		written to the sensor. After a successful call of this function
+ *		the sensor should start delivering frame data.
+ *
+ *	stop_streaming: (mandatory) will be called when sensor should stop
+ *		delivering data. After a successful call of this function the
+ *		sensor should not deliver any more frame data.
+ *
+ *	check_camera_id: (optional) will be called when the sensor is
+ *		powered on. If provided should check the sensor ID/version
+ *		required by the custom driver. Register access should be
+ *		possible when this function is invoked.
+ *
+ *	s_ctrl: (mandatory) will be called at the successful end of
+ *		ov_camera_module_s_ctrl with the ctrl_id as argument.
+ *
+ *	priv: (optional) for private data used by the custom driver.
+ */
 struct ov_camera_module_custom_config {
 	int (*start_streaming)(struct ov_camera_module *cam_mod);
 	int (*stop_streaming)(struct ov_camera_module *cam_mod);
@@ -201,13 +203,13 @@ struct ov_camera_module {
 };
 
 #define ov_camera_module_pr_info(cam_mod, fmt, arg...) \
-	pltfrm_camera_module_pr_info(&cam_mod->sd, fmt, ## arg)
+	pltfrm_camera_module_pr_info(&(cam_mod)->sd, fmt, ## arg)
 #define ov_camera_module_pr_debug(cam_mod, fmt, arg...) \
-		pltfrm_camera_module_pr_debug(&cam_mod->sd, fmt, ## arg)
+		pltfrm_camera_module_pr_debug(&(cam_mod)->sd, fmt, ## arg)
 #define ov_camera_module_pr_warn(cam_mod, fmt, arg...) \
-		pltfrm_camera_module_pr_warn(&cam_mod->sd, fmt, ## arg)
+		pltfrm_camera_module_pr_warn(&(cam_mod)->sd, fmt, ## arg)
 #define ov_camera_module_pr_err(cam_mod, fmt, arg...) \
-		pltfrm_camera_module_pr_err(&cam_mod->sd, fmt, ## arg)
+		pltfrm_camera_module_pr_err(&(cam_mod)->sd, fmt, ## arg)
 
 int ov_camera_module_write_reglist(
 	struct ov_camera_module *cam_mod,
@@ -232,7 +234,7 @@ int ov_camera_module_read_reg_table(
 
 int ov_camera_module_s_fmt(struct v4l2_subdev *sd,
 	struct v4l2_subdev_pad_config *cfg,
-	struct v4l2_subdev_format *format	);
+	struct v4l2_subdev_format *format);
 
 int ov_camera_module_g_fmt(struct v4l2_subdev *sd,
 	struct v4l2_subdev_pad_config *cfg,

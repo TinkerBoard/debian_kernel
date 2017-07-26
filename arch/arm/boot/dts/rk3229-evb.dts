@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2017 Fuzhou Rockchip Electronics Co., Ltd
+ *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
  * licensing only applies to this file, and not this project as a
@@ -41,12 +43,14 @@
 /dts-v1/;
 
 #include "rk322x.dtsi"
+#include "rk3229-cpu-opp.dtsi"
+#include "rk322x-android.dtsi"
 
 / {
 	model = "Rockchip RK3229 Evaluation board";
 	compatible = "rockchip,rk3229-evb", "rockchip,rk3229";
 
-	memory {
+	memory@60000000 {
 		device_type = "memory";
 		reg = <0x60000000 0x40000000>;
 	};
@@ -58,6 +62,41 @@
 		#clock-cells = <0>;
 	};
 
+	vdd_arm: vdd-arm-regulator {
+		compatible = "pwm-regulator";
+		rockchip,pwm_id = <1>;
+		rockchip,pwm_voltage = <1100000>;
+		pwms = <&pwm1 0 25000 1>;
+		regulator-name = "vdd_arm";
+		regulator-min-microvolt = <950000>;
+		regulator-max-microvolt = <1400000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	vdd_log: vdd-log-regulator {
+		compatible = "pwm-regulator";
+		rockchip,pwm_id = <2>;
+		rockchip,pwm_voltage = <1200000>;
+		pwms = <&pwm2 0 25000 1>;
+		regulator-name = "vdd_log";
+		regulator-min-microvolt = <1000000>;
+		regulator-max-microvolt = <1300000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	vcc_host: vcc-host-regulator {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio3 20 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&host_vbus_drv>;
+		regulator-name = "vcc_host";
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
 	vcc_phy: vcc-phy-regulator {
 		compatible = "regulator-fixed";
 		enable-active-high;
@@ -67,6 +106,50 @@
 		regulator-always-on;
 		regulator-boot-on;
 	};
+
+	regulators {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		vccio_1v8_reg: regulator@0 {
+			compatible = "regulator-fixed";
+			regulator-name = "vccio_1v8";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-always-on;
+		};
+
+		vccio_3v3_reg: regulator@1 {
+			compatible = "regulator-fixed";
+			regulator-name = "vccio_3v3";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			regulator-always-on;
+		};
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		autorepeat;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pwr_key>;
+
+		power_key: power-key {
+			label = "GPIO Key Power";
+			gpios = <&gpio3 23 GPIO_ACTIVE_LOW>;
+			linux,code = <116>;
+			debounce-interval = <100>;
+			wakeup-source;
+		};
+	};
+};
+
+&cpu0 {
+	cpu-supply = <&vdd_arm>;
 };
 
 &gmac {
@@ -85,6 +168,45 @@
 	status = "okay";
 };
 
-&uart2 {
+&gpu {
 	status = "okay";
+	mali-supply = <&vdd_log>;
+};
+
+&io_domains {
+	status = "okay";
+
+	vccio1-supply = <&vccio_3v3_reg>;
+	vccio2-supply = <&vccio_1v8_reg>;
+	vccio4-supply = <&vccio_3v3_reg>;
+};
+
+&pinctrl {
+	usb {
+		host_vbus_drv: host-vbus-drv {
+			rockchip,pins = <3 20 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	keys {
+		pwr_key: pwr-key {
+			rockchip,pins = <3 23 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+};
+
+&pwm1 {
+	status = "okay";
+};
+
+&pwm2 {
+	status = "okay";
+};
+
+&u2phy0_host {
+	phy-supply = <&vcc_host>;
+};
+
+&u2phy1_host {
+	phy-supply = <&vcc_host>;
 };

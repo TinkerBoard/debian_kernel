@@ -77,6 +77,15 @@ static struct kobj_attribute _name##_attr = {	\
 	.store	= _name##_store,		\
 }
 
+#define power_attr_ro(_name) \
+static struct kobj_attribute _name##_attr = {	\
+	.attr	= {				\
+		.name = __stringify(_name),	\
+		.mode = S_IRUGO,		\
+	},					\
+	.show	= _name##_show,			\
+}
+
 /* Preferred image size in bytes (default 500 MB) */
 extern unsigned long image_size;
 /* Size of memory reserved for drivers (default SPARE_PAGES x PAGE_SIZE) */
@@ -191,6 +200,8 @@ static inline void suspend_test_finish(const char *label) {}
 
 #ifdef CONFIG_PM_SLEEP
 /* kernel/power/main.c */
+extern int __pm_notifier_call_chain(unsigned long val, int nr_to_call,
+				    int *nr_calls);
 extern int pm_notifier_call_chain(unsigned long val);
 #endif
 

@@ -262,7 +262,7 @@ static void rga_dump(void)
 
 static inline void rga_queue_power_off_work(void)
 {
-	queue_delayed_work(system_nrt_wq, &drvdata->power_off_work, RGA_POWER_OFF_DELAY);
+	queue_delayed_work(system_wq, &drvdata->power_off_work, RGA_POWER_OFF_DELAY);
 }
 
 /* Caller must hold rga_service.lock */
@@ -1349,6 +1349,7 @@ static int __init rga_init(void)
     unsigned long *mmu_buf_virtual;
     uint32_t i;
     uint32_t *buf_p;
+    uint32_t *buf;
 
     /* malloc pre scale mid buf mmu table */
     mmu_buf = kzalloc(1024*8, GFP_KERNEL);
@@ -1374,7 +1375,12 @@ static int __init rga_init(void)
 
     buf_p = kmalloc(1024*256, GFP_KERNEL);
     rga_mmu_buf.buf_virtual = buf_p;
-    rga_mmu_buf.buf = (uint32_t *)virt_to_phys((void *)((unsigned long)buf_p));
+#if (defined(CONFIG_ARM) && defined(CONFIG_ARM_LPAE))
+    buf = (uint32_t *)(uint32_t)virt_to_phys((void *)((unsigned long)buf_p));
+#else
+    buf = (uint32_t *)virt_to_phys((void *)((unsigned long)buf_p));
+#endif
+    rga_mmu_buf.buf = buf;
     rga_mmu_buf.front = 0;
     rga_mmu_buf.back = 64*1024;
     rga_mmu_buf.size = 64*1024;

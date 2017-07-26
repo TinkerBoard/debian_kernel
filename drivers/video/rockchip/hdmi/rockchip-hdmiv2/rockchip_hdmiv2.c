@@ -152,7 +152,7 @@ static void rockchip_hdmiv2_early_suspend(struct early_suspend *h)
 	struct hdmi *hdmi = hdmi_dev->hdmi;
 	struct pinctrl_state *gpio_state;
 
-	HDMIDBG("hdmi enter early suspend\n");
+	HDMIDBG(2, "hdmi enter early suspend\n");
 	hdmi_submit_work(hdmi, HDMI_SUSPEND_CTL, 0, 1);
 	/* iomux to gpio and pull down when suspend */
 	gpio_state = pinctrl_lookup_state(hdmi_dev->dev->pins->p, "gpio");
@@ -164,7 +164,7 @@ static void rockchip_hdmiv2_early_resume(struct early_suspend *h)
 {
 	struct hdmi *hdmi = hdmi_dev->hdmi;
 
-	HDMIDBG("hdmi exit early resume\n");
+	HDMIDBG(2, "hdmi exit early resume\n");
 	/* iomux to default state for hdmi use when resume */
 	pinctrl_select_state(hdmi_dev->dev->pins->p,
 			     hdmi_dev->dev->pins->default_state);
@@ -299,13 +299,13 @@ static int rockchip_hdmiv2_clk_disable(struct hdmi_dev *hdmi_dev)
 	}
 
 	if ((hdmi_dev->clk_on & HDMI_PCLK_ON) &&
-	    (hdmi_dev->pclk)) {
+	    hdmi_dev->pclk) {
 		clk_disable_unprepare(hdmi_dev->pclk);
 		hdmi_dev->clk_on &= ~HDMI_PCLK_ON;
 	}
 
 	if ((hdmi_dev->clk_on & HDMI_HDCPCLK_ON) &&
-	    (hdmi_dev->hdcp_clk)) {
+	    hdmi_dev->hdcp_clk) {
 		clk_disable_unprepare(hdmi_dev->hdcp_clk);
 		hdmi_dev->clk_on &= ~HDMI_HDCPCLK_ON;
 	}
@@ -330,7 +330,6 @@ static int rockchip_hdmiv2_fb_event_notify(struct notifier_block *self,
 					   unsigned long action, void *data)
 {
 	struct fb_event *event = data;
-	int blank_mode = *((int *)event->data);
 	struct hdmi *hdmi = hdmi_dev->hdmi;
 	struct pinctrl_state *gpio_state;
 #ifdef CONFIG_PINCTRL
@@ -338,11 +337,11 @@ static int rockchip_hdmiv2_fb_event_notify(struct notifier_block *self,
 #endif
 
 	if (action == FB_EARLY_EVENT_BLANK) {
-		switch (blank_mode) {
+		switch (*((int *)event->data)) {
 		case FB_BLANK_UNBLANK:
 			break;
 		default:
-			HDMIDBG("suspend hdmi\n");
+			HDMIDBG(2, "suspend hdmi\n");
 			if (!hdmi->sleep) {
 				hdmi_submit_work(hdmi,
 						 HDMI_SUSPEND_CTL,
@@ -368,9 +367,9 @@ static int rockchip_hdmiv2_fb_event_notify(struct notifier_block *self,
 			break;
 		}
 	} else if (action == FB_EVENT_BLANK) {
-		switch (blank_mode) {
+		switch (*((int *)event->data)) {
 		case FB_BLANK_UNBLANK:
-			HDMIDBG("resume hdmi\n");
+			HDMIDBG(2, "resume hdmi\n");
 			if (hdmi->sleep) {
 				#ifdef CONFIG_PINCTRL
 				pinctrl_select_state(pins->p,
@@ -425,6 +424,62 @@ static const struct of_device_id rk_hdmi_dt_ids[] = {
 	{}
 };
 
+static int hdmi_get_prop_dts(struct hdmi *hdmi, struct device_node *np)
+{
+	const struct property *prop;
+	int i = 0, nstates = 0;
+	const __be32 *val;
+	int value;
+	struct edid_prop_value *pval = NULL;
+
+	if (!hdmi || !np) {
+		pr_info("%s:line=%d hdmi or np is null\n", __func__, __LINE__);
+		return -1;
+	}
+
+	if (!of_property_read_u32(np, "hdmi_edid_auto_support", &value))
+		hdmi->edid_auto_support = value;
+
+	prop = of_find_property(np, "hdmi_edid_prop_value", NULL);
+	if (!prop || !prop->value) {
+		pr_info("%s:No edid-prop-value, %d\n", __func__, !prop);
+		return -1;
+	}
+
+	nstates = (prop->length / sizeof(struct edid_prop_value));
+	pval = kcalloc(nstates, sizeof(struct edid_prop_value), GFP_NOWAIT);
+
+	for (i = 0, val = prop->value; i < nstates; i++) {
+		pval[i].vid = be32_to_cpup(val++);
+		pval[i].pid = be32_to_cpup(val++);
+		pval[i].sn = be32_to_cpup(val++);
+		pval[i].xres = be32_to_cpup(val++);
+		pval[i].yres = be32_to_cpup(val++);
+		pval[i].vic = be32_to_cpup(val++);
+		pval[i].width = be32_to_cpup(val++);
+		pval[i].height = be32_to_cpup(val++);
+		pval[i].x_w = be32_to_cpup(val++);
+		pval[i].x_h = be32_to_cpup(val++);
+		pval[i].hwrotation = be32_to_cpup(val++);
+		pval[i].einit = be32_to_cpup(val++);
+		pval[i].vsync = be32_to_cpup(val++);
+		pval[i].panel = be32_to_cpup(val++);
+		pval[i].scan = be32_to_cpup(val++);
+
+		pr_info("%s: 0x%x 0x%x 0x%x %d %d %d %d %d %d %d %d %d %d %d %d\n",
+			__func__, pval[i].vid, pval[i].pid, pval[i].sn,
+			pval[i].width, pval[i].height, pval[i].xres,
+			pval[i].yres, pval[i].vic, pval[i].x_w,
+			pval[i].x_h, pval[i].hwrotation, pval[i].einit,
+			pval[i].vsync, pval[i].panel, pval[i].scan);
+	}
+
+	hdmi->pvalue = pval;
+	hdmi->nstates = nstates;
+
+	return 0;
+}
+
 static int rockchip_hdmiv2_parse_dt(struct hdmi_dev *hdmi_dev)
 {
 	int val = 0;
@@ -433,7 +488,7 @@ static int rockchip_hdmiv2_parse_dt(struct hdmi_dev *hdmi_dev)
 
 	match = of_match_node(rk_hdmi_dt_ids, np);
 	if (!match)
-		return PTR_ERR(match);
+		return -EINVAL;
 
 	if (!strcmp(match->compatible, "rockchip,rk3288-hdmi")) {
 		hdmi_dev->soctype = HDMI_SOC_RK3288;
@@ -473,6 +528,13 @@ static int rockchip_hdmiv2_parse_dt(struct hdmi_dev *hdmi_dev)
 	} else {
 		rk_hdmi_property.defaultmode = HDMI_VIDEO_DEFAULT_MODE;
 	}
+	if (!of_property_read_u32(np, "rockchip,defaultdepth", &val) &&
+	    (val > 0)) {
+		pr_info("default depth is %d\n", val);
+		rk_hdmi_property.defaultdepth = val;
+	} else {
+		rk_hdmi_property.defaultdepth = HDMI_VIDEO_DEFAULT_COLORDEPTH;
+	}
 	if (of_get_property(np, "rockchip,phy_table", &val)) {
 		hdmi_dev->phy_table = kmalloc(val, GFP_KERNEL);
 		if (!hdmi_dev->phy_table) {
@@ -498,9 +560,8 @@ static int rockchip_hdmiv2_parse_dt(struct hdmi_dev *hdmi_dev)
 	#ifdef CONFIG_MFD_SYSCON
 	hdmi_dev->grf_base =
 		syscon_regmap_lookup_by_phandle(np, "rockchip,grf");
-	if (IS_ERR(hdmi_dev->grf_base)) {
+	if (IS_ERR(hdmi_dev->grf_base))
 		hdmi_dev->grf_base = NULL;
-	}
 	#endif
 	return 0;
 }
@@ -511,7 +572,7 @@ static int rockchip_hdmiv2_probe(struct platform_device *pdev)
 	int ret = -1;
 	struct resource *res;
 
-	HDMIDBG("%s\n", __func__);
+	HDMIDBG(2, "%s\n", __func__);
 	hdmi_dev = kmalloc(sizeof(*hdmi_dev), GFP_KERNEL);
 	if (!hdmi_dev) {
 		dev_err(&pdev->dev, ">>rockchip hdmiv2 kmalloc fail!");
@@ -616,7 +677,9 @@ static int rockchip_hdmiv2_probe(struct platform_device *pdev)
 				SUPPORT_DEEP_10BIT |
 				SUPPORT_YCBCR_INPUT |
 				SUPPORT_1080I |
-				SUPPORT_480I_576I;
+				SUPPORT_480I_576I |
+				SUPPORT_VESA_DMT |
+				SUPPORT_RK_DISCRETE_VR;
 		if (rk_hdmi_property.videosrc == DISPLAY_SOURCE_LCDC0)
 			rk_hdmi_property.feature |=
 						SUPPORT_4K |
@@ -635,6 +698,8 @@ static int rockchip_hdmiv2_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto failed1;
 	}
+
+	hdmi_get_prop_dts(hdmi_dev->hdmi, hdmi_dev->dev->of_node);
 	mutex_init(&hdmi_dev->ddc_lock);
 	hdmi_dev->hdmi->dev = &pdev->dev;
 	hdmi_dev->hdmi->soctype = hdmi_dev->soctype;
@@ -740,11 +805,11 @@ static void rockchip_hdmiv2_shutdown(struct platform_device *pdev)
 		unregister_early_suspend(&hdmi_dev->early_suspend);
 		#endif
 		hdmi = hdmi_dev->hdmi;
-		if (hdmi->hotplug == HDMI_HPD_ACTIVED &&
+		if (hdmi->hotplug == HDMI_HPD_ACTIVATED &&
 		    hdmi->ops->setmute)
 			hdmi->ops->setmute(hdmi, HDMI_VIDEO_MUTE);
+		pm_runtime_disable(hdmi_dev->dev);
 	}
-	pm_runtime_disable(hdmi_dev->dev);
 }
 
 static struct platform_driver rockchip_hdmiv2_driver = {

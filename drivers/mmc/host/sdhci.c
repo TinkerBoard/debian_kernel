@@ -492,7 +492,7 @@ static int sdhci_adma_table_pre(struct sdhci_host *host,
 		host->align_buffer, host->align_buffer_sz, direction);
 	if (dma_mapping_error(mmc_dev(host->mmc), host->align_addr))
 		goto fail;
-	BUG_ON(host->align_addr & host->align_mask);
+	BUG_ON(host->align_addr & SDHCI_ADMA2_MASK);
 
 	host->sg_count = sdhci_pre_dma_transfer(host, data);
 	if (host->sg_count < 0)
@@ -514,8 +514,8 @@ static int sdhci_adma_table_pre(struct sdhci_host *host,
 		 * the (up to three) bytes that screw up the
 		 * alignment.
 		 */
-		offset = (host->align_sz - (addr & host->align_mask)) &
-			 host->align_mask;
+		offset = (SDHCI_ADMA2_ALIGN - (addr & SDHCI_ADMA2_MASK)) &
+			 SDHCI_ADMA2_MASK;
 		if (offset) {
 			if (data->flags & MMC_DATA_WRITE) {
 				buffer = sdhci_kmap_atomic(sg, &flags);
@@ -529,8 +529,8 @@ static int sdhci_adma_table_pre(struct sdhci_host *host,
 
 			BUG_ON(offset > 65536);
 
-			align += host->align_sz;
-			align_addr += host->align_sz;
+			align += SDHCI_ADMA2_ALIGN;
+			align_addr += SDHCI_ADMA2_ALIGN;
 
 			desc += host->desc_sz;
 
@@ -611,7 +611,7 @@ static void sdhci_adma_table_post(struct sdhci_host *host,
 	/* Do a quick scan of the SG list for any unaligned mappings */
 	has_unaligned = false;
 	for_each_sg(data->sg, sg, host->sg_count, i)
-		if (sg_dma_address(sg) & host->align_mask) {
+		if (sg_dma_address(sg) & SDHCI_ADMA2_MASK) {
 			has_unaligned = true;
 			break;
 		}
@@ -623,15 +623,15 @@ static void sdhci_adma_table_post(struct sdhci_host *host,
 		align = host->align_buffer;
 
 		for_each_sg(data->sg, sg, host->sg_count, i) {
-			if (sg_dma_address(sg) & host->align_mask) {
-				size = host->align_sz -
-				       (sg_dma_address(sg) & host->align_mask);
+			if (sg_dma_address(sg) & SDHCI_ADMA2_MASK) {
+				size = SDHCI_ADMA2_ALIGN -
+				       (sg_dma_address(sg) & SDHCI_ADMA2_MASK);
 
 				buffer = sdhci_kmap_atomic(sg, &flags);
 				memcpy(buffer, align, size);
 				sdhci_kunmap_atomic(buffer, &flags);
 
-				align += host->align_sz;
+				align += SDHCI_ADMA2_ALIGN;
 			}
 		}
 	}
@@ -675,7 +675,7 @@ static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 			 * host->clock is in Hz.  target_timeout is in us.
 			 * Hence, us = 1000000 * cycles / Hz.  Round up.
 			 */
-			val = 1000000 * data->timeout_clks;
+			val = 1000000ULL * data->timeout_clks;
 			if (do_div(val, host->clock))
 				target_timeout++;
 			target_timeout += val;
@@ -1274,7 +1274,9 @@ clock_set:
 			return;
 		}
 		timeout--;
-		mdelay(1);
+		spin_unlock_irq(&host->lock);
+		usleep_range(900, 1100);
+		spin_lock_irq(&host->lock);
 	}
 
 	clk |= SDHCI_CLOCK_CARD_EN;
@@ -1315,7 +1317,9 @@ static void sdhci_set_power(struct sdhci_host *host, unsigned char mode,
 			pwr = SDHCI_POWER_330;
 			break;
 		default:
-			BUG();
+			WARN(1, "%s: Invalid vdd %#x\n",
+			     mmc_hostname(host->mmc), vdd);
+			break;
 		}
 	}
 
@@ -2023,9 +2027,9 @@ static int sdhci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 
 		spin_unlock_irqrestore(&host->lock, flags);
 		/* Wait for Buffer Read Ready interrupt */
-		wait_event_interruptible_timeout(host->buf_ready_int,
-					(host->tuning_done == 1),
-					msecs_to_jiffies(50));
+		wait_event_timeout(host->buf_ready_int,
+				   (host->tuning_done == 1),
+				   msecs_to_jiffies(50));
 		spin_lock_irqsave(&host->lock, flags);
 
 		if (!host->tuning_done) {
@@ -2038,7 +2042,27 @@ static int sdhci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 			ctrl &= ~SDHCI_CTRL_EXEC_TUNING;
 			sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
 
+			sdhci_do_reset(host, SDHCI_RESET_CMD);
+			sdhci_do_reset(host, SDHCI_RESET_DATA);
+
 			err = -EIO;
+
+			if (cmd.opcode != MMC_SEND_TUNING_BLOCK_HS200)
+				goto out;
+
+			sdhci_writel(host, host->ier, SDHCI_INT_ENABLE);
+			sdhci_writel(host, host->ier, SDHCI_SIGNAL_ENABLE);
+
+			spin_unlock_irqrestore(&host->lock, flags);
+
+			memset(&cmd, 0, sizeof(cmd));
+			cmd.opcode = MMC_STOP_TRANSMISSION;
+			cmd.flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
+			cmd.busy_timeout = 50;
+			mmc_wait_for_cmd(mmc, &cmd, 0);
+
+			spin_lock_irqsave(&host->lock, flags);
+
 			goto out;
 		}
 
@@ -2607,7 +2631,8 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
 			pr_err("%s: Card is consuming too much power!\n",
 				mmc_hostname(host->mmc));
 
-		if (intmask & SDHCI_INT_CARD_INT) {
+		if ((intmask & SDHCI_INT_CARD_INT) &&
+		    (host->ier & SDHCI_INT_CARD_INT)) {
 			sdhci_enable_sdio_irq_nolock(host, false);
 			host->thread_isr |= SDHCI_INT_CARD_INT;
 			result = IRQ_WAKE_THREAD;
@@ -2715,7 +2740,6 @@ int sdhci_suspend_host(struct sdhci_host *host)
 		free_irq(host->irq, host);
 	} else {
 		sdhci_enable_irq_wakeups(host);
-		enable_irq_wake(host->irq);
 	}
 	return 0;
 }
@@ -2751,7 +2775,6 @@ int sdhci_resume_host(struct sdhci_host *host)
 			return ret;
 	} else {
 		sdhci_disable_irq_wakeups(host);
-		disable_irq_wake(host->irq);
 	}
 
 	sdhci_enable_card_detection(host);
@@ -2983,24 +3006,17 @@ int sdhci_add_host(struct sdhci_host *host)
 		if (host->flags & SDHCI_USE_64_BIT_DMA) {
 			host->adma_table_sz = (SDHCI_MAX_SEGS * 2 + 1) *
 					      SDHCI_ADMA2_64_DESC_SZ;
-			host->align_buffer_sz = SDHCI_MAX_SEGS *
-						SDHCI_ADMA2_64_ALIGN;
 			host->desc_sz = SDHCI_ADMA2_64_DESC_SZ;
-			host->align_sz = SDHCI_ADMA2_64_ALIGN;
-			host->align_mask = SDHCI_ADMA2_64_ALIGN - 1;
 		} else {
 			host->adma_table_sz = (SDHCI_MAX_SEGS * 2 + 1) *
 					      SDHCI_ADMA2_32_DESC_SZ;
-			host->align_buffer_sz = SDHCI_MAX_SEGS *
-						SDHCI_ADMA2_32_ALIGN;
 			host->desc_sz = SDHCI_ADMA2_32_DESC_SZ;
-			host->align_sz = SDHCI_ADMA2_32_ALIGN;
-			host->align_mask = SDHCI_ADMA2_32_ALIGN - 1;
 		}
 		host->adma_table = dma_alloc_coherent(mmc_dev(mmc),
 						      host->adma_table_sz,
 						      &host->adma_addr,
 						      GFP_KERNEL);
+		host->align_buffer_sz = SDHCI_MAX_SEGS * SDHCI_ADMA2_ALIGN;
 		host->align_buffer = kmalloc(host->align_buffer_sz, GFP_KERNEL);
 		if (!host->adma_table || !host->align_buffer) {
 			if (host->adma_table)
@@ -3014,7 +3030,7 @@ int sdhci_add_host(struct sdhci_host *host)
 			host->flags &= ~SDHCI_USE_ADMA;
 			host->adma_table = NULL;
 			host->align_buffer = NULL;
-		} else if (host->adma_addr & host->align_mask) {
+		} else if (host->adma_addr & (SDHCI_ADMA2_DESC_ALIGN - 1)) {
 			pr_warn("%s: unable to allocate aligned ADMA descriptor\n",
 				mmc_hostname(mmc));
 			host->flags &= ~SDHCI_USE_ADMA;

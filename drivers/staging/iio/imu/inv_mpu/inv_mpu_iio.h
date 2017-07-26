@@ -362,6 +362,10 @@ struct inv_mpu_iio_s {
 	const short *compass_st_upper;
 	const short *compass_st_lower;
 	short irq;
+	signed short hid_temperature;
+	u64 hid_timestamp;
+	int use_hid;
+	int support_hw_poweroff;
 	int accel_bias[3];
 	int gyro_bias[3];
 	short raw_gyro[3];
@@ -643,6 +647,9 @@ struct inv_mpu_slave {
 /*---- MPU9250 ----*/
 #define MPU9250_ID               0x71      /* unique WHOAMI */
 
+/*---- MPU6880 ----*/
+#define MPU6880_ID               0x78      /* unique WHOAMI */
+
 #define THREE_AXIS               3
 #define GYRO_CONFIG_FSR_SHIFT    3
 #define ACCL_CONFIG_FSR_SHIFT    3
@@ -856,7 +863,8 @@ ssize_t inv_dmp_firmware_read(struct file *filp,
 				struct kobject *kobj,
 				struct bin_attribute *bin_attr,
 				char *buf, loff_t off, size_t count);
-
+int inv_reg_store(struct inv_mpu_iio_s *st);
+int inv_reg_recover(struct inv_mpu_iio_s *st);
 int inv_mpu_configure_ring(struct iio_dev *indio_dev);
 int inv_mpu_probe_trigger(struct iio_dev *indio_dev);
 void inv_mpu_unconfigure_ring(struct iio_dev *indio_dev);
@@ -888,6 +896,7 @@ int inv_do_test(struct inv_mpu_iio_s *st, int self_test_flag,
 		int *gyro_result, int *accl_result);
 int inv_hw_self_test(struct inv_mpu_iio_s *st);
 void inv_recover_setting(struct inv_mpu_iio_s *st);
+void inv_resume_recover_setting(struct inv_mpu_iio_s *st);
 int inv_power_up_self_test(struct inv_mpu_iio_s *st);
 s64 get_time_ns(void);
 int write_be32_key_to_mem(struct inv_mpu_iio_s *st,

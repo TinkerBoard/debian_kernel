@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,9 +11,8 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
-#ifndef CONFIG_ARM64
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/regmap.h>
@@ -26,81 +25,83 @@
 #include <linux/platform_device.h>
 #include <linux/platform_data/rk_isp10_platform.h>
 
+#define ONE_LANE_ENABLE_BIT     0x1
+#define TWO_LANE_ENABLE_BIT     0x2
+#define FOUR_LANE_ENABLE_BIT    0x4
 
-#define MRV_MIPI_BASE                           0x1C00
-#define MRV_MIPI_CTRL                           0x00
+#define MRV_MIPI_BASE           0x1C00
+#define MRV_MIPI_CTRL           0x00
 
 /*
-GRF_SOC_CON14
-*bit 0     dphy_rx0_testclr
-*bit 1     dphy_rx0_testclk
-*bit 2     dphy_rx0_testen
-*bit 3:10 dphy_rx0_testdin
-*/
+ * GRF_SOC_CON14
+ * bit 0     dphy_rx0_testclr
+ * bit 1     dphy_rx0_testclk
+ * bit 2     dphy_rx0_testen
+ * bit 3:10 dphy_rx0_testdin
+ */
 #define GRF_SOC_CON14_OFFSET    (0x027c)
-#define DPHY_RX0_TESTCLR_MASK   (0x1<<16)
-#define DPHY_RX0_TESTCLK_MASK   (0x1<<17)
-#define DPHY_RX0_TESTEN_MASK    (0x1<<18)
-#define DPHY_RX0_TESTDIN_MASK   (0xff<<19)
+#define DPHY_RX0_TESTCLR_MASK   (0x1 << 16)
+#define DPHY_RX0_TESTCLK_MASK   (0x1 << 17)
+#define DPHY_RX0_TESTEN_MASK    (0x1 << 18)
+#define DPHY_RX0_TESTDIN_MASK   (0xff << 19)
 
-#define DPHY_RX0_TESTCLR    (1<<0)
-#define DPHY_RX0_TESTCLK    (1<<1)
-#define DPHY_RX0_TESTEN     (1<<2)
-#define DPHY_RX0_TESTDIN_OFFSET    (3)
+#define DPHY_RX0_TESTCLR         BIT(0)
+#define DPHY_RX0_TESTCLK         BIT(1)
+#define DPHY_RX0_TESTEN          BIT(2)
+#define DPHY_RX0_TESTDIN_OFFSET  (3)
 
-#define DPHY_TX1RX1_ENABLECLK_MASK   (0x1<<28)
-#define DPHY_RX1_SRC_SEL_MASK        (0x1<<29)
-#define DPHY_TX1RX1_MASTERSLAVEZ_MASK (0x1<<30)
-#define DPHY_TX1RX1_BASEDIR_OFFSET  (0x1<<31)
+#define DPHY_TX1RX1_ENABLECLK_MASK    (0x1 << 28)
+#define DPHY_RX1_SRC_SEL_MASK         (0x1 << 29)
+#define DPHY_TX1RX1_MASTERSLAVEZ_MASK (0x1 << 30)
+#define DPHY_TX1RX1_BASEDIR_OFFSET    (0x1 << 31)
 
-#define DPHY_TX1RX1_ENABLECLK           (0x1<<12)
-#define DPHY_TX1RX1_DISABLECLK          (0x0<<12)
-#define DPHY_RX1_SRC_SEL_ISP          (0x1<<13)
-#define DPHY_TX1RX1_SLAVEZ            (0x0<<14)
-#define DPHY_TX1RX1_BASEDIR_REC       (0x1<<15)
-
-/*
-GRF_SOC_CON6
-*bit 0 grf_con_disable_isp
-*bit 1 grf_con_isp_dphy_sel  1'b0 mipi phy rx0
-*/
-#define GRF_SOC_CON6_OFFSET    (0x025c)
-#define MIPI_PHY_DISABLE_ISP_MASK       (0x1<<16)
-#define MIPI_PHY_DISABLE_ISP            (0x0<<0)
-
-#define DSI_CSI_TESTBUS_SEL_MASK        (0x1<<30)
-#define DSI_CSI_TESTBUS_SEL_OFFSET_BIT  (14)
-
-
-#define MIPI_PHY_DPHYSEL_OFFSET_MASK (0x1<<17)
-#define MIPI_PHY_DPHYSEL_OFFSET_BIT (0x1)
+#define DPHY_TX1RX1_ENABLECLK         (0x1 << 12)
+#define DPHY_TX1RX1_DISABLECLK        (0x0 << 12)
+#define DPHY_RX1_SRC_SEL_ISP          (0x1 << 13)
+#define DPHY_TX1RX1_SLAVEZ            (0x0 << 14)
+#define DPHY_TX1RX1_BASEDIR_REC       (0x1 << 15)
 
 /*
-*GRF_SOC_CON10
-*bit12:15 grf_dphy_rx0_enable
-*bit 0:3 turn disable
-*/
+ * GRF_SOC_CON6
+ * bit 0 grf_con_disable_isp
+ * bit 1 grf_con_isp_dphy_sel  1'b0 mipi phy rx0
+ */
+#define GRF_SOC_CON6_OFFSET            (0x025c)
+#define MIPI_PHY_DISABLE_ISP_MASK      (0x1 << 16)
+#define MIPI_PHY_DISABLE_ISP           (0x0 << 0)
+
+#define DSI_CSI_TESTBUS_SEL_MASK       (0x1 << 30)
+#define DSI_CSI_TESTBUS_SEL_OFFSET_BIT (14)
+
+#define MIPI_PHY_DPHYSEL_OFFSET_MASK   (0x1 << 17)
+#define MIPI_PHY_DPHYSEL_OFFSET_BIT    (0x1)
+
+/*
+ * GRF_SOC_CON10
+ * bit12:15 grf_dphy_rx0_enable
+ * bit 0:3 turn disable
+ */
 #define GRF_SOC_CON10_OFFSET                (0x026c)
-#define DPHY_RX0_TURN_DISABLE_MASK          (0xf<<16)
+#define DPHY_RX0_TURN_DISABLE_MASK          (0xf << 16)
 #define DPHY_RX0_TURN_DISABLE_OFFSET_BITS   (0x0)
-#define DPHY_RX0_ENABLE_MASK                (0xf<<28)
+#define DPHY_RX0_ENABLE_MASK                (0xf << 28)
 #define DPHY_RX0_ENABLE_OFFSET_BITS         (12)
 
 /*
-*GRF_SOC_CON9
-*bit12:15 grf_dphy_rx0_enable
-*bit 0:3 turn disable
-*/
-#define GRF_SOC_CON9_OFFSET                (0x0268)
-#define DPHY_TX1RX1_TURN_DISABLE_MASK          (0xf<<16)
+ * GRF_SOC_CON9
+ * bit12:15 grf_dphy_rx0_enable
+ * bit 0:3 turn disable
+ */
+#define GRF_SOC_CON9_OFFSET                    (0x0268)
+#define DPHY_TX1RX1_TURN_DISABLE_MASK          (0xf << 16)
 #define DPHY_TX1RX1_TURN_DISABLE_OFFSET_BITS   (0x0)
-#define DPHY_TX1RX1_ENABLE_MASK                (0xf<<28)
+#define DPHY_TX1RX1_ENABLE_MASK                (0xf << 28)
 #define DPHY_TX1RX1_ENABLE_OFFSET_BITS         (12)
 
 /*
-*GRF_SOC_CON15
-*bit 0:3   turn request
-*/
+ * GRF_SOC_CON15
+ * bit 0:3   turn request
+ */
 #define GRF_SOC_CON15_OFFSET                (0x03a4)
 #define DPHY_RX0_TURN_REQUEST_MASK          (0xf << 16)
 #define DPHY_RX0_TURN_REQUEST_OFFSET_BITS   (0x0)
@@ -109,28 +110,28 @@ GRF_SOC_CON6
 #define DPHY_TX1RX1_TURN_REQUEST_OFFSET_BITS   (0x0)
 
 /*
-*GRF_SOC_STATUS21
-*bit0:7   dphy_rx0_testdout
-*/
-#define GRF_SOC_STATUS21_OFFSET	(0x2D4)
-#define DPHY_RX0_TESTDOUT(a)		(a & 0xff)
+ * GRF_SOC_STATUS21
+ * bit0:7   dphy_rx0_testdout
+ */
+#define GRF_SOC_STATUS21_OFFSET      (0x2D4)
+#define DPHY_RX0_TESTDOUT(a)         ((a) & 0xff)
 
 /*
-*GRF_IO_VSEL
-*/
+ * GRF_IO_VSEL
+ */
 #define GRF_IO_VSEL_OFFSET		(0x0380)
-#define DVP_V18SEL			((1<<1) | (1<<17))
-#define DVP_V33SEL			((0<<1) | (1<<17))
+#define DVP_V18SEL			((1 << 1) | (1 << 17))
+#define DVP_V33SEL			((0 << 1) | (1 << 17))
 
 /*
-*GRF_IO_VSEL
-*/
-#define GRF_GPIO2B_E_OFFSET		(0x0380)
-#define CIF_CLKOUT_STRENGTH(a)	(((a&0x03)<<3) | (0x03<<19))
+ * GRF_IO_VSEL
+ */
+#define GRF_GPIO2B_E_OFFSET       (0x0380)
+#define CIF_CLKOUT_STRENGTH(a)    ((((a) & 0x03) << 3) | (0x03 << 19))
 
 /*
-*CSI HOST
-*/
+ * CSI HOST
+ */
 
 #define CSIHOST_PHY_TEST_CTRL0            (0x30)
 #define CSIHOST_PHY_TEST_CTRL1            (0x34)
@@ -144,15 +145,18 @@ GRF_SOC_CON6
 #define CSIHOST_ERR1                      (0x20)
 #define CSIHOST_ERR2                      (0x24)
 
+#define write_cifisp_reg(addr, val)	\
+		__raw_writel(val, (addr) + rk3288->isp_base)
+#define read_cifisp_reg(addr)	\
+		__raw_readl((addr) + rk3288->isp_base)
 
-#define write_cifisp_reg(addr, val)		__raw_writel(val, addr+rk3288->isp_base)
-#define read_cifisp_reg(addr)		__raw_readl(addr+rk3288->isp_base)
-
-#define write_grf_reg(addr, val)	regmap_write(rk3288->regmap_grf, addr, val)
+#define write_grf_reg(addr, val)	\
+		regmap_write(rk3288->regmap_grf, addr, val)
 #define read_grf_reg(addr, val)	regmap_read(rk3288->regmap_grf, addr, val)
 
-#define write_csihost_reg(addr, val)	__raw_writel(val, addr+rk3288->csihost_base)
-#define read_csihost_reg(addr)	__raw_readl(addr+rk3288->csihost_base)
+#define write_csihost_reg(addr, val)	\
+		__raw_writel(val, (addr) + rk3288->csihost_base)
+#define read_csihost_reg(addr)	__raw_readl((addr) + rk3288->csihost_base)
 
 struct cif_isp10_clk_rst_rk3288 {
 	struct clk	*aclk_isp;
@@ -164,7 +168,6 @@ struct cif_isp10_clk_rst_rk3288 {
 	struct clk *pclk_isp_in;
 	struct reset_control *isp_rst;
 };
-
 
 struct cif_isp10_rk3288 {
 	struct regmap *regmap_grf;
@@ -216,10 +219,10 @@ static struct cif_isp10_rk3288 *rk3288;
 static int mipi_dphy0_wr_reg(unsigned char addr, unsigned char data)
 {
 	/*
-	* TESTCLK=1
-	* TESTEN =1,TESTDIN=addr
-	* TESTCLK=0
-	*/
+	 * TESTCLK=1
+	 * TESTEN =1,TESTDIN=addr
+	 * TESTCLK=0
+	 */
 	write_grf_reg(GRF_SOC_CON14_OFFSET,
 		DPHY_RX0_TESTCLK_MASK | DPHY_RX0_TESTCLK);
 	write_grf_reg(GRF_SOC_CON14_OFFSET,
@@ -228,10 +231,10 @@ static int mipi_dphy0_wr_reg(unsigned char addr, unsigned char data)
 	write_grf_reg(GRF_SOC_CON14_OFFSET, DPHY_RX0_TESTCLK_MASK);
 
 	/*
-	* write data:
-	* TESTEN =0,TESTDIN=data
-	* TESTCLK=1
-	*/
+	 * write data:
+	 * TESTEN =0,TESTDIN=data
+	 * TESTCLK=1
+	 */
 	if (data != 0xff) {
 		write_grf_reg(GRF_SOC_CON14_OFFSET,
 			((data << DPHY_RX0_TESTDIN_OFFSET) |
@@ -241,14 +244,15 @@ static int mipi_dphy0_wr_reg(unsigned char addr, unsigned char data)
 	}
 	return 0;
 }
+
 static int mipi_dphy1_wr_reg(unsigned char addr, unsigned char data)
 {
 	/*
-	*TESTEN =1,TESTDIN=addr
-	*TESTCLK=0
-	*TESTEN =0,TESTDIN=data
-	*TESTCLK=1
-	*/
+	 * TESTEN =1,TESTDIN=addr
+	 * TESTCLK=0
+	 * TESTEN =0,TESTDIN=data
+	 * TESTCLK=1
+	 */
 	write_csihost_reg(CSIHOST_PHY_TEST_CTRL1, (0x00010000 | addr));
 	write_csihost_reg(CSIHOST_PHY_TEST_CTRL0, 0x00000000);
 	write_csihost_reg(CSIHOST_PHY_TEST_CTRL1, (0x00000000 | data));
@@ -259,10 +263,10 @@ static int mipi_dphy1_wr_reg(unsigned char addr, unsigned char data)
 
 static int mipi_dphy1_rd_reg(unsigned char addr)
 {
-    return (read_csihost_reg(((CSIHOST_PHY_TEST_CTRL1)&0xff00))>>8);
+	return (read_csihost_reg(((CSIHOST_PHY_TEST_CTRL1) & 0xff00)) >> 8);
 }
 
-static int mipi_dphy_cfg (struct pltfrm_cam_mipi_config *para)
+static int mipi_dphy_cfg(struct pltfrm_cam_mipi_config *para)
 {
 	unsigned char hsfreqrange = 0xff, i;
 	struct mipi_dphy_hsfreqrange *hsfreqrange_p;
@@ -270,7 +274,8 @@ static int mipi_dphy_cfg (struct pltfrm_cam_mipi_config *para)
 
 	hsfreqrange_p = mipi_dphy_hsfreq_range;
 	for (i = 0;
-		i < (sizeof(mipi_dphy_hsfreq_range) / sizeof(struct mipi_dphy_hsfreqrange));
+		i < (sizeof(mipi_dphy_hsfreq_range) /
+		sizeof(struct mipi_dphy_hsfreqrange));
 		i++) {
 		if ((para->bit_rate > hsfreqrange_p->range_l) &&
 			 (para->bit_rate <= hsfreqrange_p->range_h)) {
@@ -280,20 +285,20 @@ static int mipi_dphy_cfg (struct pltfrm_cam_mipi_config *para)
 		hsfreqrange_p++;
 	}
 
-	if (hsfreqrange == 0xff) {
+	if (hsfreqrange == 0xff)
 		hsfreqrange = 0x00;
-	}
+
 	hsfreqrange <<= 1;
 
 	input_sel = para->dphy_index;
 	datalane_en = 0;
 	for (i = 0; i < para->nb_lanes; i++)
-		datalane_en |= (1<<i);
+		datalane_en |= (1 << i);
 
 	if (input_sel == 0) {
 		write_grf_reg(GRF_SOC_CON6_OFFSET,
 			MIPI_PHY_DPHYSEL_OFFSET_MASK |
-			(input_sel<<MIPI_PHY_DPHYSEL_OFFSET_BIT));
+			(input_sel << MIPI_PHY_DPHYSEL_OFFSET_BIT));
 		/* set lane num */
 		write_grf_reg(GRF_SOC_CON10_OFFSET,
 			DPHY_RX0_ENABLE_MASK |
@@ -302,7 +307,8 @@ static int mipi_dphy_cfg (struct pltfrm_cam_mipi_config *para)
 		write_grf_reg(GRF_SOC_CON10_OFFSET,
 			DPHY_RX0_TURN_DISABLE_MASK |
 			(0xf << DPHY_RX0_TURN_DISABLE_OFFSET_BITS));
-		write_grf_reg(GRF_SOC_CON10_OFFSET, (0x0<<4)|(0xf<<20));
+		write_grf_reg(GRF_SOC_CON10_OFFSET,
+		(0x0 << 4) | (0xf << 20));
 		/* set lan turnrequest as 0 */
 		write_grf_reg(GRF_SOC_CON15_OFFSET,
 			DPHY_RX0_TURN_REQUEST_MASK |
@@ -310,50 +316,55 @@ static int mipi_dphy_cfg (struct pltfrm_cam_mipi_config *para)
 
 		/* phy start */
 		/*
-		* TESTCLK=1
-		* TESTCLR=1
-		* delay 100us
-		* TESTCLR=0
-		*/
+		 * TESTCLK=1
+		 * TESTCLR=1
+		 * delay 100us
+		 * TESTCLR=0
+		 */
 		write_grf_reg(GRF_SOC_CON14_OFFSET,
-			DPHY_RX0_TESTCLK_MASK |DPHY_RX0_TESTCLK);
+			DPHY_RX0_TESTCLK_MASK | DPHY_RX0_TESTCLK);
 		write_grf_reg(GRF_SOC_CON14_OFFSET,
-			DPHY_RX0_TESTCLR_MASK |DPHY_RX0_TESTCLR);
-		udelay(100);
+			DPHY_RX0_TESTCLR_MASK | DPHY_RX0_TESTCLR);
+		usleep_range(100, 150);
 		write_grf_reg(GRF_SOC_CON14_OFFSET, DPHY_RX0_TESTCLR_MASK);
-		udelay(100);
+		usleep_range(100, 150);
 
 		/* set clock lane */
 		mipi_dphy0_wr_reg(0x34, 0x15);
-		if (datalane_en >= 0x00)
+		if (datalane_en == ONE_LANE_ENABLE_BIT) {
 			mipi_dphy0_wr_reg(0x44, hsfreqrange);
-		if (datalane_en >= 0x01)
+		} else if (datalane_en == TWO_LANE_ENABLE_BIT) {
+			mipi_dphy0_wr_reg(0x44, hsfreqrange);
 			mipi_dphy0_wr_reg(0x54, hsfreqrange);
-		if (datalane_en >= 0x04) {
+		} else if (datalane_en == FOUR_LANE_ENABLE_BIT) {
+			mipi_dphy0_wr_reg(0x44, hsfreqrange);
+			mipi_dphy0_wr_reg(0x54, hsfreqrange);
 			mipi_dphy0_wr_reg(0x84, hsfreqrange);
 			mipi_dphy0_wr_reg(0x94, hsfreqrange);
 		}
 
 		/* Normal operation */
 		/*
-		*TESTCLK=1
-		*TESTEN =0
-		*/
+		 * TESTCLK=1
+		 * TESTEN =0
+		 */
 		mipi_dphy0_wr_reg(0x0, -1);
 		write_grf_reg(GRF_SOC_CON14_OFFSET,
 			DPHY_RX0_TESTCLK_MASK | DPHY_RX0_TESTCLK);
 		write_grf_reg(GRF_SOC_CON14_OFFSET,
 			(DPHY_RX0_TESTEN_MASK));
 
-		write_cifisp_reg((MRV_MIPI_BASE+MRV_MIPI_CTRL),
-			read_cifisp_reg(MRV_MIPI_BASE+MRV_MIPI_CTRL) | (0x0f<<8));
+		write_cifisp_reg((MRV_MIPI_BASE + MRV_MIPI_CTRL),
+			read_cifisp_reg(MRV_MIPI_BASE + MRV_MIPI_CTRL) |
+			(0x0f << 8));
 
 	} else if (input_sel == 1) {
 		write_grf_reg(GRF_SOC_CON6_OFFSET,
 			MIPI_PHY_DPHYSEL_OFFSET_MASK |
-			(input_sel<<MIPI_PHY_DPHYSEL_OFFSET_BIT));
+			(input_sel << MIPI_PHY_DPHYSEL_OFFSET_BIT));
 		write_grf_reg(GRF_SOC_CON6_OFFSET,
-			DSI_CSI_TESTBUS_SEL_MASK | (1<<DSI_CSI_TESTBUS_SEL_OFFSET_BIT));
+			DSI_CSI_TESTBUS_SEL_MASK |
+			(1 << DSI_CSI_TESTBUS_SEL_OFFSET_BIT));
 
 		write_grf_reg(GRF_SOC_CON14_OFFSET,
 			DPHY_RX1_SRC_SEL_ISP | DPHY_RX1_SRC_SEL_MASK);
@@ -377,38 +388,42 @@ static int mipi_dphy_cfg (struct pltfrm_cam_mipi_config *para)
 
 		/* phy1 start */
 		/*
-		*SHUTDOWNZ=0
-		*RSTZ=0
-		*TESTCLK=1
-		*TESTCLR=1 TESTCLK=1
-		*TESTCLR=0 TESTCLK=1
-		*/
+		 * SHUTDOWNZ=0
+		 * RSTZ=0
+		 * TESTCLK=1
+		 * TESTCLR=1 TESTCLK=1
+		 * TESTCLR=0 TESTCLK=1
+		 */
 		write_csihost_reg(CSIHOST_PHY_SHUTDOWNZ, 0x00000000);
 		write_csihost_reg(CSIHOST_DPHY_RSTZ, 0x00000000);
 		write_csihost_reg(CSIHOST_PHY_TEST_CTRL0, 0x00000002);
 		write_csihost_reg(CSIHOST_PHY_TEST_CTRL0, 0x00000003);
-		udelay(100);
+		usleep_range(100, 150);
 		write_csihost_reg(CSIHOST_PHY_TEST_CTRL0, 0x00000002);
-		udelay(100);
+		usleep_range(100, 150);
 
 		/* set clock lane */
 		mipi_dphy1_wr_reg(0x34, 0x15);
-		if (datalane_en >= 0x00)
+
+		if (datalane_en == ONE_LANE_ENABLE_BIT) {
 			mipi_dphy1_wr_reg(0x44, hsfreqrange);
-		if (datalane_en >= 0x01)
+		} else if (datalane_en == TWO_LANE_ENABLE_BIT) {
+			mipi_dphy1_wr_reg(0x44, hsfreqrange);
 			mipi_dphy1_wr_reg(0x54, hsfreqrange);
-		if (datalane_en >= 0x04) {
+		} else if (datalane_en == FOUR_LANE_ENABLE_BIT) {
+			mipi_dphy1_wr_reg(0x44, hsfreqrange);
+			mipi_dphy1_wr_reg(0x54, hsfreqrange);
 			mipi_dphy1_wr_reg(0x84, hsfreqrange);
 			mipi_dphy1_wr_reg(0x94, hsfreqrange);
 		}
 
 		mipi_dphy1_rd_reg(0x0);
 		/*
-		*TESTCLK=1
-		*TESTEN =0
-		*SHUTDOWNZ=1
-		*RSTZ=1
-		*/
+		 * TESTCLK=1
+		 * TESTEN =0
+		 * SHUTDOWNZ=1
+		 * RSTZ=1
+		 */
 		write_csihost_reg(CSIHOST_PHY_TEST_CTRL0, 0x00000002);
 		write_csihost_reg(CSIHOST_PHY_TEST_CTRL1, 0x00000000);
 		write_csihost_reg(CSIHOST_PHY_SHUTDOWNZ, 0x00000001);
@@ -463,7 +478,7 @@ static int soc_init(struct pltfrm_soc_init_para *init)
 				sizeof(struct cif_isp10_rk3288),
 				GFP_KERNEL);
 	if (!rk3288) {
-		dev_err(&pdev->dev, "Can't allocate cif_isp10_rk3288 \n");
+		dev_err(&pdev->dev, "Can't allocate cif_isp10_rk3288\n");
 		err = -ENOMEM;
 		goto alloc_failed;
 	}
@@ -472,14 +487,15 @@ static int soc_init(struct pltfrm_soc_init_para *init)
 	if (node) {
 		rk3288->regmap_grf = syscon_node_to_regmap(node);
 		if (IS_ERR(rk3288->regmap_grf)) {
-			dev_err(&pdev->dev, "Can't allocate cif_isp10_rk3288 \n");
+			dev_err(&pdev->dev, "Can't allocate cif_isp10_rk3288\n");
 			err = -ENODEV;
 			goto regmap_failed;
 		}
 	}
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "csihost-register");
-	if (res == NULL) {
+	res = platform_get_resource_byname(pdev,
+				IORESOURCE_MEM, "csihost-register");
+	if (!res) {
 		dev_err(&pdev->dev,
 			"platform_get_resource_byname csihost-register failed\n");
 		err = -ENODEV;
@@ -500,7 +516,8 @@ static int soc_init(struct pltfrm_soc_init_para *init)
 	clk_rst->hclk_isp = devm_clk_get(&pdev->dev, "hclk_isp");
 	clk_rst->sclk_isp = devm_clk_get(&pdev->dev, "sclk_isp");
 	clk_rst->sclk_isp_jpe = devm_clk_get(&pdev->dev, "sclk_isp_jpe");
-	clk_rst->sclk_mipidsi_24m = devm_clk_get(&pdev->dev, "sclk_mipidsi_24m");
+	clk_rst->sclk_mipidsi_24m =
+			devm_clk_get(&pdev->dev, "sclk_mipidsi_24m");
 	clk_rst->pclk_mipi_csi = devm_clk_get(&pdev->dev, "pclk_mipi_csi");
 	clk_rst->isp_rst = devm_reset_control_get(&pdev->dev, "rst_isp");
 	clk_rst->pclk_isp_in = devm_clk_get(&pdev->dev, "pclk_isp_in");
@@ -526,42 +543,32 @@ static int soc_init(struct pltfrm_soc_init_para *init)
 	return 0;
 
 clk_failed:
-	if (!IS_ERR_OR_NULL(clk_rst->aclk_isp)) {
+	if (!IS_ERR_OR_NULL(clk_rst->aclk_isp))
 		devm_clk_put(&pdev->dev, clk_rst->aclk_isp);
-	}
-	if (!IS_ERR_OR_NULL(clk_rst->hclk_isp)) {
+	if (!IS_ERR_OR_NULL(clk_rst->hclk_isp))
 		devm_clk_put(&pdev->dev, clk_rst->hclk_isp);
-	}
-	if (!IS_ERR_OR_NULL(clk_rst->sclk_isp)) {
+	if (!IS_ERR_OR_NULL(clk_rst->sclk_isp))
 		devm_clk_put(&pdev->dev, clk_rst->sclk_isp);
-	}
-	if (!IS_ERR_OR_NULL(clk_rst->sclk_isp_jpe)) {
+	if (!IS_ERR_OR_NULL(clk_rst->sclk_isp_jpe))
 		devm_clk_put(&pdev->dev, clk_rst->sclk_isp_jpe);
-	}
-	if (!IS_ERR_OR_NULL(clk_rst->pclk_mipi_csi)) {
+	if (!IS_ERR_OR_NULL(clk_rst->pclk_mipi_csi))
 		devm_clk_put(&pdev->dev, clk_rst->pclk_mipi_csi);
-	}
-	if (!IS_ERR_OR_NULL(clk_rst->pclk_isp_in)) {
+	if (!IS_ERR_OR_NULL(clk_rst->pclk_isp_in))
 		devm_clk_put(&pdev->dev, clk_rst->pclk_isp_in);
-	}
-	if (!IS_ERR_OR_NULL(clk_rst->sclk_mipidsi_24m)) {
+	if (!IS_ERR_OR_NULL(clk_rst->sclk_mipidsi_24m))
 		devm_clk_put(&pdev->dev, clk_rst->sclk_mipidsi_24m);
-	}
 
-	if (!IS_ERR_OR_NULL(clk_rst->isp_rst)) {
+	if (!IS_ERR_OR_NULL(clk_rst->isp_rst))
 		reset_control_put(clk_rst->isp_rst);
-	}
 
 regmap_failed:
-
 
 alloc_failed:
 
 	return err;
-
 }
 
-int pltfrm_rk3288_cfg (
+int pltfrm_rk3288_cfg(
 		struct pltfrm_soc_cfg_para *cfg)
 {
 	switch (cfg->cmd) {
@@ -592,7 +599,7 @@ int pltfrm_rk3288_cfg (
 
 	case PLTFRM_CLKRST:
 		reset_control_assert(rk3288->clk_rst.isp_rst);
-		udelay(10);
+		usleep_range(10, 15);
 		reset_control_deassert(rk3288->clk_rst.isp_rst);
 		break;
 
@@ -602,10 +609,8 @@ int pltfrm_rk3288_cfg (
 
 	default:
 		break;
-
 	}
 
 	return 0;
 }
-#endif /* CONFIG_ARM64 */
 

@@ -1,0 +1,298 @@
+/*
+ * Copyright (c) 2016 Fuzhou Rockchip Electronics Co., Ltd
+ *
+ * This file is dual-licensed: you can use it either under the terms
+ * of the GPL or the X11 license, at your option. Note that this dual
+ * licensing only applies to this file, and not this project as a
+ * whole.
+ *
+ *  a) This file is free software; you can redistribute it and/or
+ *     modify it under the terms of the GNU General Public License as
+ *     published by the Free Software Foundation; either version 2 of the
+ *     License, or (at your option) any later version.
+ *
+ *     This file is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ * Or, alternatively,
+ *
+ *  b) Permission is hereby granted, free of charge, to any person
+ *     obtaining a copy of this software and associated documentation
+ *     files (the "Software"), to deal in the Software without
+ *     restriction, including without limitation the rights to use,
+ *     copy, modify, merge, publish, distribute, sublicense, and/or
+ *     sell copies of the Software, and to permit persons to whom the
+ *     Software is furnished to do so, subject to the following
+ *     conditions:
+ *
+ *     The above copyright notice and this permission notice shall be
+ *     included in all copies or substantial portions of the Software.
+ *
+ *     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ *     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ *     OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ *     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ *     HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ *     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ *     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ *     OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+/dts-v1/;
+
+#include "rk3399-excavator-sapphire.dtsi"
+#include "rk3399-linux.dtsi"
+#include <dt-bindings/input/input.h>
+
+/ {
+	model = "Rockchip RK3399 Excavator Board (Linux Opensource)";
+	compatible = "rockchip,rk3399-excavator-linux", "rockchip,rk3399";
+
+	fiq_debugger: fiq-debugger {
+		compatible = "rockchip,fiq-debugger";
+		rockchip,serial-id = <2>;
+		rockchip,signal-irq = <182>;
+		rockchip,wake-irq = <0>;
+		rockchip,irq-mode-enable = <1>;  /* If enable uart uses irq instead of fiq */
+		rockchip,baudrate = <1500000>;  /* Only 115200 and 1500000 */
+		pinctrl-names = "default";
+		pinctrl-0 = <&uart2c_xfer>;
+	};
+
+	edp_panel: edp-panel {
+		compatible = "lg,lp079qx1-sp0v", "panel-simple";
+		backlight = <&backlight>;
+		power-supply = <&vcc3v3_s0>;
+		enable-gpios = <&gpio4 30 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&lcd_panel_reset>;
+
+		ports {
+			panel_in_edp: endpoint {
+				remote-endpoint = <&edp_out_panel>;
+			};
+		};
+	};
+
+	hdmi_codec: hdmi-codec {
+		compatible = "simple-audio-card";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,name = "HDMI-CODEC";
+
+		simple-audio-card,cpu {
+			sound-dai = <&i2s2>;
+		};
+
+		simple-audio-card,codec {
+			sound-dai = <&hdmi>;
+		};
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		autorepeat;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pwrbtn>;
+
+		button@0 {
+			gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_POWER>;
+			label = "GPIO Key Power";
+			linux,input-type = <1>;
+			gpio-key,wakeup = <1>;
+			debounce-interval = <100>;
+		};
+	};
+
+	vccadc_ref: vccadc-ref {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc1v8_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+	};
+
+	adc-keys {
+		compatible = "adc-keys";
+		io-channels = <&saradc 1>;
+		io-channel-names = "buttons";
+		poll-interval = <100>;
+		keyup-threshold-microvolt = <1800000>;
+
+		button-up {
+			label = "Volume Up";
+			linux,code = <KEY_VOLUMEUP>;
+			press-threshold-microvolt = <100000>;
+		};
+
+		button-down {
+			label = "Volume Down";
+			linux,code = <KEY_VOLUMEDOWN>;
+			press-threshold-microvolt = <300000>;
+		};
+
+		back {
+			label = "Back";
+			linux,code = <KEY_BACK>;
+			press-threshold-microvolt = <985000>;
+		};
+
+		menu {
+			label = "Menu";
+			linux,code = <KEY_MENU>;
+			press-threshold-microvolt = <1314000>;
+		};
+	};
+};
+
+&cif_isp0 {
+	rockchip,camera-modules-attached = <&camera0>;
+	status = "okay";
+};
+
+&isp0_mmu {
+	status = "okay";
+};
+
+&saradc {
+	vref-supply = <&vccadc_ref>;
+};
+
+&vpu {
+	status = "okay";
+	/* 0 means ion, 1 means drm */
+	//allocator = <0>;
+};
+
+&rkvdec {
+	status = "okay";
+	/* 0 means ion, 1 means drm */
+	//allocator = <0>;
+};
+
+&backlight {
+	status = "okay";
+	enable-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
+};
+
+&display_subsystem {
+	status = "okay";
+};
+
+&route_edp {
+	status = "okay";
+};
+
+&edp {
+	status = "okay";
+
+	ports {
+		edp_out: port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			edp_out_panel: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&panel_in_edp>;
+			};
+		};
+	};
+};
+
+&hdmi {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	#sound-dai-cells = <0>;
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+
+	gsl3673: gsl3673@40 {
+		compatible = "GSL,GSL3673";
+		reg = <0x40>;
+		screen_max_x = <1536>;
+		screen_max_y = <2048>;
+		irq_gpio_number = <&gpio1 20 IRQ_TYPE_LEVEL_LOW>;
+		rst_gpio_number = <&gpio4 22 GPIO_ACTIVE_HIGH>;
+	};
+
+	camera0: camera-module@60 {
+		status = "okay";
+		compatible = "ovti,ov7750-v4l2-i2c-subdev";
+		reg = < 0x60 >;
+		device_type = "v4l2-i2c-subdev";
+
+		clocks = <&cru SCLK_CIF_OUT>;
+		clock-names = "clk_cif_out";
+
+		pinctrl-names = "rockchip,camera_default",
+			"rockchip,camera_sleep";
+		pinctrl-0 = <&cam0_default_pins>;
+		pinctrl-1 = <&cam0_sleep_pins>;
+
+		rockchip,pwr-gpio = <&gpio2 10 GPIO_ACTIVE_HIGH>;
+		rockchip,camera-module-mclk-name = "clk_cif_out";
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "cmk-cb0695-fv1";
+		rockchip,camera-module-len-name = "lg9569a2";
+		rockchip,camera-module-fov-h = "133.0";
+		rockchip,camera-module-fov-v = "100.1";
+		rockchip,camera-module-orientation = <0>;
+		rockchip,camera-module-iq-flip = <0>;
+		rockchip,camera-module-iq-mirror = <0>;
+		rockchip,camera-module-flip = <0>;
+		rockchip,camera-module-mirror = <0>;
+
+		rockchip,camera-module-defrect0 = <640 480 0 0 640 480>;
+		rockchip,camera-module-defrect1 = <640 480 0 0 640 480>;
+		rockchip,camera-module-defrect2 = <640 480 0 0 640 480>;
+		rockchip,camera-module-defrect3 = <640 480 0 0 640 480>;
+		rockchip,camera-module-flash-support = <0>;
+		rockchip,camera-module-mipi-dphy-index = <0>;
+	};
+};
+
+&i2s2 {
+	#sound-dai-cells = <0>;
+	status = "okay";
+};
+
+&vopb {
+	status = "okay";
+};
+
+&vopb_mmu {
+	status = "okay";
+};
+
+&vopl {
+	status = "okay";
+};
+
+&vopl_mmu {
+	status = "okay";
+};
+
+&pinctrl {
+	buttons {
+		pwrbtn: pwrbtn {
+			rockchip,pins = <0 5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	lcd-panel {
+		lcd_panel_reset: lcd-panel-reset {
+			rockchip,pins = <4 30 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+};

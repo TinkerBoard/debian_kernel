@@ -174,6 +174,7 @@ void dwc3_gadget_giveback(struct dwc3_ep *dep, struct dwc3_request *req,
 		int status)
 {
 	struct dwc3			*dwc = dep->dwc;
+	unsigned int			unmap_after_complete = false;
 	int				i;
 
 	if (req->started) {
@@ -189,17 +190,29 @@ void dwc3_gadget_giveback(struct dwc3_ep *dep, struct dwc3_request *req,
 	if (req->request.status == -EINPROGRESS)
 		req->request.status = status;
 
-	if (dwc->ep0_bounced && dep->number == 0)
+	/*
+	 * NOTICE we don't want to unmap before calling ->complete() if we're
+	 * dealing with a bounced ep0 request. If we unmap it here, we would end
+	 * up overwritting the contents of req->buf and this could confuse the
+	 * gadget driver.
+	 */
+	if (dwc->ep0_bounced && dep->number <= 1) {
 		dwc->ep0_bounced = false;
-	else
-		usb_gadget_unmap_request(&dwc->gadget, &req->request,
-				req->direction);
+		unmap_after_complete = true;
+	} else {
+		usb_gadget_unmap_request(&dwc->gadget,
+				&req->request, req->direction);
+	}
 
 	trace_dwc3_gadget_giveback(req);
 
 	spin_unlock(&dwc->lock);
 	usb_gadget_giveback_request(&dep->endpoint, &req->request);
 	spin_lock(&dwc->lock);
+
+	if (unmap_after_complete)
+		usb_gadget_unmap_request(&dwc->gadget,
+				&req->request, req->direction);
 
 	if (dep->number > 1)
 		pm_runtime_put(dwc->dev);
@@ -490,10 +503,8 @@ static int dwc3_gadget_set_ep_config(struct dwc3 *dwc, struct dwc3_ep *dep,
 		params.param0 |= DWC3_DEPCFG_ACTION_INIT;
 	}
 
-	params.param1 = DWC3_DEPCFG_XFER_COMPLETE_EN;
-
-	if (dep->number <= 1 || usb_endpoint_xfer_isoc(desc))
-		params.param1 |= DWC3_DEPCFG_XFER_NOT_READY_EN;
+	params.param1 = DWC3_DEPCFG_XFER_COMPLETE_EN
+		| DWC3_DEPCFG_XFER_NOT_READY_EN;
 
 	if (usb_ss_max_streams(comp_desc) && usb_endpoint_xfer_bulk(desc)) {
 		params.param1 |= DWC3_DEPCFG_STREAM_CAPABLE
@@ -878,10 +889,14 @@ static u32 dwc3_calc_trbs_left(struct dwc3_ep *dep)
 	 */
 	if (dep->trb_enqueue == dep->trb_dequeue) {
 		tmp = dwc3_ep_prev_trb(dep, dep->trb_enqueue);
-		if (tmp->ctrl & DWC3_TRB_CTRL_HWO)
-			return 0;
 
-		return DWC3_TRB_NUM - 1;
+		if (!(tmp->ctrl & DWC3_TRB_CTRL_HWO) ||
+		    ((tmp->ctrl & DWC3_TRB_CTRL_HWO) &&
+		     (tmp->ctrl & DWC3_TRB_CTRL_CSP) &&
+		     !dep->direction))
+			return DWC3_TRB_NUM - 1;
+
+		return 0;
 	}
 
 	trbs_left = dep->trb_dequeue - dep->trb_enqueue;
@@ -2017,14 +2032,6 @@ static int __dwc3_cleanup_done_trbs(struct dwc3 *dwc, struct dwc3_ep *dep,
 			s_pkt = 1;
 	}
 
-	/*
-	 * We assume here we will always receive the entire data block
-	 * which we should receive. Meaning, if we program RX to
-	 * receive 4K but we receive only 2K, we assume that's all we
-	 * should receive and we simply bounce the request back to the
-	 * gadget driver for further processing.
-	 */
-	req->request.actual += req->request.length - count;
 	if (s_pkt)
 		return 1;
 	if ((event->status & DEPEVT_STATUS_LST) &&
@@ -2044,6 +2051,7 @@ static int dwc3_cleanup_done_reqs(struct dwc3 *dwc, struct dwc3_ep *dep,
 	struct dwc3_trb		*trb;
 	unsigned int		slot;
 	unsigned int		i;
+	int			count = 0;
 	int			ret;
 
 	do {
@@ -2058,6 +2066,8 @@ static int dwc3_cleanup_done_reqs(struct dwc3 *dwc, struct dwc3_ep *dep,
 				slot++;
 			slot %= DWC3_TRB_NUM;
 			trb = &dep->trb_pool[slot];
+			count += trb->size & DWC3_TRB_SIZE_MASK;
+
 
 			ret = __dwc3_cleanup_done_trbs(dwc, dep, req, trb,
 					event, status);
@@ -2065,6 +2075,14 @@ static int dwc3_cleanup_done_reqs(struct dwc3 *dwc, struct dwc3_ep *dep,
 				break;
 		} while (++i < req->request.num_mapped_sgs);
 
+		/*
+		 * We assume here we will always receive the entire data block
+		 * which we should receive. Meaning, if we program RX to
+		 * receive 4K but we receive only 2K, we assume that's all we
+		 * should receive and we simply bounce the request back to the
+		 * gadget driver for further processing.
+		 */
+		req->request.actual += req->request.length - count;
 		dwc3_gadget_giveback(dep, req, status);
 
 		if (ret)
@@ -2174,6 +2192,9 @@ static void dwc3_endpoint_interrupt(struct dwc3 *dwc,
 		return;
 
 	if (epnum == 0 || epnum == 1) {
+		if (!dwc->connected &&
+		    event->endpoint_event == DWC3_DEPEVT_XFERCOMPLETE)
+			dwc->connected = true;
 		dwc3_ep0_interrupt(dwc, event);
 		return;
 	}
@@ -2392,8 +2413,6 @@ static void dwc3_gadget_disconnect_interrupt(struct dwc3 *dwc)
 static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 {
 	u32			reg;
-
-	dwc->connected = true;
 
 	/*
 	 * WORKAROUND: DWC3 revisions <1.88a have an issue which
@@ -3043,7 +3062,7 @@ err3:
 	kfree(dwc->setup_buf);
 
 err2:
-	dma_free_coherent(dwc->dev, sizeof(*dwc->ep0_trb),
+	dma_free_coherent(dwc->dev, sizeof(*dwc->ep0_trb) * 2,
 			dwc->ep0_trb, dwc->ep0_trb_addr);
 
 err1:
@@ -3068,7 +3087,7 @@ void dwc3_gadget_exit(struct dwc3 *dwc)
 	kfree(dwc->setup_buf);
 	kfree(dwc->zlp_buf);
 
-	dma_free_coherent(dwc->dev, sizeof(*dwc->ep0_trb),
+	dma_free_coherent(dwc->dev, sizeof(*dwc->ep0_trb) * 2,
 			dwc->ep0_trb, dwc->ep0_trb_addr);
 
 	dma_free_coherent(dwc->dev, sizeof(*dwc->ctrl_req),
@@ -3084,7 +3103,7 @@ int dwc3_gadget_suspend(struct dwc3 *dwc)
 
 	ret = dwc3_gadget_run_stop(dwc, false, false);
 	if (ret < 0)
-		return ret;
+		dev_err(dwc->dev, "dwc3 gadget stop timeout\n");
 
 	dwc3_disconnect_gadget(dwc);
 	__dwc3_gadget_stop(dwc);

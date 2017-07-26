@@ -710,7 +710,7 @@ static const struct hdmi_video_timing hdmi_mode[] = {
 			.name = "1440x900p@60Hz",
 			.refresh = 60,
 			.xres = 1440,
-			.yres = 768,
+			.yres = 900,
 			.pixclock = 106500000,
 			.left_margin = 232,
 			.right_margin = 80,
@@ -771,11 +771,125 @@ static const struct hdmi_video_timing hdmi_mode[] = {
 		.pixelrepeat = 1,
 		.interface = OUT_P888,
 	},
+	{
+		.mode = {
+			.name = "1440x1280@60Hz",
+			.refresh = 60,
+			.xres = 1440,
+			.yres = 1280,
+			.pixclock = 148500000,
+			.left_margin = 84,
+			.right_margin = 360,
+			.upper_margin = 8,
+			.lower_margin = 10,
+			.hsync_len = 20,
+			.vsync_len = 2,
+			.sync = 0,
+			.vmode = 0,
+			.flag = 0,
+		},
+		.vic = HDMI_VIDEO_DISCRETE_VR | 1,
+		.vic_2nd = 0,
+		.pixelrepeat = 1,
+		.interface = OUT_P888,
+	},
+	{
+		/* AUO 3.81 */
+		.mode = {
+			.name = "2160x1200@75Hz",
+			.refresh = 75,
+			.xres = 2160,
+			.yres = 1200,
+			.pixclock = 245000000,
+			.left_margin = 100,
+			.right_margin = 420,
+			.upper_margin = 3,
+			.lower_margin = 6,
+			.hsync_len = 32,
+			.vsync_len = 3,
+			.sync = 0,
+			.vmode = 0,
+			.flag = 0,
+		},
+		.vic = HDMI_VIDEO_DISCRETE_VR | 3,
+		.vic_2nd = 0,
+		.pixelrepeat = 1,
+		.interface = OUT_P888,
+	},
+	{
+		/* sharp 2.89 */
+		.mode = {
+			.name = "2880x1440@75Hz",
+			.refresh = 75,
+			.xres = 2880,
+			.yres = 1440,
+			.pixclock = 340000000,
+			.left_margin = 100,
+			.right_margin = 50,
+			.upper_margin = 8,
+			.lower_margin = 6,
+			.hsync_len = 50,
+			.vsync_len = 1,
+			.sync = 0,
+			.vmode = 0,
+			.flag = 0,
+		},
+		.vic = HDMI_VIDEO_DISCRETE_VR | 4,
+		.vic_2nd = 0,
+		.pixelrepeat = 1,
+		.interface = OUT_P888,
+	},
+	{
+		/* RAYKEN 5.46 */
+		.mode = {
+			.name = "1440x2560@60Hz",
+			.refresh = 60,
+			.xres = 1440,
+			.yres = 2560,
+			.pixclock = 268500000,
+			.left_margin = 50,
+			.right_margin = 200,
+			.upper_margin = 20,
+			.lower_margin = 20,
+			.hsync_len = 20,
+			.vsync_len = 10,
+			.sync = 0,
+			.vmode = 0,
+			.flag = 0,
+		},
+		.vic = HDMI_VIDEO_DISCRETE_VR | 5,
+		.vic_2nd = 0,
+		.pixelrepeat = 1,
+		.interface = OUT_P888,
+	},
+	{
+		/* samsung */
+		.mode = {
+			.name = "1440x2560@70Hz",
+			.refresh = 70,
+			.xres = 1440,
+			.yres = 2560,
+			.pixclock = 285000000,
+			.left_margin = 40,
+			.right_margin = 80,
+			.upper_margin = 2,
+			.lower_margin = 6,
+			.hsync_len = 20,
+			.vsync_len = 8,
+			.sync = 0,
+			.vmode = 0,
+			.flag = 0,
+		},
+		.vic = HDMI_VIDEO_DISCRETE_VR | 6,
+		.vic_2nd = 0,
+		.pixelrepeat = 1,
+		.interface = OUT_P888,
+	},
 };
 
 static int hdmi_set_info(struct rk_screen *screen, struct hdmi *hdmi)
 {
-	int i, vic;
+	int i, vic, colorimetry;
 	struct fb_videomode *mode;
 
 	if (!screen || !hdmi)
@@ -784,10 +898,24 @@ static int hdmi_set_info(struct rk_screen *screen, struct hdmi *hdmi)
 	if (hdmi->vic == 0)
 		hdmi->vic = hdmi->property->defaultmode;
 
-	if (hdmi->vic & HDMI_VIDEO_DMT)
-		vic = hdmi->vic;
-	else
-		vic = hdmi->vic & HDMI_VIC_MASK;
+	if (hdmi->edid_auto_support) {
+		if ((hdmi->vic & HDMI_VIDEO_DMT) ||
+		    (hdmi->vic & HDMI_VIDEO_DISCRETE_VR)) {
+			if (hdmi->prop.value.vic)
+				vic = hdmi->prop.value.vic;
+			else
+				vic = hdmi->vic;
+		} else {
+			vic = hdmi->vic & HDMI_VIC_MASK;
+		}
+	} else {
+		if ((hdmi->vic & HDMI_VIDEO_DMT) ||
+		    (hdmi->vic & HDMI_VIDEO_DISCRETE_VR))
+			vic = hdmi->vic;
+		else
+			vic = hdmi->vic & HDMI_VIC_MASK;
+	}
+
 	for (i = 0; i < ARRAY_SIZE(hdmi_mode); i++) {
 		if (hdmi_mode[i].vic == vic ||
 		    hdmi_mode[i].vic_2nd == vic)
@@ -800,10 +928,25 @@ static int hdmi_set_info(struct rk_screen *screen, struct hdmi *hdmi)
 
 	/* screen type & face */
 	screen->type = SCREEN_HDMI;
-	if (hdmi->video.color_input == HDMI_COLOR_RGB_0_255)
+	colorimetry = hdmi->video.colorimetry;
+	mode = (struct fb_videomode *)&hdmi_mode[i].mode;
+	if (hdmi->video.color_input == HDMI_COLOR_RGB_0_255) {
 		screen->color_mode = COLOR_RGB;
-	else
+	} else if (colorimetry > HDMI_COLORIMETRY_EXTEND_ADOBE_RGB) {
+		screen->color_mode = COLOR_YCBCR_BT2020;
+		if (hdmi->video.eotf == EOTF_ST_2084)
+			screen->data_space = 1;
+	} else if (colorimetry == HDMI_COLORIMETRY_NO_DATA) {
+		if (mode->xres > 720 && mode->yres > 576)
+			screen->color_mode = COLOR_YCBCR_BT709;
+		else
+			screen->color_mode = COLOR_YCBCR;
+	} else if (colorimetry == HDMI_COLORIMETRY_SMTPE_170M) {
 		screen->color_mode = COLOR_YCBCR;
+	} else {
+		screen->color_mode = COLOR_YCBCR_BT709;
+	}
+
 	if (hdmi->vic & HDMI_VIDEO_YUV420) {
 		if (hdmi->video.color_output_depth == 10)
 			screen->face = OUT_YUV_420_10BIT;
@@ -816,8 +959,6 @@ static int hdmi_set_info(struct rk_screen *screen, struct hdmi *hdmi)
 			screen->face = hdmi_mode[i].interface;
 	}
 	screen->pixelrepeat = hdmi_mode[i].pixelrepeat - 1;
-	mode = (struct fb_videomode *)&hdmi_mode[i].mode;
-
 	screen->mode = *mode;
 	if (hdmi->video.format_3d == HDMI_3D_FRAME_PACKING) {
 		screen->mode.pixclock = 2 * mode->pixclock;
@@ -868,6 +1009,15 @@ static int hdmi_set_info(struct rk_screen *screen, struct hdmi *hdmi)
 	screen->overscan.top = hdmi->yscale;
 	screen->overscan.right = hdmi->xscale;
 	screen->overscan.bottom = hdmi->yscale;
+
+	screen->width = hdmi->prop.value.width;
+	screen->height = hdmi->prop.value.height;
+	pr_info("%s:line=%d %d %d %d %d %d %d %d %d\n",
+		__func__, __LINE__, screen->mode.xres, screen->mode.yres,
+		screen->mode.left_margin, screen->mode.right_margin,
+		screen->mode.upper_margin, screen->mode.lower_margin,
+		screen->mode.hsync_len, screen->mode.vsync_len);
+
 	return 0;
 }
 
@@ -989,6 +1139,18 @@ int hdmi_add_vic(int vic, struct list_head *head)
 	if (vic == 0)
 		return -1;
 
+	if (vic & HDMI_VIDEO_YUV420) {
+		v = vic & 0xff;
+		if (v != HDMI_3840X2160P_50HZ &&
+		    v != HDMI_3840X2160P_60HZ &&
+		    v != HDMI_4096X2160P_50HZ &&
+		    v != HDMI_4096X2160P_60HZ &&
+		    v != HDMI_3840X2160P_50HZ_21_9 &&
+		    v != HDMI_3840X2160P_60HZ_21_9) {
+			return -1;
+		}
+	}
+
 	list_for_each(pos, head) {
 		modelist = list_entry(pos, struct display_modelist, list);
 		v = modelist->vic;
@@ -1074,8 +1236,8 @@ static void hdmi_sort_modelist(struct hdmi_edid *edid, int feature)
 		modelist = list_entry(pos, struct display_modelist, list);
 		/*pr_info("%s vic %d\n", __function__, modelist->vic);*/
 		for (i = 0; i < ARRAY_SIZE(hdmi_mode); i++) {
-			if (modelist->vic & HDMI_VIDEO_DMT) {
-				if (feature & SUPPORT_VESA_DMT)
+			if ((modelist->vic & HDMI_VIDEO_DMT) || (modelist->vic & HDMI_VIDEO_DISCRETE_VR)) {
+				if (feature & (SUPPORT_VESA_DMT | SUPPORT_RK_DISCRETE_VR))
 					vic = modelist->vic;
 				else
 					continue;
@@ -1149,6 +1311,66 @@ static void hdmi_sort_modelist(struct hdmi_edid *edid, int feature)
 	}
 }
 
+static int edid_select_prop_value(struct hdmi *hdmi)
+{
+	struct edid_prop_value *prop_value = NULL;
+	int nstates = 0;
+	int i, vid, pid, sn, xres, yres, reboot = 0;
+
+	prop_value = hdmi->pvalue;
+	nstates = hdmi->nstates;
+
+	if (!prop_value) {
+		pr_info("%s:pvalue is NULL\n", __func__);
+		return -1;
+	}
+
+	vid = hdmi->edid.value.vid;
+	pid = hdmi->edid.value.pid;
+	sn = hdmi->edid.value.sn;
+	xres = hdmi->edid.value.xres;
+	yres = hdmi->edid.value.yres;
+
+	for (i = 0; i < nstates; i++) {
+		if ((prop_value[i].vid == vid) &&
+		    (prop_value[i].pid == pid) &&
+		    (prop_value[i].sn == sn) &&
+		    (prop_value[i].xres == xres) &&
+		    (prop_value[i].yres == yres)) {
+			hdmi->edid.value = prop_value[i];
+			hdmi->prop.value = prop_value[i];
+			if ((hdmi->prop.valid) &&
+			    ((hdmi->prop.last_vid != vid) ||
+			    (hdmi->prop.last_pid != pid) ||
+			    (hdmi->prop.last_sn != sn) ||
+			    (hdmi->prop.last_xres != xres) ||
+			    (hdmi->prop.last_yres != yres))) {
+				reboot = 1;
+			} else {
+				reboot = 0;
+			}
+
+			hdmi->prop.last_vid = vid;
+			hdmi->prop.last_pid = pid;
+			hdmi->prop.last_sn = sn;
+			hdmi->prop.last_xres = xres;
+			hdmi->prop.last_yres = yres;
+			hdmi->prop.valid = 1;
+			pr_info("%s:i=%d reboot=%d,valid=%d\n",
+				__func__, i, reboot, hdmi->prop.valid);
+
+			break;
+		}
+	}
+
+	if (reboot) {
+		dev_info(hdmi->dev, "%s:kernel_restart\n", __func__);
+		kernel_restart(NULL);
+	}
+
+	return 0;
+}
+
 /**
  * hdmi_ouputmode_select - select hdmi transmitter output mode: hdmi or dvi?
  * @hdmi: handle of hdmi
@@ -1169,6 +1391,9 @@ int hdmi_ouputmode_select(struct hdmi *hdmi, int edid_ok)
 		hdmi->edid.ycbcr444 = 0;
 		hdmi->edid.ycbcr422 = 0;
 	}
+
+	if (hdmi->edid_auto_support)
+		edid_select_prop_value(hdmi);
 
 	if (head->next == head) {
 		dev_info(hdmi->dev,
@@ -1219,7 +1444,8 @@ int hdmi_ouputmode_select(struct hdmi *hdmi, int edid_ok)
 				if (mode->xres > 3840 ||
 				    mode->refresh < 50 ||
 				    (mode->vmode & FB_VMODE_INTERLACED) ||
-				    hdmi_mode[i].vic & HDMI_VIDEO_DMT)
+				    hdmi_mode[i].vic & HDMI_VIDEO_DMT ||
+				    hdmi_mode[i].vic & HDMI_VIDEO_DISCRETE_VR)
 					continue;
 			}
 			if ((feature & SUPPORT_TMDS_600M) == 0 &&
@@ -1319,7 +1545,7 @@ const struct fb_videomode *hdmi_vic_to_videomode(int vic)
 
 	if (vic == 0)
 		return NULL;
-	else if (vic & HDMI_VIDEO_DMT)
+	else if ((vic & HDMI_VIDEO_DMT) || (vic & HDMI_VIDEO_DISCRETE_VR))
 		vid = vic;
 	else
 		vid = vic & HDMI_VIC_MASK;
@@ -1346,7 +1572,7 @@ void hdmi_init_modelist(struct hdmi *hdmi)
 	feature = hdmi->property->feature;
 	INIT_LIST_HEAD(&hdmi->edid.modelist);
 	for (i = 0; i < ARRAY_SIZE(hdmi_mode); i++) {
-		if (hdmi_mode[i].vic & HDMI_VIDEO_DMT)
+		if ((hdmi_mode[i].vic & HDMI_VIDEO_DMT) || (hdmi_mode[i].vic & HDMI_VIDEO_DISCRETE_VR))
 			continue;
 		if ((feature & SUPPORT_TMDS_600M) == 0 &&
 		    hdmi_mode[i].mode.pixclock > 340000000)

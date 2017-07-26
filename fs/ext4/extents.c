@@ -376,9 +376,13 @@ static int ext4_valid_extent(struct inode *inode, struct ext4_extent *ext)
 	ext4_fsblk_t block = ext4_ext_pblock(ext);
 	int len = ext4_ext_get_actual_len(ext);
 	ext4_lblk_t lblock = le32_to_cpu(ext->ee_block);
-	ext4_lblk_t last = lblock + len - 1;
 
-	if (len == 0 || lblock > last)
+	/*
+	 * We allow neither:
+	 *  - zero length
+	 *  - overflow/wrap-around
+	 */
+	if (lblock + len <= lblock)
 		return 0;
 	return ext4_data_block_valid(EXT4_SB(inode->i_sb), block, len);
 }
@@ -467,6 +471,10 @@ static int __ext4_ext_check(const char *function, unsigned int line,
 	}
 	if (!ext4_valid_extent_entries(inode, eh, depth)) {
 		error_msg = "invalid extent entries";
+		goto corrupted;
+	}
+	if (unlikely(depth > 32)) {
+		error_msg = "too large eh_depth";
 		goto corrupted;
 	}
 	/* Verify checksum on non-root extent tree nodes */
@@ -5354,7 +5362,8 @@ ext4_ext_shift_extents(struct inode *inode, handle_t *handle,
 	ext4_lblk_t stop, *iterator, ex_start, ex_end;
 
 	/* Let path point to the last extent */
-	path = ext4_find_extent(inode, EXT_MAX_BLOCKS - 1, NULL, 0);
+	path = ext4_find_extent(inode, EXT_MAX_BLOCKS - 1, NULL,
+				EXT4_EX_NOCACHE);
 	if (IS_ERR(path))
 		return PTR_ERR(path);
 
@@ -5363,15 +5372,15 @@ ext4_ext_shift_extents(struct inode *inode, handle_t *handle,
 	if (!extent)
 		goto out;
 
-	stop = le32_to_cpu(extent->ee_block) +
-			ext4_ext_get_actual_len(extent);
+	stop = le32_to_cpu(extent->ee_block);
 
        /*
 	 * In case of left shift, Don't start shifting extents until we make
 	 * sure the hole is big enough to accommodate the shift.
 	*/
 	if (SHIFT == SHIFT_LEFT) {
-		path = ext4_find_extent(inode, start - 1, &path, 0);
+		path = ext4_find_extent(inode, start - 1, &path,
+					EXT4_EX_NOCACHE);
 		if (IS_ERR(path))
 			return PTR_ERR(path);
 		depth = path->p_depth;
@@ -5403,9 +5412,14 @@ ext4_ext_shift_extents(struct inode *inode, handle_t *handle,
 	else
 		iterator = &stop;
 
-	/* Its safe to start updating extents */
-	while (start < stop) {
-		path = ext4_find_extent(inode, *iterator, &path, 0);
+	/*
+	 * Its safe to start updating extents.  Start and stop are unsigned, so
+	 * in case of right shift if extent with 0 block is reached, iterator
+	 * becomes NULL to indicate the end of the loop.
+	 */
+	while (iterator && start <= stop) {
+		path = ext4_find_extent(inode, *iterator, &path,
+					EXT4_EX_NOCACHE);
 		if (IS_ERR(path))
 			return PTR_ERR(path);
 		depth = path->p_depth;
@@ -5432,8 +5446,11 @@ ext4_ext_shift_extents(struct inode *inode, handle_t *handle,
 					ext4_ext_get_actual_len(extent);
 		} else {
 			extent = EXT_FIRST_EXTENT(path[depth].p_hdr);
-			*iterator =  le32_to_cpu(extent->ee_block) > 0 ?
-				le32_to_cpu(extent->ee_block) - 1 : 0;
+			if (le32_to_cpu(extent->ee_block) > 0)
+				*iterator = le32_to_cpu(extent->ee_block) - 1;
+			else
+				/* Beginning is reached, end of the loop */
+				iterator = NULL;
 			/* Update path extent in case we need to stop */
 			while (le32_to_cpu(extent->ee_block) < start)
 				extent++;
@@ -5730,6 +5747,9 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
 			up_write(&EXT4_I(inode)->i_data_sem);
 			goto out_stop;
 		}
+	} else {
+		ext4_ext_drop_refs(path);
+		kfree(path);
 	}
 
 	ret = ext4_es_remove_extent(inode, offset_lblk,

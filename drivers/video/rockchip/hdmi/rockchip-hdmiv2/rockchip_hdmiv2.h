@@ -8,13 +8,6 @@
 #endif
 #include "../rockchip-hdmi.h"
 
-#ifdef DEBUG
-#define HDMIDBG(format, ...) \
-		pr_info(format, ## __VA_ARGS__)
-#else
-#define HDMIDBG(format, ...)
-#endif
-
 #define HDMI_PD_ON		BIT(0)
 #define HDMI_PCLK_ON		BIT(1)
 #define HDMI_HDCPCLK_ON		BIT(2)
@@ -36,8 +29,6 @@ struct hdmi_dev {
 	void __iomem		*regbase;
 	void __iomem		*phybase;
 	struct regmap		*grf_base;
-	int			grf_reg_offset;
-	int			grf_reg_shift;
 	struct reset_control	*reset;
 	struct clk		*pd;
 	struct clk		*pclk;

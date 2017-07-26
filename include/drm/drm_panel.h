@@ -33,6 +33,7 @@ struct display_timing;
 
 /**
  * struct drm_panel_funcs - perform operations on a given panel
+ * @loader_protect: protect loader logo panel's power
  * @disable: disable panel (turn off back light, etc.)
  * @unprepare: turn off panel
  * @prepare: turn on panel and perform set up
@@ -66,6 +67,7 @@ struct display_timing;
  * the panel. This is the job of the .unprepare() function.
  */
 struct drm_panel_funcs {
+	int (*loader_protect)(struct drm_panel *panel, bool on);
 	int (*disable)(struct drm_panel *panel);
 	int (*unprepare)(struct drm_panel *panel);
 	int (*prepare)(struct drm_panel *panel);
@@ -97,6 +99,14 @@ static inline int drm_panel_disable(struct drm_panel *panel)
 {
 	if (panel && panel->funcs && panel->funcs->disable)
 		return panel->funcs->disable(panel);
+
+	return panel ? -ENOSYS : -EINVAL;
+}
+
+static inline int drm_panel_loader_protect(struct drm_panel *panel, bool on)
+{
+	if (panel && panel->funcs && panel->funcs->loader_protect)
+		return panel->funcs->loader_protect(panel, on);
 
 	return panel ? -ENOSYS : -EINVAL;
 }
@@ -133,6 +143,7 @@ void drm_panel_remove(struct drm_panel *panel);
 int drm_panel_attach(struct drm_panel *panel, struct drm_connector *connector);
 int drm_panel_detach(struct drm_panel *panel);
 
+struct drm_panel *drm_find_panel_by_connector(struct drm_connector *connector);
 #ifdef CONFIG_OF
 struct drm_panel *of_drm_find_panel(struct device_node *np);
 #else

@@ -40,6 +40,8 @@
 #define GPIO_HIGH 1
 #define es8316_DEF_VOL			0x1e
 
+static struct snd_soc_codec *es8316_codec;
+
 static const struct reg_default es8316_reg_defaults[] = {
 	{0x00, 0x03}, {0x01, 0x03}, {0x02, 0x00}, {0x03, 0x20},
 	{0x04, 0x11}, {0x05, 0x00}, {0x06, 0x11}, {0x07, 0x00},
@@ -742,7 +744,8 @@ static void es8316_pcm_shutdown(struct snd_pcm_substream *substream,
 	}
 
 	if (--es8316->pwr_count == 0) {
-		snd_soc_write(codec, ES8316_SYS_PDN_REG0D, 0x3F);
+		if (!es8316->hp_inserted)
+			snd_soc_write(codec, ES8316_SYS_PDN_REG0D, 0x3F);
 		snd_soc_write(codec, ES8316_CLKMGR_CLKSW_REG01, 0xF3);
 	}
 }
@@ -837,7 +840,8 @@ static int es8316_set_bias_level(struct snd_soc_codec *codec,
 		snd_soc_write(codec, ES8316_HPMIX_PDN_REG15, 0x33);
 		snd_soc_write(codec, ES8316_HPMIX_VOL_REG16, 0x00);
 		snd_soc_write(codec, ES8316_ADC_PDN_LINSEL_REG22, 0xC0);
-		snd_soc_write(codec, ES8316_SYS_PDN_REG0D, 0x3F);
+		if (!es8316->hp_inserted)
+			snd_soc_write(codec, ES8316_SYS_PDN_REG0D, 0x3F);
 		snd_soc_write(codec, ES8316_SYS_LP1_REG0E, 0x3F);
 		snd_soc_write(codec, ES8316_SYS_LP2_REG0F, 0x1F);
 		snd_soc_write(codec, ES8316_RESET_REG00, 0x00);
@@ -952,6 +956,7 @@ static int es8316_suspend(struct snd_soc_codec *codec)
 
 static int es8316_resume(struct snd_soc_codec *codec)
 {
+	struct es8316_priv *es8316 = snd_soc_codec_get_drvdata(codec);
 	int ret;
 
 	es8316_reset(codec); /* UPDATED BY DAVID,15-3-5 */
@@ -970,7 +975,8 @@ static int es8316_resume(struct snd_soc_codec *codec)
 		snd_soc_write(codec, ES8316_HPMIX_SWITCH_REG14, 0x00);
 		snd_soc_write(codec, ES8316_HPMIX_PDN_REG15, 0x33);
 		snd_soc_write(codec, ES8316_HPMIX_VOL_REG16, 0x00);
-		snd_soc_write(codec, ES8316_SYS_PDN_REG0D, 0x3F);
+		if (!es8316->hp_inserted)
+			snd_soc_write(codec, ES8316_SYS_PDN_REG0D, 0x3F);
 		snd_soc_write(codec, ES8316_SYS_LP1_REG0E, 0xFF);
 		snd_soc_write(codec, ES8316_SYS_LP2_REG0F, 0xFF);
 		snd_soc_write(codec, ES8316_CLKMGR_CLKSW_REG01, 0xF3);
@@ -988,6 +994,34 @@ static irqreturn_t es8316_irq_handler(int irq, void *data)
 
 	return IRQ_HANDLED;
 }
+
+/*
+ * Call from rk_headset_irq_hook_adc.c
+ *
+ * Enable micbias for HOOK detection and disable external Amplifier
+ * when jack insertion.
+ */
+int es8316_headset_detect(int jack_insert)
+{
+	struct es8316_priv *es8316;
+
+	if (!es8316_codec)
+		return -1;
+
+	es8316 = snd_soc_codec_get_drvdata(es8316_codec);
+
+	es8316->hp_inserted = jack_insert;
+
+	/*enable micbias and disable PA*/
+	if (jack_insert) {
+		snd_soc_update_bits(es8316_codec,
+				    ES8316_SYS_PDN_REG0D, 0x3f, 0);
+		es8316_enable_spk(es8316, false);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(es8316_headset_detect);
 
 static void hp_work(struct work_struct *work)
 {
@@ -1012,6 +1046,7 @@ static int es8316_probe(struct snd_soc_codec *codec)
 {
 	struct es8316_priv *es8316 = snd_soc_codec_get_drvdata(codec);
 	int ret = 0;
+	es8316_codec = codec;
 
 	es8316->mclk = devm_clk_get(codec->dev, "mclk");
 	if (PTR_ERR(es8316->mclk) == -EPROBE_DEFER)
@@ -1040,7 +1075,9 @@ static int es8316_probe(struct snd_soc_codec *codec)
 			snd_soc_write(codec, ES8316_HPMIX_SWITCH_REG14, 0x00);
 			snd_soc_write(codec, ES8316_HPMIX_PDN_REG15, 0x33);
 			snd_soc_write(codec, ES8316_HPMIX_VOL_REG16, 0x00);
-			snd_soc_write(codec, ES8316_SYS_PDN_REG0D, 0x3F);
+			if (!es8316->hp_inserted)
+				snd_soc_write(codec, ES8316_SYS_PDN_REG0D,
+					      0x3F);
 			snd_soc_write(codec, ES8316_SYS_LP1_REG0E, 0xFF);
 			snd_soc_write(codec, ES8316_SYS_LP2_REG0F, 0xFF);
 			snd_soc_write(codec, ES8316_CLKMGR_CLKSW_REG01, 0xF3);
@@ -1171,6 +1208,17 @@ static  int es8316_i2c_remove(struct i2c_client *client)
 	return 0;
 }
 
+static void es8316_i2c_shutdown(struct i2c_client *client)
+{
+	struct es8316_priv *es8316 = i2c_get_clientdata(client);
+
+	if (es8316_codec != NULL) {
+		es8316_enable_spk(es8316, false);
+		msleep(20);
+		es8316_set_bias_level(es8316_codec, SND_SOC_BIAS_OFF);
+	}
+}
+
 static const struct i2c_device_id es8316_i2c_id[] = {
 	{"es8316", 0},
 	{"10ES8316:00", 0},
@@ -1192,6 +1240,7 @@ static struct i2c_driver es8316_i2c_driver = {
 	},
 	.probe    = es8316_i2c_probe,
 	.remove   = es8316_i2c_remove,
+	.shutdown = es8316_i2c_shutdown,
 	.id_table = es8316_i2c_id,
 };
 

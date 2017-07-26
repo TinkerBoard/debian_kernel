@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,55 +11,55 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 #ifndef _RK_ISP11_CONFIG_H
 #define _RK_ISP11_CONFIG_H
 
 #include <media/v4l2-config_rockchip.h>
 
-#define CIFISP_MODULE_DPCC	(1 << 0)
-#define CIFISP_MODULE_BLS		(1 << 1)
-#define CIFISP_MODULE_SDG		(1 << 2)
-#define CIFISP_MODULE_HST		(1 << 3)
-#define CIFISP_MODULE_LSC		(1 << 4)
-#define CIFISP_MODULE_AWB_GAIN	(1 << 5)
-#define CIFISP_MODULE_FLT			(1 << 6)
-#define CIFISP_MODULE_BDM		(1 << 7)
-#define CIFISP_MODULE_CTK			(1 << 8)
-#define CIFISP_MODULE_GOC			(1 << 9)
-#define CIFISP_MODULE_CPROC		(1 << 10)
-#define CIFISP_MODULE_AFC			(1 << 11)
-#define CIFISP_MODULE_AWB		(1 << 12)
-#define CIFISP_MODULE_IE			(1 << 13)
-#define CIFISP_MODULE_AEC			(1 << 14)
-#define CIFISP_MODULE_WDR			(1 << 15)
-#define CIFISP_MODULE_DPF				(1 << 16)
-#define CIFISP_MODULE_DPF_STRENGTH	(1 << 17)
+#define CIFISP_MODULE_DPCC              BIT(0)
+#define CIFISP_MODULE_BLS               BIT(1)
+#define CIFISP_MODULE_SDG               BIT(2)
+#define CIFISP_MODULE_HST               BIT(3)
+#define CIFISP_MODULE_LSC               BIT(4)
+#define CIFISP_MODULE_AWB_GAIN          BIT(5)
+#define CIFISP_MODULE_FLT               BIT(6)
+#define CIFISP_MODULE_BDM               BIT(7)
+#define CIFISP_MODULE_CTK               BIT(8)
+#define CIFISP_MODULE_GOC               BIT(9)
+#define CIFISP_MODULE_CPROC             BIT(10)
+#define CIFISP_MODULE_AFC               BIT(11)
+#define CIFISP_MODULE_AWB               BIT(12)
+#define CIFISP_MODULE_IE                BIT(13)
+#define CIFISP_MODULE_AEC               BIT(14)
+#define CIFISP_MODULE_WDR               BIT(15)
+#define CIFISP_MODULE_DPF               BIT(16)
+#define CIFISP_MODULE_DPF_STRENGTH      BIT(17)
 
-#define CIFISP_CTK_COEFF_MAX   0x100
-#define CIFISP_CTK_OFFSET_MAX 0x800
+#define CIFISP_CTK_COEFF_MAX            0x100
+#define CIFISP_CTK_OFFSET_MAX           0x800
 
-#define CIFISP_AE_MEAN_MAX 25
-#define CIFISP_HIST_BIN_N_MAX 16
-#define CIFISP_AFM_MAX_WINDOWS 3
-#define CIFISP_DEGAMMA_CURVE_SIZE 17
+#define CIFISP_AE_MEAN_MAX              25
+#define CIFISP_HIST_BIN_N_MAX           16
+#define CIFISP_AFM_MAX_WINDOWS          3
+#define CIFISP_DEGAMMA_CURVE_SIZE       17
 
-#define CIFISP_BDM_MAX_TH 0xFF
+#define CIFISP_BDM_MAX_TH               0xFF
 
-/* maximum value for horizontal start address*/
+/* maximum value for horizontal start address */
 #define CIFISP_BLS_START_H_MAX             (0x00000FFF)
 /* maximum value for horizontal stop address */
 #define CIFISP_BLS_STOP_H_MAX              (0x00000FFF)
-/* maximum value for vertical start address*/
+/* maximum value for vertical start address */
 #define CIFISP_BLS_START_V_MAX             (0x00000FFF)
-/* maximum value for vertical stop address*/
+/* maximum value for vertical stop address */
 #define CIFISP_BLS_STOP_V_MAX              (0x00000FFF)
 /* maximum is 2^18 = 262144*/
 #define CIFISP_BLS_SAMPLES_MAX             (0x00000012)
-/* maximum value for fixed black level*/
+/* maximum value for fixed black level */
 #define CIFISP_BLS_FIX_SUB_MAX             (0x00000FFF)
-/* minimum value for fixed black level*/
+/* minimum value for fixed black level */
 #define CIFISP_BLS_FIX_SUB_MIN             (0xFFFFF000)
 /* 13 bit range (signed)*/
 #define CIFISP_BLS_FIX_MASK                (0x00001FFF)
@@ -68,29 +68,31 @@
 #define CIFISP_AWB_MAX_FRAMES              7
 
 /* Gamma out*/
-/* Maximum number of color samples supported*/
+/* Maximum number of color samples supported */
 #define CIFISP_GAMMA_OUT_MAX_SAMPLES       17
 
 /* LSC */
 #define CIFISP_LSC_GRAD_TBL_SIZE           8
 #define CIFISP_LSC_SIZE_TBL_SIZE           8
-/* The following matches the tuning process,
- * not the max capabilites of the chip. */
+/*
+ * The following matches the tuning process,
+ * not the max capabilities of the chip.
+ */
 #define	CIFISP_LSC_DATA_TBL_SIZE           289
 /* HIST */
-#define CIFISP_HISTOGRAM_WEIGHT_GRIDS_SIZE       25
+#define CIFISP_HISTOGRAM_WEIGHT_GRIDS_SIZE 25
 
 /* DPCC */
-#define CIFISP_DPCC_METHODS_MAX                    (3)
+#define CIFISP_DPCC_METHODS_MAX       (3)
 
 /* DPF */
 #define CIFISP_DPF_MAX_NLF_COEFFS      17
 #define CIFISP_DPF_MAX_SPATIAL_COEFFS  6
 
-#define CIFISP_STAT_AWB		(1 << 0)
-#define CIFISP_STAT_AUTOEXP	(1 << 1)
-#define CIFISP_STAT_AFM_FIN		(1 << 2)
-#define CIFISP_STAT_HIST		(1 << 3)
+#define CIFISP_STAT_AWB           BIT(0)
+#define CIFISP_STAT_AUTOEXP       BIT(1)
+#define CIFISP_STAT_AFM_FIN       BIT(2)
+#define CIFISP_STAT_HIST          BIT(3)
 
 enum cifisp_histogram_mode {
 	CIFISP_HISTOGRAM_MODE_DISABLE         = 0,
@@ -107,8 +109,10 @@ enum cifisp_exp_ctrl_autostop {
 };
 
 enum cifisp_exp_meas_mode {
-	CIFISP_EXP_MEASURING_MODE_0 = 0,    /**< Y = 16 + 0.25R + 0.5G + 0.1094B */
-	CIFISP_EXP_MEASURING_MODE_1 = 1,    /**< Y = (R + G + B) x (85/256) */
+/* < Y = 16 + 0.25R + 0.5G + 0.1094B */
+	CIFISP_EXP_MEASURING_MODE_0 = 0,
+/* < Y = (R + G + B) x (85/256) */
+	CIFISP_EXP_MEASURING_MODE_1 = 1,
 };
 
 struct cifisp_window {
@@ -154,7 +158,7 @@ struct cifisp_hist_stat {
 	unsigned short hist_bins[CIFISP_HIST_BIN_N_MAX];
 };
 
-/*! BLS mean measured values*/
+/*! BLS mean measured values */
 struct cifisp_bls_meas_val {
 	/*! Mean measured value for Bayer pattern R.*/
 	unsigned short meas_r;
@@ -166,38 +170,44 @@ struct cifisp_bls_meas_val {
 	unsigned short meas_b;
 };
 
-/*! BLS fixed subtraction values. The values will be subtracted from the sensor
- *  values. Therefore a negative value means addition instead of subtraction!*/
+/*
+ * BLS fixed subtraction values. The values will be subtracted from the sensor
+ * values. Therefore a negative value means addition instead of subtraction!
+ */
 struct cifisp_bls_fixed_val {
-	/*! Fixed (signed!) subtraction value for Bayer pattern R.*/
+	/*! Fixed (signed!) subtraction value for Bayer pattern R. */
 	signed short r;
-	/*! Fixed (signed!) subtraction value for Bayer pattern Gr.*/
+	/*! Fixed (signed!) subtraction value for Bayer pattern Gr. */
 	signed short gr;
-	/*! Fixed (signed!) subtraction value for Bayer pattern Gb.*/
+	/*! Fixed (signed!) subtraction value for Bayer pattern Gb. */
 	signed short gb;
-	/*! Fixed (signed!) subtraction value for Bayer pattern B.*/
+	/*! Fixed (signed!) subtraction value for Bayer pattern B. */
 	signed short b;
 };
 
 /* Configuration used by black level subtraction */
 struct cifisp_bls_config {
-	/*! Automatic mode activated means that the measured values
+	/*
+	 * Automatic mode activated means that the measured values
 	 * are subtracted.Otherwise the fixed subtraction
-	 * values will be subtracted.*/
+	 * values will be subtracted.
+	 */
 	bool enable_auto;
 	unsigned char en_windows;
-	struct cifisp_window bls_window1;      /*!< Measurement window 1.*/
-	struct cifisp_window bls_window2;      /*!< Measurement window 2*/
-	/*! Set amount of measured pixels for each Bayer position
-	 * (A, B,C and D) to 2^bls_samples.*/
+	struct cifisp_window bls_window1;      /* < Measurement window 1. */
+	struct cifisp_window bls_window2;      /* !< Measurement window 2 */
+	/*
+	 * Set amount of measured pixels for each Bayer position
+	 * (A, B,C and D) to 2^bls_samples.
+	 */
 	unsigned char bls_samples;
-	struct cifisp_bls_fixed_val fixed_val; /*!< Fixed subtraction values.*/
+	/* !< Fixed subtraction values. */
+	struct cifisp_bls_fixed_val fixed_val;
 };
-
 
 struct cifisp_ae_stat {
 	unsigned char exp_mean[CIFISP_AE_MEAN_MAX];
-	struct cifisp_bls_meas_val bls_val; /*available wit exposure results*/
+	struct cifisp_bls_meas_val bls_val; /* available wit exposure results */
 };
 
 struct cifisp_af_meas_val {
@@ -257,7 +267,6 @@ struct cifisp_sdg_config {
 	struct cifisp_gamma_curve_x_axis_pnts xa_pnts;
 };
 
-
 /* Configuration used by Lens shading correction */
 struct cifisp_lsc_config {
 	unsigned int r_data_tbl[CIFISP_LSC_DATA_TBL_SIZE];
@@ -277,43 +286,53 @@ struct cifisp_lsc_config {
 struct cifisp_ie_config {
 	enum v4l2_colorfx effect;
 	unsigned short color_sel;
-	/*3x3 Matrix Coefficients for Emboss Effect 1*/
+	/* 3x3 Matrix Coefficients for Emboss Effect 1 */
 	unsigned short eff_mat_1;
-	/*3x3 Matrix Coefficients for Emboss Effect 2*/
+	/* 3x3 Matrix Coefficients for Emboss Effect 2 */
 	unsigned short eff_mat_2;
-	/*3x3 Matrix Coefficients for Emboss 3/Sketch 1*/
+	/* 3x3 Matrix Coefficients for Emboss 3/Sketch 1 */
 	unsigned short eff_mat_3;
-	/*3x3 Matrix Coefficients for Sketch Effect 2*/
+	/* 3x3 Matrix Coefficients for Sketch Effect 2 */
 	unsigned short eff_mat_4;
-	/*3x3 Matrix Coefficients for Sketch Effect 3*/
+	/* 3x3 Matrix Coefficients for Sketch Effect 3 */
 	unsigned short eff_mat_5;
-	/*Chrominance increment values of tint (used for sepia effect)*/
+	/* Chrominance increment values of tint (used for sepia effect) */
 	unsigned short eff_tint;
 };
 
 /* Configuration used by auto white balance */
 struct cifisp_awb_meas_config {
-	/*! white balance measurement window (in pixels)
-	 * Note: currently the h and v offsets are mapped to grid offsets*/
+	/*
+	 * white balance measurement window (in pixels)
+	 * Note: currently the h and v offsets are mapped to grid offsets
+	 */
 	struct cifisp_window awb_wnd;
 	enum cifisp_awb_mode_type awb_mode;
-	/*! only pixels values < max_y contribute to awb measurement
-	 * (set to 0 to disable this feature)*/
+	/*
+	 * only pixels values < max_y contribute to awb measurement
+	 * (set to 0 to disable this feature)
+	 */
 	unsigned char    max_y;
-	/*! only pixels values > min_y contribute to awb measurement*/
+	/* only pixels values > min_y contribute to awb measurement */
 	unsigned char    min_y;
-	/*! Chrominance sum maximum value, only consider pixels with Cb+Cr
-	 *  smaller than threshold for awb measurements*/
+	/*
+	 * Chrominance sum maximum value, only consider pixels with Cb+Cr
+	 * smaller than threshold for awb measurements
+	 */
 	unsigned char    max_csum;
-	/*! Chrominance minimum value, only consider pixels with Cb/Cr
-	 *  each greater than threshold value for awb measurements*/
+	/*
+	 * Chrominance minimum value, only consider pixels with Cb/Cr
+	 * each greater than threshold value for awb measurements
+	 */
 	unsigned char    min_c;
-	/*! number of frames - 1 used for mean value calculation
-	 *  (ucFrames=0 means 1 Frame)*/
+	/*
+	 * number of frames - 1 used for mean value calculation
+	 * (ucFrames=0 means 1 Frame)
+	 */
 	unsigned char    frames;
-	/*! reference Cr value for AWB regulation, target for AWB*/
+	/* reference Cr value for AWB regulation, target for AWB */
 	unsigned char    awb_ref_cr;
-	/*! reference Cb value for AWB regulation, target for AWB*/
+	/* reference Cb value for AWB regulation, target for AWB */
 	unsigned char    awb_ref_cb;
 	bool enable_ymax_cmp;
 };
@@ -327,10 +346,10 @@ struct cifisp_awb_gain_config {
 
 /* Configuration used by ISP filtering */
 struct cifisp_flt_config {
-	enum cifisp_flt_mode  mode;    /* ISP_FILT_MODE register fields*/
-	unsigned char grn_stage1;    /* ISP_FILT_MODE register fields*/
-	unsigned char chr_h_mode;    /* ISP_FILT_MODE register fields*/
-	unsigned char chr_v_mode;    /* ISP_FILT_MODE register fields*/
+	enum cifisp_flt_mode  mode;    /* ISP_FILT_MODE register fields */
+	unsigned char grn_stage1;    /* ISP_FILT_MODE register fields */
+	unsigned char chr_h_mode;    /* ISP_FILT_MODE register fields */
+	unsigned char chr_v_mode;    /* ISP_FILT_MODE register fields */
 	unsigned int  thresh_bl0;
 	unsigned int  thresh_bl1;
 	unsigned int  thresh_sh0;
@@ -410,24 +429,35 @@ struct cifisp_afc_config {
 };
 
 enum cifisp_dpf_gain_usage {
-	CIFISP_DPF_GAIN_USAGE_DISABLED      = 1,   /**< don't use any gains in preprocessing stage */
-	CIFISP_DPF_GAIN_USAGE_NF_GAINS      = 2,   /**< use only the noise function gains  from registers DPF_NF_GAIN_R, ... */
-	CIFISP_DPF_GAIN_USAGE_LSC_GAINS     = 3,   /**< use only the gains from LSC module */
-	CIFISP_DPF_GAIN_USAGE_NF_LSC_GAINS  = 4,   /**< use the moise function gains and the gains from LSC module */
-	CIFISP_DPF_GAIN_USAGE_AWB_GAINS     = 5,   /**< use only the gains from AWB module */
-	CIFISP_DPF_GAIN_USAGE_AWB_LSC_GAINS = 6,   /**< use the gains from AWB and LSC module */
-	CIFISP_DPF_GAIN_USAGE_MAX                  /**< upper border (only for an internal evaluation) */
+/* don't use any gains in preprocessing stage */
+	CIFISP_DPF_GAIN_USAGE_DISABLED      = 1,
+/* use only the noise function gains  from registers DPF_NF_GAIN_R, ... */
+	CIFISP_DPF_GAIN_USAGE_NF_GAINS      = 2,
+/* use only the gains from LSC module */
+	CIFISP_DPF_GAIN_USAGE_LSC_GAINS     = 3,
+/* use the moise function gains and the gains from LSC module */
+	CIFISP_DPF_GAIN_USAGE_NF_LSC_GAINS  = 4,
+/* use only the gains from AWB module */
+	CIFISP_DPF_GAIN_USAGE_AWB_GAINS     = 5,
+/* use the gains from AWB and LSC module */
+	CIFISP_DPF_GAIN_USAGE_AWB_LSC_GAINS = 6,
+/* upper border (only for an internal evaluation) */
+	CIFISP_DPF_GAIN_USAGE_MAX
 };
 
 enum cifisp_dpf_rb_filtersize {
-	CIFISP_DPF_RB_FILTERSIZE_13x9      = 0,    /**< red and blue filter kernel size 13x9 (means 7x5 active pixel) */
-	CIFISP_DPF_RB_FILTERSIZE_9x9       = 1,    /**< red and blue filter kernel size 9x9 (means 5x5 active pixel) */
+/* red and blue filter kernel size 13x9 (means 7x5 active pixel) */
+	CIFISP_DPF_RB_FILTERSIZE_13x9      = 0,
+/* red and blue filter kernel size 9x9 (means 5x5 active pixel) */
+	CIFISP_DPF_RB_FILTERSIZE_9x9       = 1,
 };
 
 enum cifisp_dpf_nll_scale_mode {
-	CIFISP_NLL_SCALE_LINEAR        = 0,        /**< use a linear scaling */
-	CIFISP_NLL_SCALE_LOGARITHMIC   = 1,        /**< use a logarithmic scaling */
-} ;
+/* use a linear scaling */
+	CIFISP_NLL_SCALE_LINEAR        = 0,
+/* use a logarithmic scaling */
+	CIFISP_NLL_SCALE_LOGARITHMIC   = 1,
+};
 
 struct cifisp_dpf_nll {
 	unsigned short coeff[CIFISP_DPF_MAX_NLF_COEFFS];

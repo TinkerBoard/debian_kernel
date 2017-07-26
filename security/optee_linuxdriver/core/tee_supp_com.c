@@ -58,7 +58,7 @@ enum teec_rpc_result tee_supp_cmd(struct tee *tee,
 				break;
 
 			alloc->size = size;
-			alloc->data = (void *)shmint->paddr;
+			alloc->data = (void *)(unsigned long)shmint->paddr;
 			alloc->shm = shmint;
 			res = TEEC_RPC_OK;
 
@@ -78,10 +78,14 @@ enum teec_rpc_result tee_supp_cmd(struct tee *tee,
 			if (sizeof(rpc->commToUser) < datalen)
 				break;
 
+			/*
+			 * Other threads blocks here until we've copied our
+			 * answer from the supplicant
+			 */
+			mutex_lock(&rpc->thrd_mutex);
+
 			mutex_lock(&rpc->outsync);
-
 			memcpy(&rpc->commToUser, data, datalen);
-
 			mutex_unlock(&rpc->outsync);
 
 			dev_dbg(tee->dev,
@@ -97,10 +101,10 @@ enum teec_rpc_result tee_supp_cmd(struct tee *tee,
 				rpc->commToUser.cmd);
 
 			mutex_lock(&rpc->insync);
-
 			memcpy(data, &rpc->commFromUser, datalen);
-
 			mutex_unlock(&rpc->insync);
+
+			mutex_unlock(&rpc->thrd_mutex);
 
 			res = TEEC_RPC_OK;
 
@@ -225,7 +229,7 @@ ssize_t tee_supp_write(struct file *filp, const char __user *buffer,
 						buffer,
 						(unsigned int)shm->paddr);
 					rpc->commFromUser.cmds[i].buffer =
-					    (void *)shm->paddr;
+					    (void *)(unsigned long)shm->paddr;
 				} else
 					dev_dbg(tee->dev,
 						" gid2pa(0x%p => NULL\n)",
@@ -254,10 +258,9 @@ int tee_supp_init(struct tee *tee)
 		return -ENOMEM;
 	}
 
-	rpc->datafromuser = (struct semaphore)
-	    __SEMAPHORE_INITIALIZER(rpc->datafromuser, 0);
-	rpc->datatouser = (struct semaphore)
-	    __SEMAPHORE_INITIALIZER(rpc->datatouser, 0);
+	sema_init(&rpc->datafromuser, 0);
+	sema_init(&rpc->datatouser, 0);
+	mutex_init(&rpc->thrd_mutex);
 	mutex_init(&rpc->outsync);
 	mutex_init(&rpc->insync);
 	atomic_set(&rpc->used, 0);

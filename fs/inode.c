@@ -154,6 +154,12 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 	inode->i_rdev = 0;
 	inode->dirtied_when = 0;
 
+#ifdef CONFIG_CGROUP_WRITEBACK
+	inode->i_wb_frn_winner = 0;
+	inode->i_wb_frn_avg_time = 0;
+	inode->i_wb_frn_history = 0;
+#endif
+
 	if (security_inode_alloc(inode))
 		goto out;
 	spin_lock_init(&inode->i_lock);
@@ -1715,7 +1721,7 @@ int dentry_needs_remove_privs(struct dentry *dentry)
 }
 EXPORT_SYMBOL(dentry_needs_remove_privs);
 
-static int __remove_privs(struct dentry *dentry, int kill)
+static int __remove_privs(struct vfsmount *mnt, struct dentry *dentry, int kill)
 {
 	struct iattr newattrs;
 
@@ -1724,7 +1730,7 @@ static int __remove_privs(struct dentry *dentry, int kill)
 	 * Note we call this on write, so notify_change will not
 	 * encounter any conflicting delegations:
 	 */
-	return notify_change(dentry, &newattrs, NULL);
+	return notify_change2(mnt, dentry, &newattrs, NULL);
 }
 
 /*
@@ -1733,8 +1739,8 @@ static int __remove_privs(struct dentry *dentry, int kill)
  */
 int file_remove_privs(struct file *file)
 {
-	struct dentry *dentry = file->f_path.dentry;
-	struct inode *inode = d_inode(dentry);
+	struct dentry *dentry = file_dentry(file);
+	struct inode *inode = file_inode(file);
 	int kill;
 	int error = 0;
 
@@ -1742,11 +1748,11 @@ int file_remove_privs(struct file *file)
 	if (IS_NOSEC(inode))
 		return 0;
 
-	kill = file_needs_remove_privs(file);
+	kill = dentry_needs_remove_privs(dentry);
 	if (kill < 0)
 		return kill;
 	if (kill)
-		error = __remove_privs(dentry, kill);
+		error = __remove_privs(file->f_path.mnt, dentry, kill);
 	if (!error)
 		inode_has_no_xattr(inode);
 

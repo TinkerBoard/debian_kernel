@@ -41,6 +41,7 @@
  */
 
 #include "rk3399-evb.dtsi"
+#include "rk3399-early-opp.dtsi"
 
 / {
 	compatible = "rockchip,rk3399-evb-rev1", "rockchip,rk3399";
@@ -49,7 +50,7 @@
 		compatible = "pwm-regulator";
 		rockchip,pwm_id = <2>;
 		rockchip,pwm_voltage = <900000>;
-		pwms = <&pwm2 0 25000 0>;
+		pwms = <&pwm2 0 25000 1>;
 		regulator-name = "vdd_log";
 		regulator-min-microvolt = <800000>;
 		regulator-max-microvolt = <1400000>;
@@ -61,7 +62,7 @@
 		compatible = "pwm-regulator";
 		rockchip,pwm_id = <3>;
 		rockchip,pwm_voltage = <900000>;
-		pwms = <&pwm3 0 25000 0>;
+		pwms = <&pwm3 0 25000 1>;
 		regulator-name = "vdd_center";
 		regulator-min-microvolt = <800000>;
 		regulator-max-microvolt = <1400000>;
@@ -126,6 +127,7 @@
 				regulator-name = "vdd_gpu";
 				regulator-min-microvolt = <712500>;
 				regulator-max-microvolt = <1500000>;
+				regulator-ramp-delay = <8000>;
 				regulator-always-on;
 				regulator-boot-on;
 			};
@@ -163,6 +165,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <750000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <6001>;
 				regulator-name = "vdd_cpu_b";
 				regulator-state-mem {
 					regulator-off-in-suspend;
@@ -174,6 +177,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <750000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <6001>;
 				regulator-name = "vdd_cpu_l";
 				regulator-state-mem {
 					regulator-off-in-suspend;

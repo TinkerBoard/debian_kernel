@@ -90,6 +90,13 @@ enum connection_state {
 	policy_snk_transition_default,
 };
 
+enum tcpm_rp_value {
+	TYPEC_RP_USB = 0,
+	TYPEC_RP_1A5 = 1,
+	TYPEC_RP_3A0 = 2,
+	TYPEC_RP_RESERVED = 3,
+};
+
 #define SBF(s, v)		((s) << (v))
 #define SWITCHES0_PDWN1		SBF(1, 0)
 #define SWITCHES0_PDWN2		SBF(1, 1)
@@ -116,6 +123,9 @@ enum connection_state {
 #define CONTROL0_TX_START	SBF(1, 0)
 #define CONTROL0_AUTO_PRE	SBF(1, 1)
 #define CONTROL0_HOST_CUR	SBF(3, 2)
+#define CONTROL0_HOST_CUR_USB		SBF(1, 2)
+#define CONTROL0_HOST_CUR_1A5		SBF(2, 2)
+#define CONTROL0_HOST_CUR_3A0		SBF(3, 2)
 #define CONTROL0_INT_MASK	SBF(1, 5)
 #define CONTROL0_TX_FLUSH	SBF(1, 6)
 
@@ -274,7 +284,7 @@ enum connection_state {
 
 #define T_NO_RESPONSE		5000
 #define T_SRC_RECOVER		830
-#define T_TYPEC_SEND_SOURCECAP	3
+#define T_TYPEC_SEND_SOURCECAP	100
 #define T_SENDER_RESPONSE	30
 #define T_SRC_TRANSITION	30
 #define T_TYPEC_SINK_WAIT_CAP	500
@@ -368,6 +378,7 @@ struct fusb30x_chip {
 	struct gpio_desc *gpio_vbus_5v;
 	struct gpio_desc *gpio_vbus_other;
 	struct gpio_desc *gpio_int;
+	struct gpio_desc *gpio_discharge;
 	int timer_state;
 	int timer_mux;
 	int port_num;
@@ -419,7 +430,12 @@ struct fusb30x_chip {
 	u32 vdm_id;
 	u8 chip_id;
 	bool vconn_enabled;
+	bool is_pd_support;
 	int togdone_pullup;
+	int pd_output_vol;
+	int pd_output_cur;
+	int cc_meas_high;
+	int cc_meas_low;
 };
 
 #endif /* FUSB302_H */

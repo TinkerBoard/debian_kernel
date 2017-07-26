@@ -43,6 +43,7 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/pinctrl/rockchip.h>
 #include <dt-bindings/clock/rk3036-cru.h>
+#include <dt-bindings/soc/rockchip,boot-mode.h>
 #include "skeleton.dtsi"
 
 / {
@@ -243,7 +244,7 @@
 		#address-cells = <0>;
 
 		reg = <0x10139000 0x1000>,
-		      <0x1013a000 0x1000>,
+		      <0x1013a000 0x2000>,
 		      <0x1013c000 0x2000>,
 		      <0x1013e000 0x2000>;
 		interrupts = <GIC_PPI 9 (GIC_CPU_MASK_SIMPLE(2) | IRQ_TYPE_LEVEL_HIGH)>;
@@ -371,8 +372,17 @@
 	};
 
 	grf: syscon@20008000 {
-		compatible = "rockchip,rk3036-grf", "syscon";
+		compatible = "rockchip,rk3036-grf", "syscon", "simple-mfd";
 		reg = <0x20008000 0x1000>;
+		reboot-mode {
+			compatible = "syscon-reboot-mode";
+			offset = <0x1d8>;
+			mode-normal = <BOOT_NORMAL>;
+			mode-recovery = <BOOT_RECOVERY>;
+			mode-bootloader = <BOOT_FASTBOOT>;
+			mode-loader = <BOOT_BL_DOWNLOAD>;
+			mode-ums = <BOOT_UMS>;
+		};
 	};
 
 	acodec: acodec-ana@20030000 {

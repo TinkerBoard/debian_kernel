@@ -168,12 +168,12 @@ int amdgpu_connector_get_monitor_bpc(struct drm_connector *connector)
 		}
 
 		/* Any defined maximum tmds clock limit we must not exceed? */
-		if (connector->max_tmds_clock > 0) {
+		if (connector->display_info.max_tmds_clock > 0) {
 			/* mode_clock is clock in kHz for mode to be modeset on this connector */
 			mode_clock = amdgpu_connector->pixelclock_for_modeset;
 
 			/* Maximum allowable input clock in kHz */
-			max_tmds_clock = connector->max_tmds_clock * 1000;
+			max_tmds_clock = connector->display_info.max_tmds_clock;
 
 			DRM_DEBUG("%s: hdmi mode dotclock %d kHz, max tmds input clock %d kHz.\n",
 				  connector->name, mode_clock, max_tmds_clock);
@@ -1690,7 +1690,6 @@ amdgpu_connector_add(struct amdgpu_device *adev,
 						   DRM_MODE_SCALE_NONE);
 			/* no HPD on analog connectors */
 			amdgpu_connector->hpd.hpd = AMDGPU_HPD_NONE;
-			connector->polled = DRM_CONNECTOR_POLL_CONNECT;
 			connector->interlace_allowed = true;
 			connector->doublescan_allowed = true;
 			break;
@@ -1893,8 +1892,10 @@ amdgpu_connector_add(struct amdgpu_device *adev,
 	}
 
 	if (amdgpu_connector->hpd.hpd == AMDGPU_HPD_NONE) {
-		if (i2c_bus->valid)
-			connector->polled = DRM_CONNECTOR_POLL_CONNECT;
+		if (i2c_bus->valid) {
+			connector->polled = DRM_CONNECTOR_POLL_CONNECT |
+			                    DRM_CONNECTOR_POLL_DISCONNECT;
+		}
 	} else
 		connector->polled = DRM_CONNECTOR_POLL_HPD;
 

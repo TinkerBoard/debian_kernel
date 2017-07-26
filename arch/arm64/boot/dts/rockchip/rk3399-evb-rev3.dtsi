@@ -41,6 +41,7 @@
  */
 
 #include "rk3399-evb.dtsi"
+#include <dt-bindings/suspend/rockchip-rk3399.h>
 
 / {
 	compatible = "rockchip,rk3399-evb-rev3", "rockchip,rk3399";
@@ -58,183 +59,30 @@
 		compatible = "pwm-regulator";
 		rockchip,pwm_id = <2>;
 		rockchip,pwm_voltage = <900000>;
-		pwms = <&pwm2 0 25000 0>;
+		pwms = <&pwm2 0 25000 1>;
 		regulator-name = "vdd_center";
 		regulator-min-microvolt = <800000>;
 		regulator-max-microvolt = <1400000>;
 		regulator-always-on;
 		regulator-boot-on;
 	};
-};
 
-&cluster0_opp {
-	opp@408000000 {
-		opp-hz = /bits/ 64 <408000000>;
-		opp-microvolt = <800000>;
-		clock-latency-ns = <40000>;
-	};
-	opp@600000000 {
-		opp-hz = /bits/ 64 <600000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@816000000 {
-		opp-hz = /bits/ 64 <816000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@1008000000 {
-		opp-hz = /bits/ 64 <1008000000>;
-		opp-microvolt = <875000>;
-	};
-	opp@1200000000 {
-		opp-hz = /bits/ 64 <1200000000>;
-		opp-microvolt = <925000>;
-	};
-	opp@1416000000 {
-		opp-hz = /bits/ 64 <1416000000>;
-		opp-microvolt = <1050000>;
-	};
-	opp@1512000000 {
-		opp-hz = /bits/ 64 <1512000000>;
-		opp-microvolt = <1075000>;
-	};
-};
-
-&cluster1_opp {
-	opp@408000000 {
-		opp-hz = /bits/ 64 <408000000>;
-		opp-microvolt = <800000>;
-		clock-latency-ns = <40000>;
-	};
-	opp@600000000 {
-		opp-hz = /bits/ 64 <600000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@816000000 {
-		opp-hz = /bits/ 64 <816000000>;
-		opp-microvolt = <825000>;
-	};
-	opp@1008000000 {
-		opp-hz = /bits/ 64 <1008000000>;
-		opp-microvolt = <875000>;
-	};
-	opp@1200000000 {
-		opp-hz = /bits/ 64 <1200000000>;
-		opp-microvolt = <950000>;
-	};
-	opp@1416000000 {
-		opp-hz = /bits/ 64 <1416000000>;
-		opp-microvolt = <1025000>;
-	};
-	opp@1608000000 {
-		opp-hz = /bits/ 64 <1608000000>;
-		opp-microvolt = <1100000>;
-	};
-	opp@1800000000 {
-		opp-hz = /bits/ 64 <1800000000>;
-		opp-microvolt = <1175000>;
-	};
-	opp@1992000000 {
-		opp-hz = /bits/ 64 <1992000000>;
-		opp-microvolt = <1250000>;
-	};
-};
-
-&CPU_COST_A72 {
-	busy-cost-data = <
-		210   129	/*  408MHz */
-		308   184	/*  600MHz */
-		419   246	/*  816MHz */
-		518   335	/* 1008MHz */
-		617   428	/* 1200MHz */
-		728   573	/* 1416MHz */
-		827   724	/* 1608MHz */
-		925   900	/* 1800MHz */
-		1024  1108	/* 1992MHz */
-	>;
-	idle-cost-data = <
-	      15
-	      15
-	       0
-	>;
-};
-
-&CPU_COST_A53 {
-	busy-cost-data = <
-		108    46	/*  408M */
-		159    67	/*  600M */
-		216    90	/*  816M */
-		267    120	/* 1008M */
-		318    153	/* 1200M */
-		375    198	/* 1416M */
-		401    222	/* 1512M */
-	>;
-	idle-cost-data = <
-	      6
-	      6
-	      0
-	>;
-};
-
-&CLUSTER_COST_A72 {
-	busy-cost-data = <
-		210   129	/*  408MHz */
-		308   184	/*  600MHz */
-		419   246	/*  816MHz */
-		518   335	/* 1008MHz */
-		617   428	/* 1200MHz */
-		728   573	/* 1416MHz */
-		827   724	/* 1608MHz */
-		925   900	/* 1800MHz */
-		1024  1108	/* 1992MHz */
-	>;
-	idle-cost-data = <
-		 65
-		 65
-		 65
-	>;
-};
-
-&CLUSTER_COST_A53 {
-	busy-cost-data = <
-		108    46	/*  408M */
-		159    67	/*  600M */
-		216    90	/*  816M */
-		267    120	/* 1008M */
-		318    153	/* 1200M */
-		375    198	/* 1416M */
-		401    222	/* 1512M */
-	>;
-	idle-cost-data = <
-		56
-		56
-		56
-	>;
-};
-
-&gpu_opp_table {
-	opp@200000000 {
-		opp-hz = /bits/ 64 <200000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@300000000 {
-		opp-hz = /bits/ 64 <300000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@400000000 {
-		opp-hz = /bits/ 64 <400000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@500000000 {
-		opp-hz = /bits/ 64 <500000000>;
-		opp-microvolt = <850000>;
-	};
-	opp@600000000 {
-		opp-hz = /bits/ 64 <600000000>;
-		opp-microvolt = <900000>;
-	};
-	opp@800000000 {
-		opp-hz = /bits/ 64 <800000000>;
-		opp-microvolt = <1000000>;
+	rockchip_suspend: rockchip-suspend {
+		compatible = "rockchip,pm-rk3399";
+		status = "okay";
+		rockchip,sleep-debug-en = <1>;
+		rockchip,wakeup-config = <
+			(0
+			| RKPM_GPIO_WKUP_EN
+			)
+		>;
+		rockchip,pwm-regulator-config = <
+			(0
+			| PWM2_REGULATOR_EN
+			)
+		>;
+		rockchip,power-ctrl =
+			<&gpio1 17 GPIO_ACTIVE_HIGH>;
 	};
 };
 
@@ -254,6 +102,8 @@
 		reg = <0x40>;
 		vin-supply = <&vcc5v0_sys>;
 		regulator-compatible = "fan53555-reg";
+		pinctrl-0 = <&vsel1_gpio>;
+		vsel-gpios = <&gpio1 17 GPIO_ACTIVE_HIGH>;
 		regulator-name = "vdd_cpu_b";
 		regulator-min-microvolt = <712500>;
 		regulator-max-microvolt = <1500000>;
@@ -272,6 +122,8 @@
 		reg = <0x41>;
 		vin-supply = <&vcc5v0_sys>;
 		regulator-compatible = "fan53555-reg";
+		pinctrl-0 = <&vsel2_gpio>;
+		vsel-gpios = <&gpio1 14 GPIO_ACTIVE_HIGH>;
 		regulator-name = "vdd_gpu";
 		regulator-min-microvolt = <712500>;
 		regulator-max-microvolt = <1500000>;
@@ -316,6 +168,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <750000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <6001>;
 				regulator-name = "vdd_log";
 				regulator-state-mem {
 					regulator-on-in-suspend;
@@ -328,6 +181,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <750000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <6001>;
 				regulator-name = "vdd_cpu_l";
 				regulator-state-mem {
 					regulator-off-in-suspend;
@@ -452,7 +306,7 @@
 				regulator-boot-on;
 				regulator-name = "vcc3v3_s3";
 				regulator-state-mem {
-					regulator-off-in-suspend;
+					regulator-on-in-suspend;
 				};
 			};
 

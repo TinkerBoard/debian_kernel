@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,7 +11,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 
 #include <linux/kernel.h>
@@ -112,7 +112,7 @@ static enum cif_isp10_pix_fmt img_src_v4l2_subdev_pix_fmt2cif_isp10_pix_fmt(
 	case MEDIA_BUS_FMT_SRGGB10_1X10:
 		return CIF_BAYER_SRGGB10;
 	case MEDIA_BUS_FMT_SBGGR12_1X12:
-	    return CIF_BAYER_SBGGR12;
+		return CIF_BAYER_SBGGR12;
 	case MEDIA_BUS_FMT_SGBRG12_1X12:
 		return CIF_BAYER_SGBRG12;
 	case MEDIA_BUS_FMT_SGRBG12_1X12:
@@ -206,6 +206,8 @@ static int cif_isp10_v4l2_cid2v4l2_cid(u32 cif_isp10_cid)
 		return V4L2_CID_HFLIP;
 	case CIF_ISP10_CID_VFLIP:
 		return V4L2_CID_VFLIP;
+	case CIF_ISP10_CID_MIN_BUFFER_FOR_CAPTURE:
+		return V4L2_CID_MIN_BUFFERS_FOR_CAPTURE;
 	default:
 		cif_isp10_pltfrm_pr_err(NULL,
 			"unknown/unsupported CIF ISP20 ID %d\n",
@@ -285,9 +287,9 @@ int cif_isp10_img_src_v4l2_subdev_enum_strm_fmts(
 			strm_fmt_desc->defrect.top = 0;
 			strm_fmt_desc->defrect.width = fie.width;
 			strm_fmt_desc->defrect.height = fie.height;
-		} else
+		} else {
 			strm_fmt_desc->defrect = defrect.defrect;
-
+		}
 	}
 
 	return ret;
@@ -338,13 +340,13 @@ int cif_isp10_img_src_v4l2_subdev_g_ctrl(
 	ret = v4l2_subdev_call(subdev, core, g_ctrl, &ctrl);
 	if (!IS_ERR_VALUE(ret)) {
 		if (id == CIF_ISP10_CID_FLASH_MODE) {
-			if (ctrl.value == V4L2_FLASH_LED_MODE_NONE)
+			if (ctrl.value == V4L2_FLASH_LED_MODE_NONE) {
 				ctrl.value = CIF_ISP10_FLASH_MODE_OFF;
-			else if (ctrl.value == V4L2_FLASH_LED_MODE_FLASH)
+			} else if (ctrl.value == V4L2_FLASH_LED_MODE_FLASH) {
 				ctrl.value = CIF_ISP10_FLASH_MODE_FLASH;
-			else if (ctrl.value == V4L2_FLASH_LED_MODE_TORCH)
+			} else if (ctrl.value == V4L2_FLASH_LED_MODE_TORCH) {
 				ctrl.value = CIF_ISP10_FLASH_MODE_TORCH;
-			else {
+			} else {
 				cif_isp10_pltfrm_pr_err(NULL,
 					"unknown/unsupported value %d for control ID 0x%x\n",
 					ctrl.value, id);
@@ -352,6 +354,9 @@ int cif_isp10_img_src_v4l2_subdev_g_ctrl(
 			}
 		}
 		*val = ctrl.value;
+	} else {
+		cif_isp10_pltfrm_pr_err(NULL,
+			"subdevcall got err: %d\n", ret);
 	}
 	return ret;
 }
@@ -367,16 +372,16 @@ int cif_isp10_img_src_v4l2_subdev_s_ctrl(
 	ctrl.value = val;
 	ctrl.id = cif_isp10_v4l2_cid2v4l2_cid(id);
 
-	if (IS_ERR_VALUE(ctrl.id))
+	if (IS_ERR_VALUE(ctrl.id)) {
 		return (int)ctrl.id;
-	else if (id == CIF_ISP10_CID_FLASH_MODE) {
-		if (val == CIF_ISP10_FLASH_MODE_OFF)
+	} else if (id == CIF_ISP10_CID_FLASH_MODE) {
+		if (val == CIF_ISP10_FLASH_MODE_OFF) {
 			ctrl.value = V4L2_FLASH_LED_MODE_NONE;
-		else if (val == CIF_ISP10_FLASH_MODE_FLASH)
+		} else if (val == CIF_ISP10_FLASH_MODE_FLASH) {
 			ctrl.value = V4L2_FLASH_LED_MODE_FLASH;
-		else if (val == CIF_ISP10_FLASH_MODE_TORCH)
+		} else if (val == CIF_ISP10_FLASH_MODE_TORCH) {
 			ctrl.value = V4L2_FLASH_LED_MODE_TORCH;
-		else {
+		} else {
 			cif_isp10_pltfrm_pr_err(NULL,
 				"unknown/unsupported value %d for control ID %d\n",
 				val, id);
@@ -407,7 +412,7 @@ int cif_isp10_img_src_v4l2_subdev_s_ext_ctrls(
 	if (ctrl->cnt == 0)
 		return -EINVAL;
 
-	controls = kmalloc(ctrl->cnt * sizeof(struct v4l2_ext_control),
+	controls = kmalloc_array(ctrl->cnt, sizeof(struct v4l2_ext_control),
 		GFP_KERNEL);
 
 	if (!controls)
@@ -420,8 +425,11 @@ int cif_isp10_img_src_v4l2_subdev_s_ext_ctrls(
 
 	ctrls.count = ctrl->cnt;
 	ctrls.controls = controls;
-	/*current kernel version don't define this member for struct v4l2_ext_control.*/
-	/*ctrls.ctrl_class = ctrl->class;*/
+	/*
+	 * current kernel version don't define
+	 * this member for struct v4l2_ext_control.
+	 */
+	/* ctrls.ctrl_class = ctrl->class; */
 	ctrls.reserved[0] = 0;
 	ctrls.reserved[1] = 0;
 

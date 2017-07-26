@@ -56,6 +56,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_CS42XX8_I2C if I2C
 	select SND_SOC_CS4349 if I2C
 	select SND_SOC_CX20442 if TTY
+	select SND_SOC_CX2072X if I2C
 	select SND_SOC_DA7210 if SND_SOC_I2C_AND_SPI
 	select SND_SOC_DA7213 if I2C
 	select SND_SOC_DA7219 if I2C
@@ -64,6 +65,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_DMIC
 	select SND_SOC_BT_SCO
 	select SND_SOC_ES8316 if I2C
+	select SND_SOC_ES8323 if I2C
 	select SND_SOC_ES8328_SPI if SPI_MASTER
 	select SND_SOC_ES8328_I2C if I2C
 	select SND_SOC_GTM601
@@ -89,6 +91,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_PCM3008
 	select SND_SOC_PCM512x_I2C if I2C
 	select SND_SOC_PCM512x_SPI if SPI_MASTER
+	select SND_SOC_RK3328
 	select SND_SOC_RT286 if I2C
 	select SND_SOC_RT298 if I2C
 	select SND_SOC_RT5616 if I2C
@@ -429,6 +432,9 @@ config SND_SOC_CX20442
 	tristate
 	depends on TTY
 
+config SND_SOC_CX2072X
+	tristate "CX2072X CODEC"
+
 config SND_SOC_JZ4740_CODEC
 	select REGMAP_MMIO
 	tristate
@@ -456,7 +462,7 @@ config SND_SOC_DW_HDMI_AUDIO
 	depends on RK_HDMI
 
 config SND_SOC_BT_SCO
-	tristate
+	tristate "bt sco audio"
 
 config SND_SOC_DMIC
 	tristate
@@ -465,8 +471,13 @@ config SND_SOC_ES8316
 	tristate "Everest Semi ES8316 CODEC"
 	depends on I2C
 
+config SND_SOC_ES8323
+	tristate "Everest Semi ES8323 CODEC"
+	depends on I2C
+
 config SND_SOC_HDMI_CODEC
 	tristate
+	select HDMI_NOTIFIERS
 	select SND_PCM_ELD
 	select SND_PCM_IEC958
 	select HDMI
@@ -538,6 +549,10 @@ config SND_SOC_PCM512x_SPI
 	select SND_SOC_PCM512x
 	select REGMAP_SPI
 
+config SND_SOC_RK3328
+	select REGMAP_MMIO
+	tristate "Rockchip RK3328 CODEC"
+
 config SND_SOC_RL6231
 	tristate
 	default y if SND_SOC_RT5616=y
@@ -583,7 +598,7 @@ config SND_SOC_RT5645
         tristate
 
 config SND_SOC_RT5651
-	tristate
+	tristate "Realtek ALC5651 CODEC"
 
 config SND_SOC_RT5670
 	tristate
@@ -677,6 +692,10 @@ config SND_SOC_TAS5086
 
 config SND_SOC_TAS571X
 	tristate "Texas Instruments TAS5711/TAS5717/TAS5719 power amplifiers"
+	depends on I2C
+
+config SND_SOC_TC358749X
+	tristate "Toshiba TC358749X HDMI in Audio codec"
 	depends on I2C
 
 config SND_SOC_TFA9879

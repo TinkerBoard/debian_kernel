@@ -55,12 +55,14 @@ struct rk_i2s_dev {
 	bool is_master_mode;
 	int xfer_mode; /* 0: i2s, 1: pcm */
 	const struct rk_i2s_pins *pins;
+	unsigned int bclk_fs;
 };
 
 static int i2s_runtime_suspend(struct device *dev)
 {
 	struct rk_i2s_dev *i2s = dev_get_drvdata(dev);
 
+	regcache_cache_only(i2s->regmap, true);
 	clk_disable_unprepare(i2s->mclk);
 
 	return 0;
@@ -77,7 +79,14 @@ static int i2s_runtime_resume(struct device *dev)
 		return ret;
 	}
 
-	return 0;
+	regcache_cache_only(i2s->regmap, false);
+	regcache_mark_dirty(i2s->regmap);
+
+	ret = regcache_sync(i2s->regmap);
+	if (ret)
+		clk_disable_unprepare(i2s->mclk);
+
+	return ret;
 }
 
 static inline struct rk_i2s_dev *to_info(struct snd_soc_dai *dai)
@@ -112,6 +121,7 @@ static void rockchip_snd_txctrl(struct rk_i2s_dev *i2s, int on)
 					   I2S_XFER_TXS_STOP |
 					   I2S_XFER_RXS_STOP);
 
+			udelay(150);
 			regmap_update_bits(i2s->regmap, I2S_CLR,
 					   I2S_CLR_TXC | I2S_CLR_RXC,
 					   I2S_CLR_TXC | I2S_CLR_RXC);
@@ -158,6 +168,7 @@ static void rockchip_snd_rxctrl(struct rk_i2s_dev *i2s, int on)
 					   I2S_XFER_TXS_STOP |
 					   I2S_XFER_RXS_STOP);
 
+			udelay(150);
 			regmap_update_bits(i2s->regmap, I2S_CLR,
 					   I2S_CLR_TXC | I2S_CLR_RXC,
 					   I2S_CLR_TXC | I2S_CLR_RXC);
@@ -200,7 +211,21 @@ static int rockchip_i2s_set_fmt(struct snd_soc_dai *cpu_dai,
 
 	regmap_update_bits(i2s->regmap, I2S_CKR, mask, val);
 
-	mask = I2S_TXCR_IBM_MASK;
+	mask = I2S_CKR_CKP_MASK;
+	switch (fmt & SND_SOC_DAIFMT_INV_MASK) {
+	case SND_SOC_DAIFMT_NB_NF:
+		val = I2S_CKR_CKP_NEG;
+		break;
+	case SND_SOC_DAIFMT_IB_NF:
+		val = I2S_CKR_CKP_POS;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	regmap_update_bits(i2s->regmap, I2S_CKR, mask, val);
+
+	mask = I2S_TXCR_IBM_MASK | I2S_TXCR_TFS_MASK | I2S_TXCR_PBM_MASK;
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
 	case SND_SOC_DAIFMT_RIGHT_J:
 		val = I2S_TXCR_IBM_RSJM;
@@ -211,13 +236,19 @@ static int rockchip_i2s_set_fmt(struct snd_soc_dai *cpu_dai,
 	case SND_SOC_DAIFMT_I2S:
 		val = I2S_TXCR_IBM_NORMAL;
 		break;
+	case SND_SOC_DAIFMT_DSP_A: /* PCM no delay mode */
+		val = I2S_TXCR_TFS_PCM;
+		break;
+	case SND_SOC_DAIFMT_DSP_B: /* PCM delay 1 mode */
+		val = I2S_TXCR_TFS_PCM | I2S_TXCR_PBM_MODE(1);
+		break;
 	default:
 		return -EINVAL;
 	}
 
 	regmap_update_bits(i2s->regmap, I2S_TXCR, mask, val);
 
-	mask = I2S_RXCR_IBM_MASK;
+	mask = I2S_RXCR_IBM_MASK | I2S_RXCR_TFS_MASK | I2S_RXCR_PBM_MASK;
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
 	case SND_SOC_DAIFMT_RIGHT_J:
 		val = I2S_RXCR_IBM_RSJM;
@@ -227,6 +258,12 @@ static int rockchip_i2s_set_fmt(struct snd_soc_dai *cpu_dai,
 		break;
 	case SND_SOC_DAIFMT_I2S:
 		val = I2S_RXCR_IBM_NORMAL;
+		break;
+	case SND_SOC_DAIFMT_DSP_A: /* PCM no delay mode */
+		val = I2S_RXCR_TFS_PCM;
+		break;
+	case SND_SOC_DAIFMT_DSP_B: /* PCM delay 1 mode */
+		val = I2S_RXCR_TFS_PCM | I2S_RXCR_PBM_MODE(1);
 		break;
 	default:
 		return -EINVAL;
@@ -248,11 +285,11 @@ static int rockchip_i2s_hw_params(struct snd_pcm_substream *substream,
 
 	if (i2s->is_master_mode) {
 		mclk_rate = clk_get_rate(i2s->mclk);
-		bclk_rate = 2 * 32 * params_rate(params);
-		if (bclk_rate && mclk_rate % bclk_rate)
+		bclk_rate = i2s->bclk_fs * params_rate(params);
+		if (!bclk_rate)
 			return -EINVAL;
 
-		div_bclk = mclk_rate / bclk_rate;
+		div_bclk = DIV_ROUND_CLOSEST(mclk_rate, bclk_rate);
 		div_lrck = bclk_rate / params_rate(params);
 		regmap_update_bits(i2s->regmap, I2S_CKR,
 				   I2S_CKR_MDIV_MASK,
@@ -596,11 +633,11 @@ static int rockchip_i2s_probe(struct platform_device *pdev)
 
 	i2s->playback_dma_data.addr = res->start + I2S_TXDR;
 	i2s->playback_dma_data.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
-	i2s->playback_dma_data.maxburst = 4;
+	i2s->playback_dma_data.maxburst = 16;
 
 	i2s->capture_dma_data.addr = res->start + I2S_RXDR;
 	i2s->capture_dma_data.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
-	i2s->capture_dma_data.maxburst = 4;
+	i2s->capture_dma_data.maxburst = 16;
 
 	dev_set_drvdata(&pdev->dev, i2s);
 
@@ -625,6 +662,12 @@ static int rockchip_i2s_probe(struct platform_device *pdev)
 	if (!of_property_read_u32(node, "rockchip,capture-channels", &val)) {
 		if (val >= 2 && val <= 8)
 			soc_dai->capture.channels_max = val;
+	}
+
+	i2s->bclk_fs = 64;
+	if (!of_property_read_u32(node, "rockchip,bclk-fs", &val)) {
+		if ((val >= 32) && (val % 2 == 0))
+			i2s->bclk_fs = val;
 	}
 
 	ret = devm_snd_soc_register_component(&pdev->dev,

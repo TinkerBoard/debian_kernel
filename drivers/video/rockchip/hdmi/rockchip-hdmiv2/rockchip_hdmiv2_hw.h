@@ -385,7 +385,7 @@ enum {
 };
 
 #define m_OUTPUT_SEL		(0x03 << 0)
-#define v_OUTPUT_SEL(n)		((n & 0x03) << 0)
+#define v_OUTPUT_SEL(n)		(((n) & 0x03) << 0)
 
 #define VP_MASK				0x0807
 #define m_OINTFULL_REPET	BIT(7)
@@ -645,7 +645,8 @@ enum {
 #define m_AUDIO_SAMPLE_RATE		(0x0f << 0)
 #define v_AUDIO_SAMPLE_RATE(n)	(((n) & 0x0f) << 0)
 #define m_AUDIO_ORI_SAMPLE_RATE		(0x0f << 4)
-#define v_AUDIO_ORI_SAMPLE_RATE(n)	(((~n) & 0x0f) << 4)
+#define v_AUDIO_ORI_SAMPLE_RATE(n)	(((~(n)) & 0x0f) << 4)
+
 #define m_AUDIO_WORD_LENGTH		(0x0f << 0)
 #define v_AUDIO_WORD_LENGTH(n)	(((n) & 0x0f) << 0)
 
@@ -727,6 +728,17 @@ enum {
 #define	FC_GMD_CONF			0x1103
 #define	FC_GMD_HB			0x1104
 #define	FC_GMD_PB0			0x1105	/*0~27*/
+
+#define	FC_PACK_TXE			0x10e3
+	#define m_DRM_TXEN		BIT(7)
+	#define v_DRM_TXEN(n)		(((n) & 0x01) << 7)
+#define FC_DRM_UP			0x1167
+	#define m_DRM_PUPD		BIT(0)
+	#define v_DRM_PUPD(n)		(((n) & 0x01) << 0)
+#define FC_DRM_HB			0x1168
+#define FC_DRM_PB			0x116a
+#define m_DRM_MASK			BIT(4)
+#define v_DRM_MASK(n)			(((n) & 0x01) << 4)
 
 #define FC_DBGFORCE			0x1200
 #define m_FC_FORCEAUDIO		BIT(4)
@@ -1356,10 +1368,14 @@ enum {
 #define CEC_ENGINE_BASE			0x7d00
 
 #define	CEC_CTRL			0x7d00
+	#define m_CEC_BC_S_NCK		BIT(5)	 /* Ignore ack of sending
+						  * broadcast message.
+						  */
 	#define m_CEC_STANBY		BIT(4)
 	#define m_CEC_BC_NCK		BIT(3)
 	#define m_CEC_FRAME_TYPE	(3 << 1)
 	#define m_CEC_SEND		BIT(0)
+	#define v_CEC_BC_S_NCK(n)	(((n) & 0x1) << 4)
 	#define v_CEC_STANBY(n)		((n & 0x1) << 4)
 	#define v_CEC_BC_NCK(n)		((n & 0x1) << 3)
 	#define v_CEC_FRAME_TYPE(n)	((n & 0x3) << 1)
@@ -1685,7 +1701,7 @@ struct ext_pll_config_tab {
 	u8	pclk_divider_d;
 	u8	vco_div_5;
 	u8	ppll_nd;
-	u8	ppll_nf;
+	u16	ppll_nf;
 	u8	ppll_no;
 };
 

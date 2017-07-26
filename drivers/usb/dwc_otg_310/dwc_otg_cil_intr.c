@@ -507,7 +507,7 @@ static inline void rk_dwc_otg_phy_soft_reset(dwc_otg_core_if_t *core_if)
 	pldata = core_if->otg_dev->pldata;
 	guid.d32 = core_if->core_global_regs->guid;
 
-	if ((cpu_is_rk3288()) && ((guid.d32 & 0x01) == 0)) {
+	if ((is_rk3288_usb()) && ((guid.d32 & 0x01) == 0)) {
 		/* only used for HOST20, OTG HOST do not need.
 		 * first, do soft reset usb phy, and then usb phy
 		 * can drive resume signal.
@@ -1202,8 +1202,11 @@ int32_t dwc_otg_handle_usb_suspend_intr(dwc_otg_core_if_t *core_if)
 			DWC_DEBUGPL(DBG_ANY, "disconnect?\n");
 		}
 #endif
-		/* PCD callback for suspend. Release the lock inside of callback function */
+		/* PCD callback for suspend */
+		DWC_SPINUNLOCK(core_if->lock);
 		cil_pcd_suspend(core_if);
+		DWC_SPINLOCK(core_if->lock);
+
 		if (core_if->power_down == 2) {
 			dcfg.d32 =
 			    DWC_READ_REG32(&core_if->dev_if->dev_global_regs->

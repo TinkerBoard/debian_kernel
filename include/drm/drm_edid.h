@@ -266,11 +266,6 @@ struct detailed_timing {
 
 #define DRM_ELD_CEA_SAD(mnl, sad)	(20 + (mnl) + 3 * (sad))
 
-/* HDMI 2.0 */
-#define DRM_EDID_3D_INDEPENDENT_VIEW	(1 << 2)
-#define DRM_EDID_3D_DUAL_VIEW		(1 << 1)
-#define DRM_EDID_3D_OSD_DISPARITY	(1 << 0)
-
 struct edid {
 	u8 header[8];
 	/* Vendor & product info */
@@ -337,7 +332,8 @@ int drm_load_edid_firmware(struct drm_connector *connector);
 
 int
 drm_hdmi_avi_infoframe_from_display_mode(struct hdmi_avi_infoframe *frame,
-					 const struct drm_display_mode *mode);
+					 const struct drm_display_mode *mode,
+					 bool is_hdmi2);
 int
 drm_hdmi_vendor_infoframe_from_display_mode(struct hdmi_vendor_infoframe *frame,
 					    const struct drm_display_mode *mode);

@@ -17,6 +17,7 @@
 #include <linux/of_device.h>
 #include <linux/of_graph.h>
 #include <linux/regmap.h>
+#include <linux/regulator/consumer.h>
 #include <linux/reset.h>
 #include <linux/clk.h>
 
@@ -47,6 +48,7 @@ struct rockchip_dp_chip_data {
 	u32	lcdsel_big;
 	u32	lcdsel_lit;
 	u32	chip_type;
+	bool	has_vop_sel;
 };
 
 struct rockchip_dp_device {
@@ -58,6 +60,8 @@ struct rockchip_dp_device {
 	struct clk               *pclk;
 	struct regmap            *grf;
 	struct reset_control     *rst;
+	struct regulator         *vcc_supply;
+	struct regulator         *vccio_supply;
 
 	const struct rockchip_dp_chip_data *data;
 
@@ -77,6 +81,24 @@ static int rockchip_dp_poweron(struct analogix_dp_plat_data *plat_data)
 {
 	struct rockchip_dp_device *dp = to_dp(plat_data);
 	int ret;
+
+	if (!IS_ERR(dp->vcc_supply)) {
+		ret = regulator_enable(dp->vcc_supply);
+		if (ret) {
+			dev_err(dp->dev,
+				"failed to enable vcc regulator: %d\n", ret);
+			return ret;
+		}
+	}
+
+	if (!IS_ERR(dp->vccio_supply)) {
+		ret = regulator_enable(dp->vccio_supply);
+		if (ret) {
+			dev_err(dp->dev,
+				"failed to enable vccio regulator: %d\n", ret);
+			return ret;
+		}
+	}
 
 	ret = clk_prepare_enable(dp->pclk);
 	if (ret < 0) {
@@ -98,6 +120,11 @@ static int rockchip_dp_powerdown(struct analogix_dp_plat_data *plat_data)
 	struct rockchip_dp_device *dp = to_dp(plat_data);
 
 	clk_disable_unprepare(dp->pclk);
+
+	if (!IS_ERR(dp->vccio_supply))
+		regulator_disable(dp->vccio_supply);
+	if (!IS_ERR(dp->vcc_supply))
+		regulator_disable(dp->vcc_supply);
 
 	return 0;
 }
@@ -140,6 +167,9 @@ static void rockchip_dp_drm_encoder_enable(struct drm_encoder *encoder)
 	int ret;
 	u32 val;
 
+	if (!dp->data->has_vop_sel)
+		return;
+
 	ret = drm_of_encoder_active_endpoint_id(dp->dev->of_node, encoder);
 	if (ret < 0)
 		return;
@@ -169,6 +199,8 @@ rockchip_dp_drm_encoder_atomic_check(struct drm_encoder *encoder,
 				      struct drm_connector_state *conn_state)
 {
 	struct rockchip_crtc_state *s = to_rockchip_crtc_state(crtc_state);
+	struct drm_connector *connector = conn_state->connector;
+	struct drm_display_info *info = &connector->display_info;
 
 	/*
 	 * The hardware IC designed that VOP must output the RGB10 video
@@ -179,6 +211,8 @@ rockchip_dp_drm_encoder_atomic_check(struct drm_encoder *encoder,
 	 */
 	s->output_mode = ROCKCHIP_OUT_MODE_AAAA;
 	s->output_type = DRM_MODE_CONNECTOR_eDP;
+	if (info->num_bus_formats)
+		s->bus_format = info->bus_formats[0];
 
 	return 0;
 }
@@ -224,15 +258,35 @@ static int rockchip_dp_init(struct rockchip_dp_device *dp)
 		return PTR_ERR(dp->rst);
 	}
 
+	dp->vcc_supply = devm_regulator_get_optional(dev, "vcc");
+	dp->vccio_supply = devm_regulator_get_optional(dev, "vccio");
+
+	if (IS_ERR(dp->vcc_supply)) {
+		dev_err(dev, "failed to get vcc regulator: %ld\n",
+			PTR_ERR(dp->vcc_supply));
+	} else {
+		ret = regulator_enable(dp->vcc_supply);
+		if (ret) {
+			dev_err(dev,
+				"failed to enable vcc regulator: %d\n", ret);
+			return ret;
+		}
+	}
+	if (IS_ERR(dp->vccio_supply)) {
+		dev_err(dev, "failed to get vccio regulator: %ld\n",
+			PTR_ERR(dp->vccio_supply));
+	} else {
+		ret = regulator_enable(dp->vccio_supply);
+		if (ret) {
+			dev_err(dev,
+				"failed to enable vccio regulator: %d\n", ret);
+			return ret;
+		}
+	}
+
 	ret = clk_prepare_enable(dp->pclk);
 	if (ret < 0) {
 		dev_err(dp->dev, "failed to enable pclk %d\n", ret);
-		return ret;
-	}
-
-	ret = rockchip_dp_pre_init(dp);
-	if (ret < 0) {
-		dev_err(dp->dev, "failed to pre init %d\n", ret);
 		return ret;
 	}
 
@@ -267,9 +321,37 @@ static int rockchip_dp_bind(struct device *dev, struct device *master,
 {
 	struct rockchip_dp_device *dp = dev_get_drvdata(dev);
 	const struct rockchip_dp_chip_data *dp_data;
+	struct device_node *panel_node, *port, *endpoint;
+	struct drm_panel *panel = NULL;
 	struct drm_device *drm_dev = data;
 	int ret;
 
+	port = of_graph_get_port_by_id(dev->of_node, 1);
+	if (port) {
+		endpoint = of_get_child_by_name(port, "endpoint");
+		of_node_put(port);
+		if (!endpoint) {
+			dev_err(dev, "no output endpoint found\n");
+			return -EINVAL;
+		}
+
+		panel_node = of_graph_get_remote_port_parent(endpoint);
+		of_node_put(endpoint);
+		if (!panel_node) {
+			dev_err(dev, "no output node found\n");
+			return -EINVAL;
+		}
+
+		panel = of_drm_find_panel(panel_node);
+		if (!panel) {
+			DRM_ERROR("failed to find panel\n");
+			of_node_put(panel_node);
+			return -EPROBE_DEFER;
+		}
+		of_node_put(panel_node);
+	}
+
+	dp->plat_data.panel = panel;
 	/*
 	 * Just like the probe function said, we don't need the
 	 * device drvrate anymore, we should leave the charge to
@@ -319,42 +401,13 @@ static const struct component_ops rockchip_dp_component_ops = {
 static int rockchip_dp_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct device_node *panel_node, *port, *endpoint;
-	struct drm_panel *panel = NULL;
 	struct rockchip_dp_device *dp;
-
-	port = of_graph_get_port_by_id(dev->of_node, 1);
-	if (port) {
-		endpoint = of_get_child_by_name(port, "endpoint");
-		of_node_put(port);
-		if (!endpoint) {
-			dev_err(dev, "no output endpoint found\n");
-			return -EINVAL;
-		}
-
-		panel_node = of_graph_get_remote_port_parent(endpoint);
-		of_node_put(endpoint);
-		if (!panel_node) {
-			dev_err(dev, "no output node found\n");
-			return -EINVAL;
-		}
-
-		panel = of_drm_find_panel(panel_node);
-		if (!panel) {
-			DRM_ERROR("failed to find panel\n");
-			of_node_put(panel_node);
-			return -EPROBE_DEFER;
-		}
-		of_node_put(panel_node);
-	}
 
 	dp = devm_kzalloc(dev, sizeof(*dp), GFP_KERNEL);
 	if (!dp)
 		return -ENOMEM;
 
 	dp->dev = dev;
-
-	dp->plat_data.panel = panel;
 
 	/*
 	 * We just use the drvdata until driver run into component
@@ -385,6 +438,11 @@ static const struct rockchip_dp_chip_data rk3399_edp = {
 	.lcdsel_big = 0 | BIT(21),
 	.lcdsel_lit = BIT(5) | BIT(21),
 	.chip_type = RK3399_EDP,
+	.has_vop_sel = true,
+};
+
+static const struct rockchip_dp_chip_data rk3368_edp = {
+	.chip_type = RK3368_EDP,
 };
 
 static const struct rockchip_dp_chip_data rk3288_dp = {
@@ -392,10 +450,12 @@ static const struct rockchip_dp_chip_data rk3288_dp = {
 	.lcdsel_big = 0 | BIT(21),
 	.lcdsel_lit = BIT(5) | BIT(21),
 	.chip_type = RK3288_DP,
+	.has_vop_sel = true,
 };
 
 static const struct of_device_id rockchip_dp_dt_ids[] = {
 	{.compatible = "rockchip,rk3288-dp", .data = &rk3288_dp },
+	{.compatible = "rockchip,rk3368-edp", .data = &rk3368_edp },
 	{.compatible = "rockchip,rk3399-edp", .data = &rk3399_edp },
 	{}
 };

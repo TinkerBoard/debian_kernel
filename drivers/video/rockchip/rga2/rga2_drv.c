@@ -44,6 +44,7 @@
 #include <linux/rockchip_ion.h>
 #include <linux/version.h>
 #include <linux/pm_runtime.h>
+#include <linux/dma-buf.h>
 
 #include "rga2.h"
 #include "rga2_reg_info.h"
@@ -58,7 +59,7 @@
 #define RGA2_TEST_FLUSH_TIME 0
 #define RGA2_INFO_BUS_ERROR 1
 #define RGA2_POWER_OFF_DELAY	4*HZ /* 4s */
-#define RGA2_TIMEOUT_DELAY	2*HZ /* 2s */
+#define RGA2_TIMEOUT_DELAY	(HZ / 10) /* 100ms */
 #define RGA2_MAJOR		255
 #define RGA2_RESET_TIMEOUT	1000
 
@@ -90,6 +91,7 @@ struct rga2_drvdata_t {
 	struct clk *rga2;
 
 	struct ion_client * ion_client;
+	char version[16];
 };
 
 struct rga2_drvdata_t *rga2_drvdata;
@@ -147,12 +149,51 @@ static inline u32 rga2_read(u32 r)
 	return *((volatile unsigned int *)(rga2_drvdata->rga_base + r));
 }
 
+static inline int rga2_init_version(void)
+{
+	struct rga2_drvdata_t *rga = rga2_drvdata;
+	u32 major_version, minor_version;
+	u32 reg_version;
+
+	if (!rga) {
+		pr_err("rga2_drvdata is null\n");
+		return -EINVAL;
+	}
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+	pm_runtime_get_sync(rga2_drvdata->dev);
+#endif
+
+	clk_prepare_enable(rga2_drvdata->aclk_rga2);
+	clk_prepare_enable(rga2_drvdata->hclk_rga2);
+
+	reg_version = rga2_read(0x028);
+
+	clk_disable_unprepare(rga2_drvdata->aclk_rga2);
+	clk_disable_unprepare(rga2_drvdata->hclk_rga2);
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+	pm_runtime_put(rga2_drvdata->dev);
+#endif
+
+	major_version = (reg_version & RGA2_MAJOR_VERSION_MASK) >> 24;
+	minor_version = (reg_version & RGA2_MINOR_VERSION_MASK) >> 20;
+
+	/*
+	 * some old rga ip has no rga version register, so force set to 2.00
+	 */
+	if (!major_version && !minor_version)
+		major_version = 2;
+	sprintf(rga->version, "%d.%02d", major_version, minor_version);
+
+	return 0;
+}
+
 static void rga2_soft_reset(void)
 {
 	u32 i;
 	u32 reg;
 
-	rga2_write((1 << 3) | (1 << 4), RGA2_SYS_CTRL); //RGA_SYS_CTRL
+	rga2_write((1 << 3) | (1 << 4) | (1 << 6), RGA2_SYS_CTRL);
 
 	for(i = 0; i < RGA2_RESET_TIMEOUT; i++)
 	{
@@ -426,6 +467,13 @@ static struct rga2_reg * rga2_reg_init(rga2_session *session, struct rga2_req *r
         return NULL;
     }
 
+	reg->sg_src0 = req->sg_src0;
+	reg->sg_dst = req->sg_dst;
+	reg->sg_src1 = req->sg_src1;
+	reg->attach_src0 = req->attach_src0;
+	reg->attach_dst = req->attach_dst;
+	reg->attach_src1 = req->attach_src1;
+
     mutex_lock(&rga2_service.lock);
 	list_add_tail(&reg->status_link, &rga2_service.waiting);
 	list_add_tail(&reg->session_link, &session->waiting);
@@ -538,22 +586,65 @@ static void rga2_try_set_reg(void)
 	}
 }
 
-/* Caller must hold rga_service.lock */
+static int rga2_put_dma_buf(struct rga2_req *req, struct rga2_reg *reg)
+{
+	struct dma_buf_attachment *attach = NULL;
+	struct sg_table *sgt = NULL;
+	struct dma_buf *dma_buf = NULL;
+
+	if (!req && !reg)
+		return -EINVAL;
+
+	attach = (!reg) ? req->attach_src0 : reg->attach_src0;
+	sgt = (!reg) ? req->sg_src0 : reg->sg_src0;
+	if (attach && sgt)
+		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
+	if (attach) {
+		dma_buf = attach->dmabuf;
+		dma_buf_detach(dma_buf, attach);
+		dma_buf_put(dma_buf);
+	}
+
+	attach = (!reg) ? req->attach_dst : reg->attach_dst;
+	sgt = (!reg) ? req->sg_dst : reg->sg_dst;
+	if (attach && sgt)
+		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
+	if (attach) {
+		dma_buf = attach->dmabuf;
+		dma_buf_detach(dma_buf, attach);
+		dma_buf_put(dma_buf);
+	}
+
+	attach = (!reg) ? req->attach_src1 : reg->attach_src1;
+	sgt = (!reg) ? req->sg_src1 : reg->sg_src1;
+	if (attach && sgt)
+		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
+	if (attach) {
+		dma_buf = attach->dmabuf;
+		dma_buf_detach(dma_buf, attach);
+		dma_buf_put(dma_buf);
+	}
+
+	return 0;
+}
+
 static void rga2_del_running_list(void)
 {
+	struct rga2_mmu_buf_t *tbuf = &rga2_mmu_buf;
 	struct rga2_reg *reg;
 
-	while(!list_empty(&rga2_service.running))
-	{
-		reg = list_entry(rga2_service.running.next, struct rga2_reg, status_link);
-
-		if(reg->MMU_len != 0)
-		{
-			if (rga2_mmu_buf.back + reg->MMU_len > 2*rga2_mmu_buf.size)
-				rga2_mmu_buf.back = reg->MMU_len + rga2_mmu_buf.size;
+	while (!list_empty(&rga2_service.running)) {
+		reg = list_entry(rga2_service.running.next, struct rga2_reg,
+				 status_link);
+		if (reg->MMU_len && tbuf) {
+			if (tbuf->back + reg->MMU_len > 2 * tbuf->size)
+				tbuf->back = reg->MMU_len + tbuf->size;
 			else
-				rga2_mmu_buf.back += reg->MMU_len;
+				tbuf->back += reg->MMU_len;
 		}
+
+		rga2_put_dma_buf(NULL, reg);
+
 		atomic_sub(1, &reg->session->task_running);
 		atomic_sub(1, &rga2_service.total_running);
 
@@ -567,154 +658,202 @@ static void rga2_del_running_list(void)
 	}
 }
 
-/* Caller must hold rga_service.lock */
 static void rga2_del_running_list_timeout(void)
 {
-    struct rga2_reg *reg;
+	struct rga2_mmu_buf_t *tbuf = &rga2_mmu_buf;
+	struct rga2_reg *reg;
 
-    while(!list_empty(&rga2_service.running))
-    {
-        reg = list_entry(rga2_service.running.next, struct rga2_reg, status_link);
+	while (!list_empty(&rga2_service.running)) {
+		reg = list_entry(rga2_service.running.next, struct rga2_reg,
+				 status_link);
+		kfree(reg->MMU_base);
+		if (reg->MMU_len && tbuf) {
+			if (tbuf->back + reg->MMU_len > 2 * tbuf->size)
+				tbuf->back = reg->MMU_len + tbuf->size;
+			else
+				tbuf->back += reg->MMU_len;
+		}
 
-        if(reg->MMU_base != NULL)
-        {
-            kfree(reg->MMU_base);
-        }
+		rga2_put_dma_buf(NULL, reg);
 
-        atomic_sub(1, &reg->session->task_running);
-        atomic_sub(1, &rga2_service.total_running);
-
-        rga2_soft_reset();
-
-        if(list_empty(&reg->session->waiting))
-        {
-            atomic_set(&reg->session->done, 1);
-            wake_up(&reg->session->wait);
-        }
-
-        rga2_reg_deinit(reg);
-    }
+		atomic_sub(1, &reg->session->task_running);
+		atomic_sub(1, &rga2_service.total_running);
+		rga2_soft_reset();
+		if (list_empty(&reg->session->waiting)) {
+			atomic_set(&reg->session->done, 1);
+			wake_up(&reg->session->wait);
+		}
+		rga2_reg_deinit(reg);
+	}
+	return;
 }
 
-static int rga2_convert_dma_buf(struct rga2_req *req)
+static int rga2_get_img_info(rga_img_info_t *img,
+			     u8 mmu_flag,
+			     u8 buf_gem_type_dma,
+			     struct sg_table **psgt,
+			     struct dma_buf_attachment **pattach)
 {
-	struct ion_handle *hdl;
+	struct dma_buf_attachment *attach = NULL;
+	struct ion_client *ion_client = NULL;
+	struct ion_handle *hdl = NULL;
+	struct device *rga_dev = NULL;
+	struct sg_table *sgt = NULL;
+	struct dma_buf *dma_buf = NULL;
+	u32 vir_w, vir_h;
 	ion_phys_addr_t phy_addr;
-	size_t len;
-	int ret;
-	uint32_t src_vir_w, dst_vir_w;
+	size_t len = 0;
+	int yrgb_addr = -1;
+	int ret = 0;
 
-	src_vir_w = req->src.vir_w;
-	dst_vir_w = req->dst.vir_w;
+	ion_client = rga2_drvdata->ion_client;
+	rga_dev = rga2_drvdata->dev;
+	yrgb_addr = (int)img->yrgb_addr;
+	vir_w = img->vir_w;
+	vir_h = img->vir_h;
 
+	if (yrgb_addr > 0) {
+		if (buf_gem_type_dma) {
+			dma_buf = dma_buf_get(img->yrgb_addr);
+			if (IS_ERR(dma_buf)) {
+				ret = -EINVAL;
+				pr_err("dma_buf_get fail fd[%d]\n", yrgb_addr);
+				return ret;
+			}
+
+			attach = dma_buf_attach(dma_buf, rga_dev);
+			if (IS_ERR(attach)) {
+				dma_buf_put(dma_buf);
+				ret = -EINVAL;
+				pr_err("Failed to attach dma_buf\n");
+				return ret;
+			}
+
+			*pattach = attach;
+			sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+			if (IS_ERR(sgt)) {
+				ret = -EINVAL;
+				pr_err("Failed to map src attachment\n");
+				goto err_get_sg;
+			}
+			if (!mmu_flag) {
+				ret = -EINVAL;
+				pr_err("Fix it please enable iommu flag\n");
+				goto err_get_sg;
+			}
+		} else {
+			hdl = ion_import_dma_buf(ion_client, img->yrgb_addr);
+			if (IS_ERR(hdl)) {
+				ret = -EINVAL;
+				pr_err("RGA2 ERROR ion buf handle\n");
+				return ret;
+			}
+			if (mmu_flag) {
+				sgt = ion_sg_table(ion_client, hdl);
+				if (IS_ERR(sgt)) {
+					ret = -EINVAL;
+					pr_err("Fail map src attachment\n");
+					goto err_get_sg;
+				}
+			}
+		}
+
+		if (mmu_flag) {
+			*psgt = sgt;
+			img->yrgb_addr = img->uv_addr;
+			img->uv_addr = img->yrgb_addr + (vir_w * vir_h);
+			img->v_addr = img->uv_addr + (vir_w * vir_h) / 4;
+		} else {
+			ion_phys(ion_client, hdl, &phy_addr, &len);
+			img->yrgb_addr = phy_addr;
+			img->uv_addr = img->yrgb_addr + (vir_w * vir_h);
+			img->v_addr = img->uv_addr + (vir_w * vir_h) / 4;
+		}
+	} else {
+		img->yrgb_addr = img->uv_addr;
+		img->uv_addr = img->yrgb_addr + (vir_w * vir_h);
+		img->v_addr = img->uv_addr + (vir_w * vir_h) / 4;
+	}
+
+	if (hdl)
+		ion_free(ion_client, hdl);
+
+	return ret;
+
+err_get_sg:
+	if (hdl)
+		ion_free(ion_client, hdl);
+	if (sgt && buf_gem_type_dma)
+		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
+	if (attach) {
+		dma_buf = attach->dmabuf;
+		dma_buf_detach(dma_buf, attach);
+		*pattach = NULL;
+		dma_buf_put(dma_buf);
+	}
+	return ret;
+}
+
+static int rga2_get_dma_buf(struct rga2_req *req)
+{
+	struct dma_buf *dma_buf = NULL;
+	u8 buf_gem_type_dma = 0;
+	u8 mmu_flag = 0;
+	int ret = 0;
+
+	buf_gem_type_dma = req->buf_type & RGA_BUF_GEM_TYPE_DMA;
 	req->sg_src0 = NULL;
 	req->sg_src1 = NULL;
-	req->sg_dst  = NULL;
-	req->sg_els  = NULL;
-
-	if ((int)req->src.yrgb_addr > 0) {
-		hdl = ion_import_dma_buf(rga2_drvdata->ion_client,
-					 req->src.yrgb_addr);
-		if (IS_ERR(hdl)) {
-			ret = PTR_ERR(hdl);
-			printk("RGA2 SRC ERROR ion buf handle\n");
-			return ret;
-		}
-		if (req->mmu_info.src0_mmu_flag) {
-			req->sg_src0 = ion_sg_table(rga2_drvdata->ion_client,
-						    hdl);
-			req->src.yrgb_addr = req->src.uv_addr;
-			req->src.uv_addr = req->src.yrgb_addr
-					+ (src_vir_w * req->src.vir_h);
-			req->src.v_addr = req->src.uv_addr
-					+ (src_vir_w * req->src.vir_h) / 4;
-		} else {
-			ion_phys(rga2_drvdata->ion_client, hdl, &phy_addr,
-				 &len);
-			req->src.yrgb_addr = phy_addr;
-			req->src.uv_addr = req->src.yrgb_addr
-					+ (src_vir_w * req->src.vir_h);
-			req->src.v_addr = req->src.uv_addr
-					+ (src_vir_w * req->src.vir_h) / 4;
-		}
-		ion_free(rga2_drvdata->ion_client, hdl);
-	} else {
-		req->src.yrgb_addr = req->src.uv_addr;
-		req->src.uv_addr = req->src.yrgb_addr
-					+ (src_vir_w * req->src.vir_h);
-		req->src.v_addr = req->src.uv_addr
-					+ (src_vir_w * req->src.vir_h) / 4;
+	req->sg_dst = NULL;
+	req->sg_els = NULL;
+	req->attach_src0 = NULL;
+	req->attach_dst = NULL;
+	req->attach_src1 = NULL;
+	mmu_flag = req->mmu_info.src0_mmu_flag;
+	ret = rga2_get_img_info(&req->src, mmu_flag, buf_gem_type_dma,
+				&req->sg_src0, &req->attach_src0);
+	if (ret) {
+		pr_err("src:rga2_get_img_info fail\n");
+		goto err_src;
 	}
 
-	if ((int)req->dst.yrgb_addr > 0) {
-		hdl = ion_import_dma_buf(rga2_drvdata->ion_client,
-					 req->dst.yrgb_addr);
-		if (IS_ERR(hdl)) {
-			ret = PTR_ERR(hdl);
-			printk("RGA2 DST ERROR ion buf handle\n");
-			return ret;
-		}
-		if (req->mmu_info.dst_mmu_flag) {
-			req->sg_dst = ion_sg_table(rga2_drvdata->ion_client,
-						   hdl);
-			req->dst.yrgb_addr = req->dst.uv_addr;
-			req->dst.uv_addr = req->dst.yrgb_addr
-					+ (dst_vir_w * req->dst.vir_h);
-			req->dst.v_addr = req->dst.uv_addr
-					+ (dst_vir_w * req->dst.vir_h) / 4;
-		} else {
-			ion_phys(rga2_drvdata->ion_client, hdl, &phy_addr,
-				 &len);
-			req->dst.yrgb_addr = phy_addr;
-			req->dst.uv_addr = req->dst.yrgb_addr
-					+ (dst_vir_w * req->dst.vir_h);
-			req->dst.v_addr = req->dst.uv_addr
-					+ (dst_vir_w * req->dst.vir_h) / 4;
-		}
-		ion_free(rga2_drvdata->ion_client, hdl);
-	} else {
-		req->dst.yrgb_addr = req->dst.uv_addr;
-		req->dst.uv_addr = req->dst.yrgb_addr
-					+ (dst_vir_w * req->dst.vir_h);
-		req->dst.v_addr = req->dst.uv_addr
-					+ (dst_vir_w * req->dst.vir_h) / 4;
+	mmu_flag = req->mmu_info.dst_mmu_flag;
+	ret = rga2_get_img_info(&req->dst, mmu_flag, buf_gem_type_dma,
+				&req->sg_dst, &req->attach_dst);
+	if (ret) {
+		pr_err("dst:rga2_get_img_info fail\n");
+		goto err_dst;
 	}
 
-	if ((int)req->src1.yrgb_addr > 0) {
-		hdl = ion_import_dma_buf(rga2_drvdata->ion_client,
-					 req->src1.yrgb_addr);
-		if (IS_ERR(hdl)) {
-			ret = PTR_ERR(hdl);
-			printk("RGA2 ERROR ion buf handle\n");
-			return ret;
-		}
-		if (req->mmu_info.dst_mmu_flag) {
-			req->sg_src1 = ion_sg_table(rga2_drvdata->ion_client,
-						    hdl);
-			req->src1.yrgb_addr = req->src1.uv_addr;
-			req->src1.uv_addr = req->src1.yrgb_addr
-					+ (req->src1.vir_w * req->src1.vir_h);
-			req->src1.v_addr = req->src1.uv_addr
-				+ (req->src1.vir_w * req->src1.vir_h) / 4;
-		} else {
-			ion_phys(rga2_drvdata->ion_client, hdl, &phy_addr,
-				 &len);
-			req->src1.yrgb_addr = phy_addr;
-			req->src1.uv_addr = req->src1.yrgb_addr
-					+ (req->src1.vir_w * req->src1.vir_h);
-			req->src1.v_addr = req->src1.uv_addr
-				+ (req->src1.vir_w * req->src1.vir_h) / 4;
-		}
-		ion_free(rga2_drvdata->ion_client, hdl);
-	} else {
-		req->src1.yrgb_addr = req->src1.uv_addr;
-		req->src1.uv_addr = req->src1.yrgb_addr
-					+ (req->src1.vir_w * req->src1.vir_h);
-		req->src1.v_addr = req->src1.uv_addr
-				+ (req->src1.vir_w * req->src1.vir_h) / 4;
+	mmu_flag = req->mmu_info.src1_mmu_flag;
+	ret = rga2_get_img_info(&req->src1, mmu_flag, buf_gem_type_dma,
+				&req->sg_src1, &req->attach_src1);
+	if (ret) {
+		pr_err("src1:rga2_get_img_info fail\n");
+		goto err_src1;
 	}
 
-	return 0;
+	return ret;
+
+err_src1:
+	if (buf_gem_type_dma && req->sg_dst && req->attach_dst) {
+		dma_buf_unmap_attachment(req->attach_dst,
+					 req->sg_dst, DMA_BIDIRECTIONAL);
+		dma_buf = req->attach_dst->dmabuf;
+		dma_buf_detach(dma_buf, req->attach_dst);
+		dma_buf_put(dma_buf);
+	}
+err_dst:
+	if (buf_gem_type_dma && req->sg_src0 && req->attach_src0) {
+		dma_buf_unmap_attachment(req->attach_src0,
+					 req->sg_src0, DMA_BIDIRECTIONAL);
+		dma_buf = req->attach_src0->dmabuf;
+		dma_buf_detach(dma_buf, req->attach_src0);
+		dma_buf_put(dma_buf);
+	}
+err_src:
+
+	return ret;
 }
 
 static int rga2_blit(rga2_session *session, struct rga2_req *req)
@@ -723,8 +862,8 @@ static int rga2_blit(rga2_session *session, struct rga2_req *req)
 	int num = 0;
 	struct rga2_reg *reg;
 
-	if(rga2_convert_dma_buf(req)) {
-		printk("RGA2 : DMA buf copy error\n");
+	if (rga2_get_dma_buf(req)) {
+		pr_err("RGA2 : DMA buf copy error\n");
 		return -EFAULT;
 	}
 
@@ -732,16 +871,17 @@ static int rga2_blit(rga2_session *session, struct rga2_req *req)
 		/* check value if legal */
 		ret = rga2_check_param(req);
 		if(ret == -EINVAL) {
-			printk("req argument is inval\n");
-			break;
+			pr_err("req argument is inval\n");
+			goto err_put_dma_buf;
 		}
 
 		reg = rga2_reg_init(session, req);
 		if(reg == NULL) {
-			break;
+			pr_err("init reg fail\n");
+			goto err_put_dma_buf;
 		}
-		num = 1;
 
+		num = 1;
 		mutex_lock(&rga2_service.lock);
 		atomic_add(num, &rga2_service.total_running);
 		rga2_try_set_reg();
@@ -750,6 +890,9 @@ static int rga2_blit(rga2_session *session, struct rga2_req *req)
 		return 0;
 	}
 	while(0);
+
+err_put_dma_buf:
+	rga2_put_dma_buf(req, NULL);
 
 	return -EFAULT;
 }
@@ -775,8 +918,14 @@ static int rga2_blit_async(rga2_session *session, struct rga2_req *req)
 
 static int rga2_blit_sync(rga2_session *session, struct rga2_req *req)
 {
+	struct rga2_req req_bak;
+	int restore = 0;
+	int try = 10;
 	int ret = -1;
 	int ret_timeout = 0;
+
+	memcpy(&req_bak, req, sizeof(req_bak));
+retry:
 
 #if RGA2_TEST_MSG
 	if (1) {//req->bitblt_mode == 0x2) {
@@ -819,17 +968,45 @@ static int rga2_blit_sync(rga2_session *session, struct rga2_req *req)
 	rga2_end = ktime_sub(rga2_end, rga2_start);
 	printk("sync one cmd end time %d\n", (int)ktime_to_us(rga2_end));
 #endif
+	if (ret == -ETIMEDOUT && try--) {
+		memcpy(req, &req_bak, sizeof(req_bak));
+		/*
+		 * if rga work timeout with scaling, need do a non-scale work
+		 * first, restore hardware status, then do actually work.
+		 */
+		if (req->src.act_w != req->dst.act_w ||
+		    req->src.act_h != req->dst.act_h) {
+			req->src.act_w = MIN(320, MIN(req->src.act_w,
+						      req->dst.act_w));
+			req->src.act_h = MIN(240, MIN(req->src.act_h,
+						      req->dst.act_h));
+			req->dst.act_w = req->src.act_w;
+			req->dst.act_h = req->src.act_h;
+			restore = 1;
+		}
+		goto retry;
+	}
+	if (!ret && restore) {
+		memcpy(req, &req_bak, sizeof(req_bak));
+		restore = 0;
+		goto retry;
+	}
 
 	return ret;
-	}
+}
 
 static long rga_ioctl(struct file *file, uint32_t cmd, unsigned long arg)
 {
+	struct rga2_drvdata_t *rga = rga2_drvdata;
 	struct rga2_req req, req_first;
 	struct rga_req req_rga;
 	int ret = 0;
 	rga2_session *session;
 
+	if (!rga) {
+		pr_err("rga2_drvdata is null, rga2 is not init\n");
+		return -ENODEV;
+	}
 	memset(&req, 0x0, sizeof(req));
 
 	mutex_lock(&rga2_service.mutex);
@@ -936,8 +1113,7 @@ static long rga_ioctl(struct file *file, uint32_t cmd, unsigned long arg)
 			break;
 		case RGA_GET_VERSION:
 		case RGA2_GET_VERSION:
-			ret = copy_to_user((void *)arg, RGA2_VERSION, sizeof(RGA2_VERSION));
-			//ret = 0;
+			ret = copy_to_user((void *)arg, rga->version, 16);
 			break;
 		default:
 			ERR("unknown ioctl cmd!\n");
@@ -953,11 +1129,16 @@ static long rga_ioctl(struct file *file, uint32_t cmd, unsigned long arg)
 #ifdef CONFIG_COMPAT
 static long compat_rga_ioctl(struct file *file, uint32_t cmd, unsigned long arg)
 {
+	struct rga2_drvdata_t *rga = rga2_drvdata;
 	struct rga2_req req, req_first;
 	struct rga_req_32 req_rga;
 	int ret = 0;
 	rga2_session *session;
 
+	if (!rga) {
+		pr_err("rga2_drvdata is null, rga2 is not init\n");
+		return -ENODEV;
+	}
 	memset(&req, 0x0, sizeof(req));
 
 	mutex_lock(&rga2_service.mutex);
@@ -1069,8 +1250,7 @@ static long compat_rga_ioctl(struct file *file, uint32_t cmd, unsigned long arg)
 			break;
 		case RGA_GET_VERSION:
 		case RGA2_GET_VERSION:
-			ret = copy_to_user((void *)arg, RGA2_VERSION, sizeof(RGA2_VERSION));
-			//ret = 0;
+			ret = copy_to_user((void *)arg, rga->version, 16);
 			break;
 		default:
 			ERR("unknown ioctl cmd!\n");
@@ -1275,12 +1455,11 @@ static int rga2_drv_probe(struct platform_device *pdev)
 		ERR("cannot register miscdev (%d)\n", ret);
 		goto err_misc_register;
 	}
-
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 	pm_runtime_enable(&pdev->dev);
 #endif
-
-	pr_info("Driver loaded succesfully\n");
+	rga2_init_version();
+	pr_info("Driver loaded successfully ver:%s\n", rga2_drvdata->version);
 
 	return 0;
 
@@ -1334,11 +1513,17 @@ static int __init rga2_init(void)
 {
 	int ret;
 	uint32_t *buf_p;
+	uint32_t *buf;
 
 	/* malloc pre scale mid buf mmu table */
 	buf_p = kmalloc(1024*256, GFP_KERNEL);
 	rga2_mmu_buf.buf_virtual = buf_p;
-	rga2_mmu_buf.buf = (uint32_t *)virt_to_phys((void *)((unsigned long)buf_p));
+#if (defined(CONFIG_ARM) && defined(CONFIG_ARM_LPAE))
+	buf = (uint32_t *)(uint32_t)virt_to_phys((void *)((unsigned long)buf_p));
+#else
+	buf = (uint32_t *)virt_to_phys((void *)((unsigned long)buf_p));
+#endif
+	rga2_mmu_buf.buf = buf;
 	rga2_mmu_buf.front = 0;
 	rga2_mmu_buf.back = 64*1024;
 	rga2_mmu_buf.size = 64*1024;
@@ -1529,7 +1714,7 @@ void rga2_test_0(void)
 }
 #endif
 
-module_init(rga2_init);
+late_initcall(rga2_init);
 module_exit(rga2_exit);
 
 /* Module information */

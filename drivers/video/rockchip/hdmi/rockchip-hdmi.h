@@ -8,10 +8,13 @@
 #include <linux/switch.h>
 #endif
 #include <sound/pcm_params.h>
+#include <linux/reboot.h>
 
 #define HDMI_VIDEO_NORMAL				0
 #define HDMI_VIDEO_DMT					BIT(9)
 #define HDMI_VIDEO_YUV420				BIT(10)
+#define HDMI_VIDEO_DISCRETE_VR				BIT(11)
+
 #define HDMI_VIC_MASK					(0xFF)
 #define HDMI_TYPE_MASK					(0xFF << 8)
 #define HDMI_MAX_ID					4
@@ -235,7 +238,7 @@ enum hdmi_hotpulg_status {
 	HDMI_HPD_INSERT,	/* HDMI is connected, but HDP is low
 				 * or TMDS link is not pull up to 3.3V.
 				 */
-	HDMI_HPD_ACTIVED	/* HDMI is connected, all singnal
+	HDMI_HPD_ACTIVATED	/* HDMI is connected, all singnal
 				 * is normal
 				 */
 };
@@ -272,6 +275,7 @@ struct hdmi_video {
 	unsigned int colorimetry;	/* Output Colorimetry */
 	unsigned int sink_hdmi;		/* Output signal is DVI or HDMI*/
 	unsigned int format_3d;		/* Output 3D mode*/
+	unsigned int eotf;		/* EOTF */
 };
 
 /* HDMI Audio Parameters */
@@ -282,7 +286,66 @@ struct hdmi_audio {
 	u32	word_length;		/*Audio data word length*/
 };
 
+enum hdmi_hdr_eotf {
+	EOTF_TRADITIONAL_GMMA_SDR = 1,
+	EOFT_TRADITIONAL_GMMA_HDR = 2,
+	EOTF_ST_2084 = 4,
+};
+
+struct hdmi_hdr_metadata {
+	u32	prim_x0;
+	u32	prim_y0;
+	u32	prim_x1;
+	u32	prim_y1;
+	u32	prim_x2;
+	u32	prim_y2;
+	u32	white_px;
+	u32	white_py;
+	u32	max_dml;
+	u32	min_dml;
+	u32	max_cll;		/*max content light level*/
+	u32	max_fall;		/*max frame-average light level*/
+};
+
+struct hdmi_hdr {
+	u8	eotf;
+	u8	metadata;	/*Staic Metadata Descriptor*/
+	u8	maxluminance;
+	u8	max_average_luminance;
+	u8	minluminance;
+};
+
 #define HDMI_MAX_EDID_BLOCK		8
+
+struct edid_prop_value {
+	int vid;
+	int pid;
+	int sn;
+	int xres;
+	int yres;
+	int vic;
+	int width;
+	int height;
+	int x_w;
+	int x_h;
+	int hwrotation;
+	int einit;
+	int vsync;
+	int panel;
+	int scan;
+};
+
+struct edid_prop_data {
+	struct edid_prop_value value;
+
+	int valid;
+	int last_vid;
+	int last_pid;
+	int last_sn;
+	int last_xres;
+	int last_yres;
+};
+
 /* HDMI EDID Information */
 struct hdmi_edid {
 	unsigned char sink_hdmi;	/* HDMI display device flag */
@@ -312,6 +375,8 @@ struct hdmi_edid {
 	unsigned char dual_view;
 	unsigned char osd_disparity_3d;
 
+	struct edid_prop_value value;
+
 	unsigned int colorimetry;
 	struct fb_monspecs	*specs;	/*Device spec*/
 	struct list_head modelist;	/*Device supported display mode list*/
@@ -320,7 +385,11 @@ struct hdmi_edid {
 	unsigned int  audio_num;	/*Device supported audio type number*/
 
 	unsigned int status;		/*EDID read status, success or failed*/
-	char *raw[HDMI_MAX_EDID_BLOCK]; /*Raw EDID Data*/
+	u8 *raw[HDMI_MAX_EDID_BLOCK];	/*Raw EDID Data*/
+	union {
+		u8	data[5];
+		struct hdmi_hdr hdrinfo;
+	} hdr;
 };
 
 struct hdmi;
@@ -337,6 +406,8 @@ struct hdmi_ops {
 	int (*setmute)(struct hdmi *, int);
 	int (*setvsi)(struct hdmi *, unsigned char, unsigned char);
 	int (*setcec)(struct hdmi *);
+	void (*sethdr)(struct hdmi *, int, struct hdmi_hdr_metadata *);
+	void (*setavi)(struct hdmi *, struct hdmi_video *);
 	/* call back for hdcp operatoion */
 	void (*hdcp_cb)(struct hdmi *);
 	void (*hdcp_auth2nd)(struct hdmi *);
@@ -359,7 +430,8 @@ enum rk_hdmi_feature {
 	SUPPORT_HDCP		=	(1 << 10),
 	SUPPORT_HDCP2		=	(1 << 11),
 	SUPPORT_YCBCR_INPUT	=	(1 << 12),
-	SUPPORT_VESA_DMT	=	(1 << 13)
+	SUPPORT_VESA_DMT	=	(1 << 13),
+	SUPPORT_RK_DISCRETE_VR	=	(1 << 14)
 };
 
 struct hdmi_property {
@@ -368,6 +440,7 @@ struct hdmi_property {
 	int display;
 	int feature;
 	int defaultmode;
+	int defaultdepth;
 	void *priv;
 };
 
@@ -412,10 +485,17 @@ struct hdmi {
 	int colormode;			/* Output color mode*/
 	int colorimetry;		/* Output colorimetry */
 	struct hdmi_edid edid;		/* EDID information*/
+	struct edid_prop_data prop;	/* Property for dp */
+	struct edid_prop_value *pvalue;
+	int nstates;
+	int edid_auto_support;		/* Auto dp enable flag */
+
 	int enable;			/* Enable flag*/
 	int sleep;			/* Sleep flag*/
 	int vic;			/* HDMI output video information code*/
 	int mode_3d;			/* HDMI output video 3d mode*/
+	int eotf;			/* HDMI HDR EOTF */
+	struct hdmi_hdr_metadata hdr;	/* HDMI HDR MedeData */
 	struct hdmi_audio audio;	/* HDMI output audio information.*/
 	struct hdmi_video video;	/* HDMI output video information.*/
 	int xscale;
@@ -480,6 +560,7 @@ struct hdmi {
 #define HDMI_SET_COLOR			(HDMI_SYSFS_SRC		| 10)
 #define HDMI_ENABLE_HDCP		(HDMI_SYSFS_SRC		| 11)
 #define HDMI_HDCP_AUTH_2ND		(HDMI_IRQ_SRC		| 12)
+#define HDMI_SET_HDR			(HDMI_SYSFS_SRC		| 13)
 
 #define HDMI_DEFAULT_SCALE		95
 #define HDMI_AUTO_CONFIG		false
@@ -496,12 +577,11 @@ struct hdmi {
 #define HDMI_AUDIO_DEFAULT_RATE			HDMI_AUDIO_FS_44100
 #define HDMI_AUDIO_DEFAULT_WORDLENGTH	HDMI_AUDIO_WORD_LENGTH_16bit
 
-#ifdef DEBUG
-#define DBG(format, ...) \
-		pr_info(format, ## __VA_ARGS__)
-#else
-#define DBG(format, ...)
-#endif
+extern int hdmi_dbg_level;
+#define HDMIDBG(x, format, ...) do {			\
+	if (unlikely(hdmi_dbg_level >= x))	\
+		pr_info(format, ## __VA_ARGS__); \
+			} while (0)
 
 struct hdmi *rockchip_hdmi_register(struct hdmi_property *property,
 				    struct hdmi_ops *ops);
@@ -513,7 +593,7 @@ struct rk_display_device *hdmi_register_display_sysfs(struct hdmi *hdmi,
 						      struct device *parent);
 void hdmi_unregister_display_sysfs(struct hdmi *hdmi);
 
-int hdmi_edid_parse_base(unsigned char *buf,
+int hdmi_edid_parse_base(struct hdmi *hdmi, unsigned char *buf,
 			 int *extend_num, struct hdmi_edid *pedid);
 int hdmi_edid_parse_extensions(unsigned char *buf,
 			       struct hdmi_edid *pedid);

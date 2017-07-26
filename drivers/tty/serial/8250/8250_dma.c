@@ -54,10 +54,10 @@ static void __dma_rx_complete(void *param)
 	struct tty_port		*tty_port = &p->port.state->port;
 	struct dma_tx_state	state;
 	int			count;
-	unsigned long	flags;
+	unsigned long		flags;
 
 	spin_lock_irqsave(&p->port.lock, flags);
-	del_timer_sync(&dma->dma_rx_timer);
+	del_timer(&dma->dma_rx_timer);
 	dma->rx_running = 0;
 	dmaengine_tx_status(dma->rxchan, dma->rx_cookie, &state);
 
@@ -83,7 +83,7 @@ void __dma_rx_timer_callback(unsigned long param)
 	struct tty_port		*tty_port = &p->port.state->port;
 	struct dma_tx_state	state;
 	int			count;
-	unsigned long	flags;
+	unsigned long		flags;
 
 	if (dma->rx_running == 0)
 		return;

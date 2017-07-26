@@ -265,7 +265,7 @@ mode_fixup(struct drm_atomic_state *state)
 	struct drm_connector *connector;
 	struct drm_connector_state *conn_state;
 	int i;
-	bool ret;
+	int ret;
 
 	for_each_crtc_in_state(state, crtc, crtc_state, i) {
 		if (!crtc_state->mode_changed &&
@@ -579,6 +579,7 @@ disable_outputs(struct drm_device *dev, struct drm_atomic_state *old_state)
 
 	for_each_connector_in_state(old_state, connector, old_conn_state, i) {
 		const struct drm_encoder_helper_funcs *funcs;
+		const struct drm_connector_helper_funcs *conn_funcs;
 		struct drm_encoder *encoder;
 		struct drm_crtc_state *old_crtc_state;
 
@@ -606,6 +607,21 @@ disable_outputs(struct drm_device *dev, struct drm_atomic_state *old_state)
 		DRM_DEBUG_ATOMIC("disabling [ENCODER:%d:%s]\n",
 				 encoder->base.id, encoder->name);
 
+		conn_funcs = connector->helper_private;
+		if (connector->loader_protect) {
+			drm_bridge_pre_enable(encoder->bridge);
+
+			if (funcs->enable)
+				funcs->enable(encoder);
+			else
+				funcs->commit(encoder);
+
+			drm_bridge_enable(encoder->bridge);
+
+			if (conn_funcs->loader_protect)
+				conn_funcs->loader_protect(connector, false);
+			connector->loader_protect = false;
+		}
 		/*
 		 * Each encoder has at most one connector (since we always steal
 		 * it away), so we won't call disable hooks twice.
@@ -1504,10 +1520,9 @@ retry:
 	plane_state->src_h = src_h;
 	plane_state->src_w = src_w;
 
-	if (plane == crtc->cursor)
-		state->legacy_cursor_update = true;
+	state->legacy_cursor_update = true;
 
-	ret = drm_atomic_async_commit(state);
+	ret = drm_atomic_commit(state);
 	if (ret != 0)
 		goto fail;
 
@@ -1573,8 +1588,7 @@ retry:
 		goto fail;
 	}
 
-	if (plane_state->crtc && (plane == plane->crtc->cursor))
-		plane_state->state->legacy_cursor_update = true;
+	plane_state->state->legacy_cursor_update = true;
 
 	ret = __drm_atomic_helper_disable_plane(plane, plane_state);
 	if (ret != 0)
@@ -2351,8 +2365,12 @@ EXPORT_SYMBOL(drm_atomic_helper_connector_dpms);
  */
 void drm_atomic_helper_crtc_reset(struct drm_crtc *crtc)
 {
-	if (crtc->state && crtc->state->mode_blob)
+	if (crtc->state) {
 		drm_property_unreference_blob(crtc->state->mode_blob);
+		drm_property_unreference_blob(crtc->state->degamma_lut);
+		drm_property_unreference_blob(crtc->state->ctm);
+		drm_property_unreference_blob(crtc->state->gamma_lut);
+	}
 	kfree(crtc->state);
 	crtc->state = kzalloc(sizeof(*crtc->state), GFP_KERNEL);
 
@@ -2376,10 +2394,17 @@ void __drm_atomic_helper_crtc_duplicate_state(struct drm_crtc *crtc,
 
 	if (state->mode_blob)
 		drm_property_reference_blob(state->mode_blob);
+	if (state->degamma_lut)
+		drm_property_reference_blob(state->degamma_lut);
+	if (state->ctm)
+		drm_property_reference_blob(state->ctm);
+	if (state->gamma_lut)
+		drm_property_reference_blob(state->gamma_lut);
 	state->mode_changed = false;
 	state->active_changed = false;
 	state->planes_changed = false;
 	state->connectors_changed = false;
+	state->color_mgmt_changed = false;
 	state->event = NULL;
 }
 EXPORT_SYMBOL(__drm_atomic_helper_crtc_duplicate_state);
@@ -2419,8 +2444,10 @@ EXPORT_SYMBOL(drm_atomic_helper_crtc_duplicate_state);
 void __drm_atomic_helper_crtc_destroy_state(struct drm_crtc *crtc,
 					    struct drm_crtc_state *state)
 {
-	if (state->mode_blob)
-		drm_property_unreference_blob(state->mode_blob);
+	drm_property_unreference_blob(state->mode_blob);
+	drm_property_unreference_blob(state->degamma_lut);
+	drm_property_unreference_blob(state->ctm);
+	drm_property_unreference_blob(state->gamma_lut);
 }
 EXPORT_SYMBOL(__drm_atomic_helper_crtc_destroy_state);
 
@@ -2710,3 +2737,97 @@ void drm_atomic_helper_connector_destroy_state(struct drm_connector *connector,
 	kfree(state);
 }
 EXPORT_SYMBOL(drm_atomic_helper_connector_destroy_state);
+
+/**
+ * drm_atomic_helper_legacy_gamma_set - set the legacy gamma correction table
+ * @crtc: CRTC object
+ * @red: red correction table
+ * @green: green correction table
+ * @blue: green correction table
+ * @start:
+ * @size: size of the tables
+ *
+ * Implements support for legacy gamma correction table for drivers
+ * that support color management through the DEGAMMA_LUT/GAMMA_LUT
+ * properties.
+ */
+void drm_atomic_helper_legacy_gamma_set(struct drm_crtc *crtc,
+					u16 *red, u16 *green, u16 *blue,
+					uint32_t start, uint32_t size)
+{
+	struct drm_device *dev = crtc->dev;
+	struct drm_mode_config *config = &dev->mode_config;
+	struct drm_atomic_state *state;
+	struct drm_crtc_state *crtc_state;
+	struct drm_property_blob *blob = NULL;
+	struct drm_color_lut *blob_data;
+	int i, ret = 0;
+
+	state = drm_atomic_state_alloc(crtc->dev);
+	if (!state)
+		return;
+
+	blob = drm_property_create_blob(dev,
+					sizeof(struct drm_color_lut) * size,
+					NULL);
+	if (!blob) {
+		ret = -ENOMEM;
+		goto fail;
+	}
+
+	/* Prepare GAMMA_LUT with the legacy values. */
+	blob_data = (struct drm_color_lut *) blob->data;
+	for (i = 0; i < size; i++) {
+		blob_data[i].red = red[i];
+		blob_data[i].green = green[i];
+		blob_data[i].blue = blue[i];
+	}
+
+	state->acquire_ctx = crtc->dev->mode_config.acquire_ctx;
+retry:
+	crtc_state = drm_atomic_get_crtc_state(state, crtc);
+	if (IS_ERR(crtc_state)) {
+		ret = PTR_ERR(crtc_state);
+		goto fail;
+	}
+
+	/* Reset DEGAMMA_LUT and CTM properties. */
+	ret = drm_atomic_crtc_set_property(crtc, crtc_state,
+			config->degamma_lut_property, 0);
+	if (ret)
+		goto fail;
+
+	ret = drm_atomic_crtc_set_property(crtc, crtc_state,
+			config->ctm_property, 0);
+	if (ret)
+		goto fail;
+
+	ret = drm_atomic_crtc_set_property(crtc, crtc_state,
+			config->gamma_lut_property, blob->base.id);
+	if (ret)
+		goto fail;
+
+	ret = drm_atomic_commit(state);
+	if (ret)
+		goto fail;
+
+	/* Driver takes ownership of state on successful commit. */
+
+	drm_property_unreference_blob(blob);
+
+	return;
+fail:
+	if (ret == -EDEADLK)
+		goto backoff;
+
+	drm_atomic_state_free(state);
+	drm_property_unreference_blob(blob);
+
+	return;
+backoff:
+	drm_atomic_state_clear(state);
+	drm_atomic_legacy_backoff(state);
+
+	goto retry;
+}
+EXPORT_SYMBOL(drm_atomic_helper_legacy_gamma_set);

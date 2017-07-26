@@ -211,6 +211,7 @@ static unsigned long have_free_callback __read_mostly;
 /* Ditto for the can_fork callback. */
 static unsigned long have_canfork_callback __read_mostly;
 
+static struct file_system_type cgroup2_fs_type;
 static struct cftype cgroup_dfl_base_files[];
 static struct cftype cgroup_legacy_base_files[];
 
@@ -236,6 +237,9 @@ static int cgroup_addrm_files(struct cgroup_subsys_state *css,
  */
 static bool cgroup_ssid_enabled(int ssid)
 {
+	if (CGROUP_SUBSYS_COUNT == 0)
+		return false;
+
 	return static_key_enabled(cgroup_subsys_enabled_key[ssid]);
 }
 
@@ -1647,10 +1651,6 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 			all_ss = true;
 			continue;
 		}
-		if (!strcmp(token, "__DEVEL__sane_behavior")) {
-			opts->flags |= CGRP_ROOT_SANE_BEHAVIOR;
-			continue;
-		}
 		if (!strcmp(token, "noprefix")) {
 			opts->flags |= CGRP_ROOT_NOPREFIX;
 			continue;
@@ -1715,15 +1715,6 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 		}
 		if (i == CGROUP_SUBSYS_COUNT)
 			return -ENOENT;
-	}
-
-	if (opts->flags & CGRP_ROOT_SANE_BEHAVIOR) {
-		pr_warn("sane_behavior: this is still under development and its behaviors will change, proceed at your own risk\n");
-		if (nr_opts != 1) {
-			pr_err("sane_behavior: no other mount options allowed\n");
-			return -EINVAL;
-		}
-		return 0;
 	}
 
 	/*
@@ -2004,6 +1995,7 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 			 int flags, const char *unused_dev_name,
 			 void *data)
 {
+	bool is_v2 = fs_type == &cgroup2_fs_type;
 	struct super_block *pinned_sb = NULL;
 	struct cgroup_subsys *ss;
 	struct cgroup_root *root;
@@ -2020,21 +2012,23 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	if (!use_task_css_set_links)
 		cgroup_enable_task_cg_lists();
 
+	if (is_v2) {
+		if (data) {
+			pr_err("cgroup2: unknown option \"%s\"\n", (char *)data);
+			return ERR_PTR(-EINVAL);
+		}
+		cgrp_dfl_root_visible = true;
+		root = &cgrp_dfl_root;
+		cgroup_get(&root->cgrp);
+		goto out_mount;
+	}
+
 	mutex_lock(&cgroup_mutex);
 
 	/* First find the desired set of subsystems */
 	ret = parse_cgroupfs_options(data, &opts);
 	if (ret)
 		goto out_unlock;
-
-	/* look for a matching existing root */
-	if (opts.flags & CGRP_ROOT_SANE_BEHAVIOR) {
-		cgrp_dfl_root_visible = true;
-		root = &cgrp_dfl_root;
-		cgroup_get(&root->cgrp);
-		ret = 0;
-		goto out_unlock;
-	}
 
 	/*
 	 * Destruction of cgroup root is asynchronous, so subsystems may
@@ -2146,9 +2140,10 @@ out_free:
 
 	if (ret)
 		return ERR_PTR(ret);
-
+out_mount:
 	dentry = kernfs_mount(fs_type, flags, root->kf_root,
-				CGROUP_SUPER_MAGIC, &new_sb);
+			      is_v2 ? CGROUP2_SUPER_MAGIC : CGROUP_SUPER_MAGIC,
+			      &new_sb);
 	if (IS_ERR(dentry) || !new_sb)
 		cgroup_put(&root->cgrp);
 
@@ -2187,6 +2182,12 @@ static void cgroup_kill_sb(struct super_block *sb)
 
 static struct file_system_type cgroup_fs_type = {
 	.name = "cgroup",
+	.mount = cgroup_mount,
+	.kill_sb = cgroup_kill_sb,
+};
+
+static struct file_system_type cgroup2_fs_type = {
+	.name = "cgroup2",
 	.mount = cgroup_mount,
 	.kill_sb = cgroup_kill_sb,
 };
@@ -2671,45 +2672,6 @@ static int cgroup_attach_task(struct cgroup *dst_cgrp,
 	return ret;
 }
 
-int subsys_cgroup_allow_attach(struct cgroup_taskset *tset)
-{
-	const struct cred *cred = current_cred(), *tcred;
-	struct task_struct *task;
-	struct cgroup_subsys_state *css;
-
-	if (capable(CAP_SYS_NICE))
-		return 0;
-
-	cgroup_taskset_for_each(task, css, tset) {
-		tcred = __task_cred(task);
-
-		if (current != task && !uid_eq(cred->euid, tcred->uid) &&
-		    !uid_eq(cred->euid, tcred->suid))
-			return -EACCES;
-	}
-
-	return 0;
-}
-
-static int cgroup_allow_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
-{
-	struct cgroup_subsys_state *css;
-	int i;
-	int ret;
-
-	for_each_css(css, i, cgrp) {
-		if (css->ss->allow_attach) {
-			ret = css->ss->allow_attach(tset);
-			if (ret)
-				return ret;
-		} else {
-			return -EACCES;
-		}
-	}
-
-	return 0;
-}
-
 static int cgroup_procs_write_permission(struct task_struct *task,
 					 struct cgroup *dst_cgrp,
 					 struct kernfs_open_file *of)
@@ -2724,24 +2686,9 @@ static int cgroup_procs_write_permission(struct task_struct *task,
 	 */
 	if (!uid_eq(cred->euid, GLOBAL_ROOT_UID) &&
 	    !uid_eq(cred->euid, tcred->uid) &&
-	    !uid_eq(cred->euid, tcred->suid)) {
-		/*
-		 * if the default permission check fails, give each
-		 * cgroup a chance to extend the permission check
-		 */
-		struct cgroup_taskset tset = {
-			.src_csets = LIST_HEAD_INIT(tset.src_csets),
-			.dst_csets = LIST_HEAD_INIT(tset.dst_csets),
-			.csets = &tset.src_csets,
-		};
-		struct css_set *cset;
-		cset = task_css_set(task);
-		list_add(&cset->mg_node, &tset.src_csets);
-		ret = cgroup_allow_attach(dst_cgrp, &tset);
-		list_del(&tset.src_csets);
-		if (ret)
-			ret = -EACCES;
-	}
+	    !uid_eq(cred->euid, tcred->suid) &&
+	    !ns_capable(tcred->user_ns, CAP_SYS_RESOURCE))
+		ret = -EACCES;
 
 	if (!ret && cgroup_on_dfl(dst_cgrp)) {
 		struct super_block *sb = of->file->f_path.dentry->d_sb;
@@ -2804,11 +2751,12 @@ static ssize_t __cgroup_procs_write(struct kernfs_open_file *of, char *buf,
 		tsk = tsk->group_leader;
 
 	/*
-	 * Workqueue threads may acquire PF_NO_SETAFFINITY and become
-	 * trapped in a cpuset, or RT worker may be born in a cgroup
-	 * with no rt_runtime allocated.  Just say no.
+	 * kthreads may acquire PF_NO_SETAFFINITY during initialization.
+	 * If userland migrates such a kthread to a non-root cgroup, it can
+	 * become trapped in a cpuset, or RT kthread may be born in a
+	 * cgroup with no rt_runtime allocated.  Just say no.
 	 */
-	if (tsk == kthreadd_task || (tsk->flags & PF_NO_SETAFFINITY)) {
+	if (tsk->no_cgroup_migration || (tsk->flags & PF_NO_SETAFFINITY)) {
 		ret = -EINVAL;
 		goto out_unlock_rcu;
 	}
@@ -4848,6 +4796,7 @@ static void init_and_link_css(struct cgroup_subsys_state *css,
 	memset(css, 0, sizeof(*css));
 	css->cgroup = cgrp;
 	css->ss = ss;
+	css->id = -1;
 	INIT_LIST_HEAD(&css->sibling);
 	INIT_LIST_HEAD(&css->children);
 	css->serial_nr = css_serial_nr_next++;
@@ -5379,6 +5328,12 @@ int __init cgroup_init(void)
 	BUG_ON(cgroup_init_cftypes(NULL, cgroup_dfl_base_files));
 	BUG_ON(cgroup_init_cftypes(NULL, cgroup_legacy_base_files));
 
+	/*
+	 * The latency of the synchronize_sched() is too high for cgroups,
+	 * avoid it at the cost of forcing all readers into the slow path.
+	 */
+	rcu_sync_enter_start(&cgroup_threadgroup_rwsem.rss);
+
 	mutex_lock(&cgroup_mutex);
 
 	/* Add init_css_set to the hash table */
@@ -5434,6 +5389,7 @@ int __init cgroup_init(void)
 
 	WARN_ON(sysfs_create_mount_point(fs_kobj, "cgroup"));
 	WARN_ON(register_filesystem(&cgroup_fs_type));
+	WARN_ON(register_filesystem(&cgroup2_fs_type));
 	WARN_ON(!proc_create("cgroups", 0, NULL, &proc_cgroupstats_operations));
 
 	return 0;

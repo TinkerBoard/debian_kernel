@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,7 +11,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 
 #ifndef _CIF_ISP10_PLTFRM_H
@@ -32,7 +32,6 @@ struct pltfrm_cam_itf;
 enum cif_isp10_pinctrl_state;
 enum cif_isp10_inp;
 enum cif_isp10_pm_state;
-
 
 #define CIF_ISP10_PLTFRM_DEVICE struct device *
 #define CIF_ISP10_PLTFRM_MEM_IO_ADDR void __iomem *
@@ -106,34 +105,34 @@ u32 cif_isp10_pltfrm_read_reg(
 	CIF_ISP10_PLTFRM_MEM_IO_ADDR addr);
 
 #define cif_iowrite32(d, a) \
-	cif_isp10_pltfrm_write_reg(NULL, d, a);
+	cif_isp10_pltfrm_write_reg(NULL, (u32)(d), a)
 #define cif_ioread32(a) \
 	cif_isp10_pltfrm_read_reg(NULL, a)
 #define cif_iowrite32OR(d, a) \
-	cif_isp10_pltfrm_write_reg_OR(NULL, d, a)
+	cif_isp10_pltfrm_write_reg_OR(NULL, (u32)(d), a)
 #define cif_iowrite32AND(d, a) \
-	cif_isp10_pltfrm_write_reg_AND(NULL, d, a)
+	cif_isp10_pltfrm_write_reg_AND(NULL, (u32)(d), a)
 /* BUG: Register write seems to fail sometimes w/o read before write. */
 #define cif_iowrite32_verify(d, a, mask) \
 	{ \
-		unsigned i = 0; \
+		unsigned int i = 0; \
 		unsigned long flags = 0; \
-		spin_lock_irqsave(&iowrite32_verify_lock, flags); /* xuhf@rock-chips.com: v1.0.1 */ \
+		spin_lock_irqsave(&iowrite32_verify_lock, flags); \
 		do { \
 			cif_iowrite32(d, a); \
 			udelay(1); \
 			if (i++ == 50) { \
 				pr_err("Error in writing %x@0x%p, read %x\n", \
 					(d) & (mask), a, ioread32(a)); \
-					BUG(); \
+					WARN_ON(1); \
 			} \
 		} while ((ioread32(a) & mask) != ((d) & mask)); \
-		spin_unlock_irqrestore(&iowrite32_verify_lock, flags); /* xuhf@rock-chips.com: v1.0.1 */ \
+		spin_unlock_irqrestore(&iowrite32_verify_lock, flags);\
 	}
 #define cif_iowrite32OR_verify(d, a, mask) \
-	cif_iowrite32_verify((d) | cif_ioread32(a), a, mask)
+	cif_iowrite32_verify((u32)(d) | cif_ioread32(a), a, mask)
 #define cif_iowrite32AND_verify(d, a, mask) \
-	cif_iowrite32_verify((d) & cif_ioread32(a), a, mask)
+	cif_iowrite32_verify((u32)(d) & cif_ioread32(a), a, mask)
 
 #define cif_isp10_pltfrm_event_init(_dev, _event) \
 	init_waitqueue_head(_event)
@@ -146,7 +145,7 @@ u32 cif_isp10_pltfrm_read_reg(
 #define cif_isp10_pltfrm_event_wait_timeout( \
 	_dev, _event, _condition, _timeout_us) \
 	wait_event_interruptible_timeout( \
-		*(_event), _condition, (_timeout_us * HZ) / 1000000)
+		*(_event), _condition, ((_timeout_us) * HZ) / 1000000)
 
 void
 cif_isp10_pltfrm_debug_register_print_cb(
@@ -160,7 +159,8 @@ int cif_isp10_pltfrm_dev_init(
 	void __iomem **reg_base_addr);
 
 void cif_isp10_pltfrm_dev_release(
-	struct device *dev);
+	struct device *dev,
+	struct cif_isp10_device *cif_isp10_dev);
 
 int cif_isp10_pltfrm_pm_set_state(
 	struct device *dev,

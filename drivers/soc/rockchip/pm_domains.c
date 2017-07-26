@@ -8,7 +8,9 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/devfreq.h>
 #include <linux/io.h>
+#include <linux/iopoll.h>
 #include <linux/err.h>
 #include <linux/pm_clock.h>
 #include <linux/pm_domain.h>
@@ -18,6 +20,7 @@
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
 #include <dt-bindings/power/rk3288-power.h>
+#include <dt-bindings/power/rk3328-power.h>
 #include <dt-bindings/power/rk3366-power.h>
 #include <dt-bindings/power/rk3368-power.h>
 #include <dt-bindings/power/rk3399-power.h>
@@ -29,6 +32,8 @@ struct rockchip_domain_info {
 	int idle_mask;
 	int ack_mask;
 	bool active_wakeup;
+	int pwr_w_mask;
+	int req_w_mask;
 };
 
 struct rockchip_pmu_info {
@@ -72,8 +77,12 @@ struct rockchip_pmu {
 	const struct rockchip_pmu_info *info;
 	struct mutex mutex; /* mutex lock for pmu */
 	struct genpd_onecell_data genpd_data;
+	struct devfreq *devfreq;
+	struct notifier_block dmc_nb;
 	struct generic_pm_domain *domains[];
 };
+
+static struct rockchip_pmu *dmc_pmu;
 
 #define to_rockchip_pd(gpd) container_of(gpd, struct rockchip_pm_domain, genpd)
 
@@ -87,8 +96,23 @@ struct rockchip_pmu {
 	.active_wakeup = wakeup,			\
 }
 
+#define DOMAIN_M(pwr, status, req, idle, ack, wakeup)	\
+{							\
+	.pwr_w_mask = (pwr >= 0) ? BIT(pwr + 16) : 0,	\
+	.pwr_mask = (pwr >= 0) ? BIT(pwr) : 0,		\
+	.status_mask = (status >= 0) ? BIT(status) : 0,	\
+	.req_w_mask = (req >= 0) ?  BIT(req + 16) : 0,	\
+	.req_mask = (req >= 0) ?  BIT(req) : 0,		\
+	.idle_mask = (idle >= 0) ? BIT(idle) : 0,	\
+	.ack_mask = (ack >= 0) ? BIT(ack) : 0,		\
+	.active_wakeup = wakeup,			\
+}
+
 #define DOMAIN_RK3288(pwr, status, req, wakeup)		\
 	DOMAIN(pwr, status, req, req, (req) + 16, wakeup)
+
+#define DOMAIN_RK3328(pwr, status, req, wakeup)		\
+	DOMAIN_M(pwr, pwr, req, (req) + 10, req, wakeup)
 
 #define DOMAIN_RK3368(pwr, status, req, wakeup)		\
 	DOMAIN(pwr, status, req, (req) + 16, req, wakeup)
@@ -106,27 +130,57 @@ static bool rockchip_pmu_domain_is_idle(struct rockchip_pm_domain *pd)
 	return (val & pd_info->idle_mask) == pd_info->idle_mask;
 }
 
+static unsigned int rockchip_pmu_read_ack(struct rockchip_pmu *pmu)
+{
+	unsigned int val;
+
+	regmap_read(pmu->regmap, pmu->info->ack_offset, &val);
+	return val;
+}
+
 static int rockchip_pmu_set_idle_request(struct rockchip_pm_domain *pd,
 					 bool idle)
 {
 	const struct rockchip_domain_info *pd_info = pd->info;
+	struct generic_pm_domain *genpd = &pd->genpd;
 	struct rockchip_pmu *pmu = pd->pmu;
+	unsigned int target_ack;
 	unsigned int val;
+	bool is_idle;
+	int ret;
 
 	if (pd_info->req_mask == 0)
 		return 0;
-
-	regmap_update_bits(pmu->regmap, pmu->info->req_offset,
-			   pd_info->req_mask, idle ? -1U : 0);
+	else if (pd_info->req_w_mask)
+		regmap_write(pmu->regmap, pmu->info->req_offset,
+			     idle ? (pd_info->req_mask | pd_info->req_w_mask) :
+			     pd_info->req_w_mask);
+	else
+		regmap_update_bits(pmu->regmap, pmu->info->req_offset,
+				   pd_info->req_mask, idle ? -1U : 0);
 
 	dsb(sy);
 
-	do {
-		regmap_read(pmu->regmap, pmu->info->ack_offset, &val);
-	} while ((val & pd_info->ack_mask) != (idle ? pd_info->ack_mask : 0));
+	/* Wait util idle_ack = 1 */
+	target_ack = idle ? pd_info->ack_mask : 0;
+	ret = readx_poll_timeout_atomic(rockchip_pmu_read_ack, pmu, val,
+					(val & pd_info->ack_mask) == target_ack,
+					0, 10000);
+	if (ret) {
+		dev_err(pmu->dev,
+			"failed to get ack on domain '%s', val=0x%x\n",
+			genpd->name, val);
+		return ret;
+	}
 
-	while (rockchip_pmu_domain_is_idle(pd) != idle)
-		cpu_relax();
+	ret = readx_poll_timeout_atomic(rockchip_pmu_domain_is_idle, pd,
+					is_idle, is_idle == idle, 0, 10000);
+	if (ret) {
+		dev_err(pmu->dev,
+			"failed to set idle on domain '%s', val=%d\n",
+			genpd->name, is_idle);
+		return ret;
+	}
 
 	return 0;
 }
@@ -222,17 +276,28 @@ static void rockchip_do_pmu_set_power_domain(struct rockchip_pm_domain *pd,
 					     bool on)
 {
 	struct rockchip_pmu *pmu = pd->pmu;
+	struct generic_pm_domain *genpd = &pd->genpd;
+	bool is_on;
 
 	if (pd->info->pwr_mask == 0)
 		return;
-
-	regmap_update_bits(pmu->regmap, pmu->info->pwr_offset,
-			   pd->info->pwr_mask, on ? 0 : -1U);
+	else if (pd->info->pwr_w_mask)
+		regmap_write(pmu->regmap, pmu->info->pwr_offset,
+			     on ? pd->info->pwr_mask :
+			     (pd->info->pwr_mask | pd->info->pwr_w_mask));
+	else
+		regmap_update_bits(pmu->regmap, pmu->info->pwr_offset,
+				   pd->info->pwr_mask, on ? 0 : -1U);
 
 	dsb(sy);
 
-	while (rockchip_pmu_domain_is_on(pd) != on)
-		cpu_relax();
+	if (readx_poll_timeout_atomic(rockchip_pmu_domain_is_on, pd, is_on,
+				      is_on == on, 0, 10000)) {
+		dev_err(pmu->dev,
+			"failed to set domain '%s', val=%d\n",
+			genpd->name, is_on);
+		return;
+	}
 }
 
 static int rockchip_pd_power(struct rockchip_pm_domain *pd, bool power_on)
@@ -566,6 +631,30 @@ err_out:
 	return error;
 }
 
+static int dmc_notify(struct notifier_block *nb, unsigned long event,
+		      void *data)
+{
+	if (event == DEVFREQ_PRECHANGE)
+		mutex_lock(&dmc_pmu->mutex);
+	else if (event == DEVFREQ_POSTCHANGE)
+		mutex_unlock(&dmc_pmu->mutex);
+
+	return NOTIFY_OK;
+}
+
+int rockchip_pm_register_notify_to_dmc(struct devfreq *devfreq)
+{
+	if (!dmc_pmu)
+		return -ENOMEM;
+
+	dmc_pmu->devfreq = devfreq;
+	dmc_pmu->dmc_nb.notifier_call = dmc_notify;
+	devfreq_register_notifier(dmc_pmu->devfreq, &dmc_pmu->dmc_nb,
+				  DEVFREQ_TRANSITION_NOTIFIER);
+	return 0;
+}
+EXPORT_SYMBOL(rockchip_pm_register_notify_to_dmc);
+
 static int rockchip_pm_domain_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -621,10 +710,12 @@ static int rockchip_pm_domain_probe(struct platform_device *pdev)
 	 * Configure power up and down transition delays for CORE
 	 * and GPU domains.
 	 */
-	rockchip_configure_pd_cnt(pmu, pmu_info->core_pwrcnt_offset,
-				  pmu_info->core_power_transition_time);
-	rockchip_configure_pd_cnt(pmu, pmu_info->gpu_pwrcnt_offset,
-				  pmu_info->gpu_power_transition_time);
+	if (pmu_info->core_pwrcnt_offset)
+		rockchip_configure_pd_cnt(pmu, pmu_info->core_pwrcnt_offset,
+					  pmu_info->core_power_transition_time);
+	if (pmu_info->gpu_pwrcnt_offset)
+		rockchip_configure_pd_cnt(pmu, pmu_info->gpu_pwrcnt_offset,
+					  pmu_info->gpu_power_transition_time);
 
 	error = -ENODEV;
 
@@ -653,6 +744,8 @@ static int rockchip_pm_domain_probe(struct platform_device *pdev)
 
 	of_genpd_add_provider_onecell(np, &pmu->genpd_data);
 
+	dmc_pmu = pmu;
+
 	return 0;
 
 err_out:
@@ -665,6 +758,18 @@ static const struct rockchip_domain_info rk3288_pm_domains[] = {
 	[RK3288_PD_HEVC]	= DOMAIN_RK3288(14, 10, 9, false),
 	[RK3288_PD_VIDEO]	= DOMAIN_RK3288(8, 8, 3, false),
 	[RK3288_PD_GPU]		= DOMAIN_RK3288(9, 9, 2, false),
+};
+
+static const struct rockchip_domain_info rk3328_pm_domains[] = {
+	[RK3328_PD_CORE]	= DOMAIN_RK3328(-1, 0, 0, false),
+	[RK3328_PD_GPU]		= DOMAIN_RK3328(-1, 1, 1, false),
+	[RK3328_PD_BUS]		= DOMAIN_RK3328(-1, 2, 2, true),
+	[RK3328_PD_MSCH]	= DOMAIN_RK3328(-1, 3, 3, true),
+	[RK3328_PD_PERI]	= DOMAIN_RK3328(-1, 4, 4, true),
+	[RK3328_PD_VIDEO]	= DOMAIN_RK3328(-1, 5, 5, false),
+	[RK3328_PD_HEVC]	= DOMAIN_RK3328(-1, 6, 6, false),
+	[RK3328_PD_VIO]		= DOMAIN_RK3328(-1, 8, 8, false),
+	[RK3328_PD_VPU]		= DOMAIN_RK3328(-1, 9, 9, false),
 };
 
 static const struct rockchip_domain_info rk3366_pm_domains[] = {
@@ -732,6 +837,15 @@ static const struct rockchip_pmu_info rk3288_pmu = {
 	.domain_info = rk3288_pm_domains,
 };
 
+static const struct rockchip_pmu_info rk3328_pmu = {
+	.req_offset = 0x414,
+	.idle_offset = 0x484,
+	.ack_offset = 0x484,
+
+	.num_domains = ARRAY_SIZE(rk3328_pm_domains),
+	.domain_info = rk3328_pm_domains,
+};
+
 static const struct rockchip_pmu_info rk3366_pmu = {
 	.pwr_offset = 0x0c,
 	.status_offset = 0x10,
@@ -787,6 +901,10 @@ static const struct of_device_id rockchip_pm_domain_dt_match[] = {
 	{
 		.compatible = "rockchip,rk3288-power-controller",
 		.data = (void *)&rk3288_pmu,
+	},
+	{
+		.compatible = "rockchip,rk3328-power-controller",
+		.data = (void *)&rk3328_pmu,
 	},
 	{
 		.compatible = "rockchip,rk3366-power-controller",

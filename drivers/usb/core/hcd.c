@@ -499,8 +499,10 @@ static int rh_call_control (struct usb_hcd *hcd, struct urb *urb)
 	 */
 	tbuf_size =  max_t(u16, sizeof(struct usb_hub_descriptor), wLength);
 	tbuf = kzalloc(tbuf_size, GFP_KERNEL);
-	if (!tbuf)
-		return -ENOMEM;
+	if (!tbuf) {
+		status = -ENOMEM;
+		goto err_alloc;
+	}
 
 	bufp = tbuf;
 
@@ -705,6 +707,7 @@ error:
 	}
 
 	kfree(tbuf);
+ err_alloc:
 
 	/* any errors get returned through the urb completion */
 	spin_lock_irq(&hcd_root_hub_lock);
@@ -966,7 +969,7 @@ static void usb_bus_init (struct usb_bus *bus)
 	bus->bandwidth_allocated = 0;
 	bus->bandwidth_int_reqs  = 0;
 	bus->bandwidth_isoc_reqs = 0;
-	mutex_init(&bus->usb_address0_mutex);
+	mutex_init(&bus->devnum_next_mutex);
 
 	INIT_LIST_HEAD (&bus->bus_list);
 }
@@ -1078,7 +1081,7 @@ static int register_root_hub(struct usb_hcd *hcd)
 		retval = usb_get_bos_descriptor(usb_dev);
 		if (!retval) {
 			usb_dev->lpm_capable = usb_device_supports_lpm(usb_dev);
-		} else if (usb_dev->speed == USB_SPEED_SUPER) {
+		} else if (usb_dev->speed >= USB_SPEED_SUPER) {
 			mutex_unlock(&usb_bus_list_lock);
 			dev_dbg(parent_dev, "can't read %s bos descriptor %d\n",
 					dev_name(&usb_dev->dev), retval);
@@ -1693,7 +1696,7 @@ int usb_hcd_unlink_urb (struct urb *urb, int status)
 		if (retval == 0)
 			retval = -EINPROGRESS;
 		else if (retval != -EIDRM && retval != -EBUSY)
-			dev_dbg(&udev->dev, "hcd_unlink_urb %p fail %d\n",
+			dev_dbg(&udev->dev, "hcd_unlink_urb %pK fail %d\n",
 					urb, retval);
 		usb_put_dev(udev);
 	}
@@ -1860,7 +1863,7 @@ rescan:
 		/* kick hcd */
 		unlink1(hcd, urb, -ESHUTDOWN);
 		dev_dbg (hcd->self.controller,
-			"shutdown urb %p ep%d%s%s\n",
+			"shutdown urb %pK ep%d%s%s\n",
 			urb, usb_endpoint_num(&ep->desc),
 			is_in ? "in" : "out",
 			({	char *s;
@@ -2112,7 +2115,7 @@ int usb_alloc_streams(struct usb_interface *interface,
 	hcd = bus_to_hcd(dev->bus);
 	if (!hcd->driver->alloc_streams || !hcd->driver->free_streams)
 		return -EINVAL;
-	if (dev->speed != USB_SPEED_SUPER)
+	if (dev->speed < USB_SPEED_SUPER)
 		return -EINVAL;
 	if (dev->state < USB_STATE_CONFIGURED)
 		return -ENODEV;
@@ -2160,7 +2163,7 @@ int usb_free_streams(struct usb_interface *interface,
 
 	dev = interface_to_usbdev(interface);
 	hcd = bus_to_hcd(dev->bus);
-	if (dev->speed != USB_SPEED_SUPER)
+	if (dev->speed < USB_SPEED_SUPER)
 		return -EINVAL;
 
 	/* Double-free is not allowed */
@@ -2497,6 +2500,14 @@ struct usb_hcd *usb_create_shared_hcd(const struct hc_driver *driver,
 		return NULL;
 	}
 	if (primary_hcd == NULL) {
+		hcd->address0_mutex = kmalloc(sizeof(*hcd->address0_mutex),
+				GFP_KERNEL);
+		if (!hcd->address0_mutex) {
+			kfree(hcd);
+			dev_dbg(dev, "hcd address0 mutex alloc failed\n");
+			return NULL;
+		}
+		mutex_init(hcd->address0_mutex);
 		hcd->bandwidth_mutex = kmalloc(sizeof(*hcd->bandwidth_mutex),
 				GFP_KERNEL);
 		if (!hcd->bandwidth_mutex) {
@@ -2508,6 +2519,7 @@ struct usb_hcd *usb_create_shared_hcd(const struct hc_driver *driver,
 		dev_set_drvdata(dev, hcd);
 	} else {
 		mutex_lock(&usb_port_peer_mutex);
+		hcd->address0_mutex = primary_hcd->address0_mutex;
 		hcd->bandwidth_mutex = primary_hcd->bandwidth_mutex;
 		hcd->primary_hcd = primary_hcd;
 		primary_hcd->primary_hcd = primary_hcd;
@@ -2564,24 +2576,23 @@ EXPORT_SYMBOL_GPL(usb_create_hcd);
  * Don't deallocate the bandwidth_mutex until the last shared usb_hcd is
  * deallocated.
  *
- * Make sure to only deallocate the bandwidth_mutex when the primary HCD is
- * freed.  When hcd_release() is called for either hcd in a peer set
- * invalidate the peer's ->shared_hcd and ->primary_hcd pointers to
- * block new peering attempts
+ * Make sure to deallocate the bandwidth_mutex only when the last HCD is
+ * freed.  When hcd_release() is called for either hcd in a peer set,
+ * invalidate the peer's ->shared_hcd and ->primary_hcd pointers.
  */
 static void hcd_release(struct kref *kref)
 {
 	struct usb_hcd *hcd = container_of (kref, struct usb_hcd, kref);
 
 	mutex_lock(&usb_port_peer_mutex);
-	if (usb_hcd_is_primary_hcd(hcd))
-		kfree(hcd->bandwidth_mutex);
 	if (hcd->shared_hcd) {
 		struct usb_hcd *peer = hcd->shared_hcd;
 
 		peer->shared_hcd = NULL;
-		if (peer->primary_hcd == hcd)
-			peer->primary_hcd = NULL;
+		peer->primary_hcd = NULL;
+	} else {
+		kfree(hcd->address0_mutex);
+		kfree(hcd->bandwidth_mutex);
 	}
 	mutex_unlock(&usb_port_peer_mutex);
 	kfree(hcd);
@@ -2983,6 +2994,7 @@ void usb_remove_hcd(struct usb_hcd *hcd)
 	}
 
 	usb_put_invalidate_rhdev(hcd);
+	hcd->flags = 0;
 }
 EXPORT_SYMBOL_GPL(usb_remove_hcd);
 

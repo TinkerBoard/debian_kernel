@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,14 +11,14 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 
 #ifndef _V4L2_CONFIG_ROCKCHIP_H
 #define _V4L2_CONFIG_ROCKCHIP_H
 
-#define CAMERA_STRLEN   32
-#define CAMERA_METADATA_LEN	(2*PAGE_SIZE)
+#define CAMERA_STRLEN         32
+#define CAMERA_METADATA_LEN   (2 * PAGE_SIZE)
 
 /* Sensor resolution specific data for AE calculation.*/
 struct isp_supplemental_sensor_mode_data {

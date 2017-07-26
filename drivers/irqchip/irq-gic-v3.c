@@ -145,7 +145,7 @@ static void gic_enable_redist(bool enable)
 			return;	/* No PM support in this redistributor */
 	}
 
-	while (count--) {
+	while (--count) {
 		val = readl_relaxed(rbase + GICR_WAKER);
 		if (enable ^ (val & GICR_WAKER_ChildrenAsleep))
 			break;
@@ -215,6 +215,15 @@ static void gic_unmask_irq(struct irq_data *d)
 {
 	gic_poke_irq(d, GICD_ISENABLER);
 }
+
+#ifdef CONFIG_ARCH_ROCKCHIP
+static int gic_retrigger(struct irq_data *d)
+{
+	gic_poke_irq(d, GICD_ISPENDR);
+	/* the genirq layer expects 0 if we can't retrigger in hardware */
+	return 0;
+}
+#endif
 
 static int gic_irq_set_irqchip_state(struct irq_data *d,
 				     enum irqchip_irq_state which, bool val)
@@ -547,7 +556,7 @@ static struct notifier_block gic_cpu_notifier = {
 static u16 gic_compute_target_list(int *base_cpu, const struct cpumask *mask,
 				   unsigned long cluster_id)
 {
-	int cpu = *base_cpu;
+	int next_cpu, cpu = *base_cpu;
 	unsigned long mpidr = cpu_logical_map(cpu);
 	u16 tlist = 0;
 
@@ -561,9 +570,10 @@ static u16 gic_compute_target_list(int *base_cpu, const struct cpumask *mask,
 
 		tlist |= 1 << (mpidr & 0xf);
 
-		cpu = cpumask_next(cpu, mask);
-		if (cpu >= nr_cpu_ids)
+		next_cpu = cpumask_next(cpu, mask);
+		if (next_cpu >= nr_cpu_ids)
 			goto out;
+		cpu = next_cpu;
 
 		mpidr = cpu_logical_map(cpu);
 
@@ -696,6 +706,9 @@ static struct irq_chip gic_chip = {
 	.irq_unmask		= gic_unmask_irq,
 	.irq_eoi		= gic_eoi_irq,
 	.irq_set_type		= gic_set_type,
+#ifdef CONFIG_ARCH_ROCKCHIP
+	.irq_retrigger		= gic_retrigger,
+#endif
 	.irq_set_affinity	= gic_set_affinity,
 	.irq_get_irqchip_state	= gic_irq_get_irqchip_state,
 	.irq_set_irqchip_state	= gic_irq_set_irqchip_state,
@@ -707,6 +720,9 @@ static struct irq_chip gic_eoimode1_chip = {
 	.irq_mask		= gic_eoimode1_mask_irq,
 	.irq_unmask		= gic_unmask_irq,
 	.irq_eoi		= gic_eoimode1_eoi_irq,
+#ifdef CONFIG_ARCH_ROCKCHIP
+	.irq_retrigger		= gic_retrigger,
+#endif
 	.irq_set_type		= gic_set_type,
 	.irq_set_affinity	= gic_set_affinity,
 	.irq_get_irqchip_state	= gic_irq_get_irqchip_state,

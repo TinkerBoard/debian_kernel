@@ -42,13 +42,12 @@
 #define RGA_MMU_SRC1_BASE		0x0174
 #define RGA_MMU_DST_BASE		0x0178
 
-static void rga_dma_flush_range(void *ptr, int size)
+static void __user *rga_compat_ptr(u64 value)
 {
-#ifdef CONFIG_ARM
-	dmac_flush_range(ptr, ptr + size);
-	outer_flush_range(virt_to_phys(ptr), virt_to_phys(ptr + size));
-#elif defined CONFIG_ARM64
-	__dma_flush_range(ptr, ptr + size);
+#ifdef CONFIG_ARM64
+	return (void __user *)(value);
+#else
+	return (void __user *)((u32)(value));
 #endif
 }
 
@@ -159,27 +158,35 @@ static int rga_alloc_dma_buf_for_cmdlist(struct rga_runqueue_node *runqueue)
 		dest = cmdlist_pool_virt + RGA_CMDLIST_SIZE * 4 * count++;
 
 		for (i = 0; i < cmdlist->last / 2; i++) {
+			int val_index = 2 * i + 1;
+
 			reg = (node->cmdlist.data[2 * i] - RGA_MODE_BASE_REG);
-			if (reg > RGA_MODE_BASE_REG)
+
+			if (reg > RGA_MODE_BASE_REG || val_index >=
+			    (RGA_CMDLIST_SIZE + RGA_CMDBUF_SIZE) * 2)
 				continue;
-			dest[reg >> 2] = cmdlist->data[2 * i + 1];
+
+			dest[reg >> 2] = cmdlist->data[val_index];
 		}
 
 		if (cmdlist->src_mmu_pages) {
 			reg = RGA_MMU_SRC_BASE - RGA_MODE_BASE_REG;
-			dest[reg >> 2] = virt_to_phys(cmdlist->src_mmu_pages) >> 4;
+			dest[reg >> 2] =
+			    virt_to_phys(cmdlist->src_mmu_pages) >> 4;
 			mmu_ctrl |= 0x7;
 		}
 
 		if (cmdlist->dst_mmu_pages) {
 			reg = RGA_MMU_DST_BASE - RGA_MODE_BASE_REG;
-			dest[reg >> 2] = virt_to_phys(cmdlist->dst_mmu_pages) >> 4;
+			dest[reg >> 2] =
+			    virt_to_phys(cmdlist->dst_mmu_pages) >> 4;
 			mmu_ctrl |= 0x7 << 8;
 		}
 
 		if (cmdlist->src1_mmu_pages) {
 			reg = RGA_MMU_SRC1_BASE - RGA_MODE_BASE_REG;
-			dest[reg >> 2] = virt_to_phys(cmdlist->src1_mmu_pages) >> 4;
+			dest[reg >> 2] =
+			    virt_to_phys(cmdlist->src1_mmu_pages) >> 4;
 			mmu_ctrl |= 0x7 << 4;
 		}
 
@@ -187,7 +194,9 @@ static int rga_alloc_dma_buf_for_cmdlist(struct rga_runqueue_node *runqueue)
 		dest[reg >> 2] = mmu_ctrl;
 	}
 
-	rga_dma_flush_range(cmdlist_pool_virt, cmdlist_cnt * RGA_CMDLIST_SIZE);
+	dma_sync_single_for_device(runqueue->drm_dev->dev,
+				   virt_to_phys(cmdlist_pool_virt),
+				   PAGE_SIZE, DMA_BIDIRECTIONAL);
 
 	runqueue->cmdlist_dma_attrs = cmdlist_dma_attrs;
 	runqueue->cmdlist_pool_virt = cmdlist_pool_virt;
@@ -209,15 +218,11 @@ static int rga_check_reg_offset(struct device *dev,
 		index = cmdlist->last - 2 * (i + 1);
 		reg = cmdlist->data[index];
 
-		switch (reg) {
-		case RGA_BUF_TYPE_GEMFD | RGA_DST_Y_RGB_BASE_ADDR:
-		case RGA_BUF_TYPE_GEMFD | RGA_SRC_Y_RGB_BASE_ADDR:
+		switch (reg & 0xffff) {
+		case RGA_DST_Y_RGB_BASE_ADDR:
+		case RGA_SRC_Y_RGB_BASE_ADDR:
+		case RGA_SRC1_RGB_BASE_ADDR:
 			break;
-
-		case RGA_BUF_TYPE_USERPTR | RGA_DST_Y_RGB_BASE_ADDR:
-		case RGA_BUF_TYPE_USERPTR | RGA_SRC_Y_RGB_BASE_ADDR:
-			goto err;
-
 		default:
 			if (reg < RGA_MODE_BASE_REG || reg > RGA_MODE_MAX_REG)
 				goto err;
@@ -234,8 +239,9 @@ err:
 	return -EINVAL;
 }
 
-static struct dma_buf_attachment *
-rga_gem_buf_to_pages(struct rockchip_rga *rga, void **mmu_pages, int fd)
+static struct dma_buf_attachment *rga_gem_buf_to_pages(struct rockchip_rga *rga,
+						       void **mmu_pages, int fd,
+						       int flush)
 {
 	struct dma_buf_attachment *attach;
 	struct dma_buf *dmabuf;
@@ -280,16 +286,18 @@ rga_gem_buf_to_pages(struct rockchip_rga *rga, void **mmu_pages, int fd)
 
 		for (p = 0; p < len; p++) {
 			dma_addr_t phys = address + (p << PAGE_SHIFT);
-			void *virt = phys_to_virt(phys);
-
-			rga_dma_flush_range(virt, 4 * 1024);
 			pages[mapped_size + p] = phys;
 		}
 
 		mapped_size += len;
 	}
 
-	rga_dma_flush_range(pages, 32 * 1024);
+	if (flush)
+		dma_sync_sg_for_device(rga->drm_dev->dev, sgt->sgl, sgt->nents,
+				       DMA_BIDIRECTIONAL);
+
+	dma_sync_single_for_device(rga->drm_dev->dev, virt_to_phys(pages),
+				   8 * PAGE_SIZE, DMA_BIDIRECTIONAL);
 
 	*mmu_pages = pages;
 
@@ -318,26 +326,47 @@ static int rga_map_cmdlist_gem(struct rockchip_rga *rga,
 
 	for (i = 0; i < cmdlist->last / 2; i++) {
 		int index = cmdlist->last - 2 * (i + 1);
+		int flush = cmdlist->data[index] & RGA_BUF_TYPE_FLUSH;
 
-		switch (cmdlist->data[index]) {
-		case RGA_SRC_Y_RGB_BASE_ADDR | RGA_BUF_TYPE_GEMFD:
-			fd = cmdlist->data[index + 1];
-			attach = rga_gem_buf_to_pages(rga, &mmu_pages, fd);
-			if (IS_ERR(attach))
-				return PTR_ERR(attach);
+		switch (cmdlist->data[index] & 0xffff) {
+		case RGA_SRC1_RGB_BASE_ADDR:
+			if (cmdlist->data[index] & RGA_BUF_TYPE_GEMFD) {
+				fd = cmdlist->data[index + 1];
+				attach =
+				    rga_gem_buf_to_pages(rga, &mmu_pages, fd,
+							 flush);
+				if (IS_ERR(attach))
+					return PTR_ERR(attach);
 
-			cmdlist->src_attach = attach;
-			cmdlist->src_mmu_pages = mmu_pages;
+				cmdlist->src1_attach = attach;
+				cmdlist->src1_mmu_pages = mmu_pages;
+			}
 			break;
+		case RGA_SRC_Y_RGB_BASE_ADDR:
+			if (cmdlist->data[index] & RGA_BUF_TYPE_GEMFD) {
+				fd = cmdlist->data[index + 1];
+				attach =
+				    rga_gem_buf_to_pages(rga, &mmu_pages, fd,
+							 flush);
+				if (IS_ERR(attach))
+					return PTR_ERR(attach);
 
-		case RGA_DST_Y_RGB_BASE_ADDR | RGA_BUF_TYPE_GEMFD:
-			fd = cmdlist->data[index + 1];
-			attach = rga_gem_buf_to_pages(rga, &mmu_pages, fd);
-			if (IS_ERR(attach))
-				return PTR_ERR(attach);
+				cmdlist->src_attach = attach;
+				cmdlist->src_mmu_pages = mmu_pages;
+			}
+			break;
+		case RGA_DST_Y_RGB_BASE_ADDR:
+			if (cmdlist->data[index] & RGA_BUF_TYPE_GEMFD) {
+				fd = cmdlist->data[index + 1];
+				attach =
+				    rga_gem_buf_to_pages(rga, &mmu_pages, fd,
+							 flush);
+				if (IS_ERR(attach))
+					return PTR_ERR(attach);
 
-			cmdlist->dst_attach = attach;
-			cmdlist->dst_mmu_pages = mmu_pages;
+				cmdlist->dst_attach = attach;
+				cmdlist->dst_mmu_pages = mmu_pages;
+			}
 			break;
 		}
 	}
@@ -358,6 +387,14 @@ static void rga_unmap_cmdlist_gem(struct rockchip_rga *rga,
 		dma_buf_put(dma_buf);
 	}
 	node->cmdlist.src_attach = NULL;
+
+	attach = node->cmdlist.src1_attach;
+	if (attach) {
+		dma_buf = attach->dmabuf;
+		dma_buf_detach(dma_buf, attach);
+		dma_buf_put(dma_buf);
+	}
+	node->cmdlist.src1_attach = NULL;
 
 	attach = node->cmdlist.dst_attach;
 	if (attach) {
@@ -561,13 +598,13 @@ int rockchip_rga_set_cmdlist_ioctl(struct drm_device *drm_dev, void *data,
 	 * command have two integer, one for register offset, another for
 	 * register value.
 	 */
-	if (copy_from_user(cmdlist->data, (void __user *)req->cmd,
+	if (copy_from_user(cmdlist->data, rga_compat_ptr(req->cmd),
 			   sizeof(struct drm_rockchip_rga_cmd) * req->cmd_nr))
 		return -EFAULT;
 	cmdlist->last += req->cmd_nr * 2;
 
 	if (copy_from_user(&cmdlist->data[cmdlist->last],
-			   (void __user *)req->cmd_buf,
+			   rga_compat_ptr(req->cmd_buf),
 			   sizeof(struct drm_rockchip_rga_cmd) * req->cmd_buf_nr))
 		return -EFAULT;
 	cmdlist->last += req->cmd_buf_nr * 2;
@@ -630,6 +667,7 @@ int rockchip_rga_exec_ioctl(struct drm_device *drm_dev, void *data,
 		return -ENOMEM;
 	}
 
+	runqueue->drm_dev = drm_dev;
 	runqueue->dev = rga->dev;
 
 	init_completion(&runqueue->complete);
@@ -669,6 +707,10 @@ static int rockchip_rga_open(struct drm_device *drm_dev, struct device *dev,
 {
 	struct rockchip_drm_file_private *file_priv = file->driver_priv;
 	struct rockchip_drm_rga_private *rga_priv;
+	struct rockchip_rga *rga;
+
+	rga = dev_get_drvdata(dev);
+	rga->drm_dev = drm_dev;
 
 	rga_priv = kzalloc(sizeof(*rga_priv), GFP_KERNEL);
 	if (!rga_priv)
@@ -836,7 +878,7 @@ static int rga_probe(struct platform_device *pdev)
 	rga->rga_workq = create_singlethread_workqueue("rga");
 	if (!rga->rga_workq) {
 		dev_err(rga->dev, "failed to create workqueue\n");
-		ret = PTR_ERR(rga->rga_workq);
+		ret = -ENOMEM;
 		goto err_destroy_slab;
 	}
 
