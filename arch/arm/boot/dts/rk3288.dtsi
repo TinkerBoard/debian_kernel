@@ -401,7 +401,8 @@
 		dma-names = "tx", "rx";
 		interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&spi2_clk &spi2_tx &spi2_rx &spi2_cs0 &spi2_cs1>;
+		//pinctrl-0 = <&spi2_clk &spi2_tx &spi2_rx &spi2_cs0 &spi2_cs1>;
+		pinctrl-0 = <&spi2_clk &spi2_tx &spi2_rx &spi2_cs0>;
 		reg = <0x0 0xff130000 0x0 0x1000>;
 		#address-cells = <2>;
 		#size-cells = <0>;
@@ -1083,7 +1084,7 @@
 		clocks = <&cru HCLK_I2S0>, <&cru SCLK_I2S0>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2s0_bus>;
-		rockchip,xfer-mode = <0>;
+		//rockchip,xfer-mode = <0>;
 		rockchip,playback-channels = <8>;
 		rockchip,capture-channels = <2>;
 		status = "disabled";
@@ -1609,7 +1610,7 @@
 		      <0x0 0xffc06000 0x0 0x2000>;
 		interrupts = <GIC_PPI 9 0xf04>;
 	};
-
+/*
 	cif_isp0:cif_isp@ff910000 {
 		compatible = "rockchip,rk3288-cif-isp";
 		rockchip,grf = <&grf>;
@@ -1628,7 +1629,7 @@
 		interrupts = <GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "cif_isp10_irq";
 	};
-
+*/
 	pinctrl: pinctrl {
 		compatible = "rockchip,rk3288-pinctrl";
 		rockchip,grf = <&grf>;
