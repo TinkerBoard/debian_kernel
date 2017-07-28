@@ -202,6 +202,10 @@ static const struct drm_display_mode drm_dmt_modes[] = {
 	{ DRM_MODE("848x480", DRM_MODE_TYPE_DRIVER, 33750, 848, 864,
 		   976, 1088, 0, 480, 486, 494, 517, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) },
+	/* 0xff - 1024x600@43Hz, interlace */
+	{ DRM_MODE("1024x600", DRM_MODE_TYPE_DRIVER, 32000, 1024, 1064,
+		   1112, 1152, 0, 600, 613, 616, 645, 0,
+		   DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC) },
 	/* 0x0f - 1024x768@43Hz, interlace */
 	{ DRM_MODE("1024x768i", DRM_MODE_TYPE_DRIVER, 44900, 1024, 1032,
 		   1208, 1264, 0, 768, 768, 772, 817, 0,
