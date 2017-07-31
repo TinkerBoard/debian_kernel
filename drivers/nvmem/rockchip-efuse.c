@@ -23,8 +23,6 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
-#include <asm/system_info.h>
-#include <linux/crc32.h>
 
 #define EFUSE_A_SHIFT			6
 #define EFUSE_A_MASK			0x3ff
@@ -96,64 +94,6 @@ static const struct of_device_id rockchip_efuse_match[] = {
 };
 MODULE_DEVICE_TABLE(of, rockchip_efuse_match);
 
-static u8 efuse_buf[32] = {};
-static int rockchip_efuse_serial_number(struct rockchip_efuse_chip *efuse, u8 *efuse_buf)
-{
-        u8 *buf = efuse_buf;
-        int ret;
-	size_t bytes = 32;
-	unsigned int offset = 0;
-
-        ret = clk_prepare_enable(efuse->clk);
-        if (ret < 0) {
-                dev_err(efuse->dev, "failed to prepare/enable efuse clk\n");
-                return ret;
-        }
-
-        dump_stack();
-
-        writel(EFUSE_LOAD | EFUSE_PGENB, efuse->base + REG_EFUSE_CTRL);
-        udelay(1);
-        while (bytes--) {
-                writel(readl(efuse->base + REG_EFUSE_CTRL) &
-                             (~(EFUSE_A_MASK << EFUSE_A_SHIFT)),
-                             efuse->base + REG_EFUSE_CTRL);
-                writel(readl(efuse->base + REG_EFUSE_CTRL) |
-                             ((offset++ & EFUSE_A_MASK) << EFUSE_A_SHIFT),
-                             efuse->base + REG_EFUSE_CTRL);
-                udelay(1);
-                writel(readl(efuse->base + REG_EFUSE_CTRL) |
-                             EFUSE_STROBE, efuse->base + REG_EFUSE_CTRL);
-                udelay(1);
-                *buf++ = readb(efuse->base + REG_EFUSE_DOUT);
-                writel(readl(efuse->base + REG_EFUSE_CTRL) &
-                     (~EFUSE_STROBE), efuse->base + REG_EFUSE_CTRL);
-                udelay(1);
-        }
-
-
-        writel(EFUSE_PGENB | EFUSE_CSB, efuse->base + REG_EFUSE_CTRL);
-
-        clk_disable_unprepare(efuse->clk);
-
-        return 0;
-}
-
-static void __init rockchip_efuse_set_system_serial(void)
-{
-        int i;
-        u8 buf[16];
-
-        for (i = 0; i < 8; i++) {
-                buf[i] = efuse_buf[8 + (i << 1)];
-                buf[i + 8] = efuse_buf[7 + (i << 1)];
-        }
-
-        system_serial_low = crc32(0, buf, 8);
-        system_serial_high = crc32(system_serial_low, buf + 8, 8);
-}
-
-
 static int __init rockchip_efuse_probe(struct platform_device *pdev)
 {
 	struct resource *res;
@@ -184,10 +124,6 @@ static int __init rockchip_efuse_probe(struct platform_device *pdev)
 		return PTR_ERR(nvmem);
 
 	platform_set_drvdata(pdev, nvmem);
-
-	rockchip_efuse_serial_number(efuse, efuse_buf);
-
-	rockchip_efuse_set_system_serial();
 
 	return 0;
 }

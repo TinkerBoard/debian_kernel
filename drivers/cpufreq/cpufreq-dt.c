@@ -29,7 +29,6 @@
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 #include <linux/thermal.h>
-#include <asm/system_info.h>
 
 #define MAX_PROP_NAME_LEN	6
 #define VERSION_ELEMENTS	1
@@ -120,9 +119,6 @@ static int set_opp_info(struct device *dev)
 		chip_vesion = 0;
 		apll_safefreq = SAFE_FREQ;
 	}
-
-	system_rev = (unsigned int)(package_info & 0xf0);
-
 	snprintf(name, MAX_PROP_NAME_LEN, "v%d", chip_vesion);
 	ret = dev_pm_opp_set_prop_name(dev, name);
 	if (ret) {
