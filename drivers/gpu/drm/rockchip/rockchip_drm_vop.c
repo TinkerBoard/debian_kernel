@@ -1605,6 +1605,9 @@ vop_crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode,
 	int request_clock = mode->clock;
 	int clock;
 
+	if (mode->clock >= 594000 || mode->clock <= 27500)
+		return MODE_CLOCK_RANGE;
+
 	if (mode->hdisplay > vop_data->max_output.width)
 		return MODE_BAD_HVALUE;
 

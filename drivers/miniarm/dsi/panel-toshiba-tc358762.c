@@ -488,9 +488,9 @@ struct bridge_desc {
 static const struct drm_display_mode tc358762_mode = {
 	.clock = 27448,
 	.hdisplay = 800,
-	.hsync_start = 800 + 65,
-	.hsync_end = 800 + 65 + 20,
-	.htotal = 800 + 65 + 20 + 26,
+	.hsync_start = 800 + 70,
+	.hsync_end = 800 + 70 + 20,
+	.htotal = 800 + 70 + 20 + 26,
 	.vdisplay = 480,
 	.vsync_start = 480 + 7,
 	.vsync_end = 480 + 7 + 2,
