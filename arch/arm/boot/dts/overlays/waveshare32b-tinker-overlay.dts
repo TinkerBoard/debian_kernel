@@ -1,0 +1,70 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
+
+	fragment@0 {
+		target = <&spi2>;
+
+		__overlay__ {
+			status = "okay";
+
+			spidev@0 {
+				status = "disabled";
+			};
+
+			spidev@1 {
+				status = "disabled";
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio5>;
+
+		__overlay__ {
+			waveshare32b_pins: waveshare32b_pins {
+				rockchip,pins = <5 12 0 &pcfg_pull_none>,
+                                <5 14 0 &pcfg_pull_none>,
+                                <5 15 0 &pcfg_pull_none>;
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&spi2>;
+
+		__overlay__ {
+			#address-cells = <0x1>;
+			#size-cells = <0x0>;
+
+			waveshare32b@0 {
+					compatible = "ilitek,ili9340";
+					reg = <0>;
+					pinctrl-names = "default";
+					pinctrl-0 = <&waveshare32b_pins>;
+					spi-max-frequency = <16000000>;
+					txbuflen = <32768>;
+					rotate = <270>;
+					bgr = <0>;
+					fps = <25>;
+					buswidth = <8>;
+					reset-gpios = <&gpio5 14 0>;
+					dc-gpios = <&gpio5 15 0>;
+					debug = <0>;
+				};
+	
+				waveshare32b-ts@1 {
+					compatible = "ti,ads7846";
+					reg = <1>;
+					spi-max-frequency = <2000000>;
+					interrupts = <12 2>;
+					interrupt-parent = <&gpio5>;
+					pendown-gpio = <&gpio5 12 0>;
+					ti,x-plate-ohms = /bits/ 16 <60>;/*[00 3c];*/
+					ti,pressure-max = /bits/ 16 <255>;/*[00 ff];*/
+				};
+		};
+	};
+};

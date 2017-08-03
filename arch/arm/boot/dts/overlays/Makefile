@@ -3,6 +3,7 @@
 dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	hifiberry-dac-amp.dtbo \
 	waveshare35a-tinker.dtbo \
+	waveshare32b-tinker.dtbo \
 
 targets += dtbs dtbs_install
 targets += $(dtbo-y)
