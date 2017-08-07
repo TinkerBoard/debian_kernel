@@ -4,4 +4,5 @@ xipImage
 bootpImage
 uImage
 *.dtb
+*.dtbo
 zImage-dtb
