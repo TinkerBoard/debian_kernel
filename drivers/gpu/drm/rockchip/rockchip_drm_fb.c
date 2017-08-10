@@ -19,9 +19,11 @@
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_crtc_helper.h>
 #include <linux/memblock.h>
+#include <linux/iommu.h>
 
 #include "rockchip_drm_drv.h"
 #include "rockchip_drm_gem.h"
+#include "rockchip_drm_backlight.h"
 
 #define to_rockchip_fb(x) container_of(x, struct rockchip_drm_fb, fb)
 
@@ -31,6 +33,13 @@ struct rockchip_drm_fb {
 	struct drm_gem_object *obj[ROCKCHIP_MAX_FB_BUFFER];
 	struct rockchip_logo *logo;
 };
+
+bool rockchip_fb_is_logo(struct drm_framebuffer *fb)
+{
+	struct rockchip_drm_fb *rk_fb = to_rockchip_fb(fb);
+
+	return rk_fb && rk_fb->logo;
+}
 
 dma_addr_t rockchip_fb_get_dma_addr(struct drm_framebuffer *fb,
 				    unsigned int plane)
@@ -56,20 +65,8 @@ static void rockchip_drm_fb_destroy(struct drm_framebuffer *fb)
 	}
 
 #ifndef MODULE
-	if (rockchip_fb->logo) {
-		struct rockchip_logo *logo = rockchip_fb->logo;
-
-		if (!--logo->count) {
-			void *start = phys_to_virt(logo->start);
-			void *end = phys_to_virt(logo->size);
-
-			dma_unmap_sg(fb->dev->dev, logo->sgt->sgl,
-				     logo->sgt->nents, DMA_TO_DEVICE);
-			sg_free_table(logo->sgt);
-			memblock_free(logo->start, logo->size);
-			free_reserved_area(start, end, -1, "drm_logo");
-		}
-	}
+	if (rockchip_fb->logo)
+		rockchip_free_loader_memory(fb->dev);
 #else
 	WARN_ON(rockchip_fb->logo);
 #endif
@@ -212,68 +209,6 @@ static void rockchip_drm_output_poll_changed(struct drm_device *dev)
 		drm_fb_helper_hotplug_event(fb_helper);
 }
 
-static void rockchip_crtc_wait_for_update(struct drm_crtc *crtc)
-{
-	struct rockchip_drm_private *priv = crtc->dev->dev_private;
-	int pipe = drm_crtc_index(crtc);
-	const struct rockchip_crtc_funcs *crtc_funcs = priv->crtc_funcs[pipe];
-
-	if (crtc_funcs && crtc_funcs->wait_for_update)
-		crtc_funcs->wait_for_update(crtc);
-}
-
-/*
- * We can't use drm_atomic_helper_wait_for_vblanks() because rk3288 and rk3066
- * have hardware counters for neither vblanks nor scanlines, which results in
- * a race where:
- *				| <-- HW vsync irq and reg take effect
- *	       plane_commit --> |
- *	get_vblank and wait --> |
- *				| <-- handle_vblank, vblank->count + 1
- *		 cleanup_fb --> |
- *		iommu crash --> |
- *				| <-- HW vsync irq and reg take effect
- *
- * This function is equivalent but uses rockchip_crtc_wait_for_update() instead
- * of waiting for vblank_count to change.
- */
-static void
-rockchip_atomic_wait_for_complete(struct drm_device *dev, struct drm_atomic_state *old_state)
-{
-	struct drm_crtc_state *old_crtc_state;
-	struct drm_crtc *crtc;
-	int i, ret;
-
-	for_each_crtc_in_state(old_state, crtc, old_crtc_state, i) {
-		/* No one cares about the old state, so abuse it for tracking
-		 * and store whether we hold a vblank reference (and should do a
-		 * vblank wait) in the ->enable boolean.
-		 */
-		old_crtc_state->enable = false;
-
-		if (!crtc->state->active)
-			continue;
-
-		if (!drm_atomic_helper_framebuffer_changed(dev,
-				old_state, crtc))
-			continue;
-
-		ret = drm_crtc_vblank_get(crtc);
-		if (ret != 0)
-			continue;
-
-		old_crtc_state->enable = true;
-	}
-
-	for_each_crtc_in_state(old_state, crtc, old_crtc_state, i) {
-		if (!old_crtc_state->enable)
-			continue;
-
-		rockchip_crtc_wait_for_update(crtc);
-		drm_crtc_vblank_put(crtc);
-	}
-}
-
 static void
 rockchip_atomic_commit_complete(struct rockchip_atomic_commit *commit)
 {
@@ -303,9 +238,11 @@ rockchip_atomic_commit_complete(struct rockchip_atomic_commit *commit)
 
 	drm_atomic_helper_commit_modeset_enables(dev, state);
 
+	rockchip_drm_backlight_update(dev);
+
 	drm_atomic_helper_commit_planes(dev, state, true);
 
-	rockchip_atomic_wait_for_complete(dev, state);
+	drm_atomic_helper_wait_for_vblanks(dev, state);
 
 	drm_atomic_helper_cleanup_planes(dev, state);
 
@@ -382,8 +319,8 @@ void rockchip_drm_mode_config_init(struct drm_device *dev)
 	 * this value would be used to check framebuffer size limitation
 	 * at drm_mode_addfb().
 	 */
-	dev->mode_config.max_width = 4096;
-	dev->mode_config.max_height = 4096;
+	dev->mode_config.max_width = 8192;
+	dev->mode_config.max_height = 8192;
 
 	dev->mode_config.funcs = &rockchip_drm_mode_config_funcs;
 }

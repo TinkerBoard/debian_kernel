@@ -8,12 +8,13 @@
 /* cmdlist data structure */
 struct rga_cmdlist {
 	u32		head;
-	u32		data[RGA_CMDLIST_SIZE * 2];
+	u32		data[(RGA_CMDLIST_SIZE + RGA_CMDBUF_SIZE) * 2];
 	u32		last;	/* last data offset */
 	void		*src_mmu_pages;
 	void		*dst_mmu_pages;
 	void		*src1_mmu_pages;
 	struct dma_buf_attachment *src_attach;
+	struct dma_buf_attachment *src1_attach;
 	struct dma_buf_attachment *dst_attach;
 };
 
@@ -25,6 +26,7 @@ struct rga_cmdlist_node {
 struct rga_runqueue_node {
 	struct list_head	list;
 
+	struct drm_device	*drm_dev;
 	struct device		*dev;
 	pid_t			pid;
 	struct drm_file		*file;

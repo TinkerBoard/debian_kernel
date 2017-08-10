@@ -52,6 +52,9 @@
 #include "nterr.h"
 #include "rfc1002pdu.h"
 #include "fscache.h"
+#ifdef CONFIG_CIFS_SMB2
+#include "smb2proto.h"
+#endif
 
 #define CIFS_PORT 445
 #define RFC1001_PORT 139
@@ -921,10 +924,19 @@ cifs_demultiplex_thread(void *p)
 
 		server->lstrp = jiffies;
 		if (mid_entry != NULL) {
+			if ((mid_entry->mid_flags & MID_WAIT_CANCELLED) &&
+			     mid_entry->mid_state == MID_RESPONSE_RECEIVED &&
+					server->ops->handle_cancelled_mid)
+				server->ops->handle_cancelled_mid(
+							mid_entry->resp_buf,
+							server);
+
 			if (!mid_entry->multiRsp || mid_entry->multiEnd)
 				mid_entry->callback(mid_entry);
-		} else if (!server->ops->is_oplock_break ||
-			   !server->ops->is_oplock_break(buf, server)) {
+		} else if (server->ops->is_oplock_break &&
+			   server->ops->is_oplock_break(buf, server)) {
+			cifs_dbg(FYI, "Received oplock break\n");
+		} else {
 			cifs_dbg(VFS, "No task to wake, unknown frame received! NumMids %d\n",
 				 atomic_read(&midCount));
 			cifs_dump_mem("Received Data is: ", buf,
@@ -2113,8 +2125,8 @@ cifs_find_tcp_session(struct smb_vol *vol)
 	return NULL;
 }
 
-static void
-cifs_put_tcp_session(struct TCP_Server_Info *server)
+void
+cifs_put_tcp_session(struct TCP_Server_Info *server, int from_reconnect)
 {
 	struct task_struct *task;
 
@@ -2130,6 +2142,19 @@ cifs_put_tcp_session(struct TCP_Server_Info *server)
 	spin_unlock(&cifs_tcp_ses_lock);
 
 	cancel_delayed_work_sync(&server->echo);
+
+#ifdef CONFIG_CIFS_SMB2
+	if (from_reconnect)
+		/*
+		 * Avoid deadlock here: reconnect work calls
+		 * cifs_put_tcp_session() at its end. Need to be sure
+		 * that reconnect work does nothing with server pointer after
+		 * that step.
+		 */
+		cancel_delayed_work(&server->reconnect);
+	else
+		cancel_delayed_work_sync(&server->reconnect);
+#endif
 
 	spin_lock(&GlobalMid_Lock);
 	server->tcpStatus = CifsExiting;
@@ -2195,12 +2220,16 @@ cifs_get_tcp_session(struct smb_vol *volume_info)
 	INIT_LIST_HEAD(&tcp_ses->tcp_ses_list);
 	INIT_LIST_HEAD(&tcp_ses->smb_ses_list);
 	INIT_DELAYED_WORK(&tcp_ses->echo, cifs_echo_request);
+#ifdef CONFIG_CIFS_SMB2
+	INIT_DELAYED_WORK(&tcp_ses->reconnect, smb2_reconnect_server);
+	mutex_init(&tcp_ses->reconnect_mutex);
+#endif
 	memcpy(&tcp_ses->srcaddr, &volume_info->srcaddr,
 	       sizeof(tcp_ses->srcaddr));
 	memcpy(&tcp_ses->dstaddr, &volume_info->dstaddr,
 		sizeof(tcp_ses->dstaddr));
 #ifdef CONFIG_CIFS_SMB2
-	get_random_bytes(tcp_ses->client_guid, SMB2_CLIENT_GUID_SIZE);
+	generate_random_uuid(tcp_ses->client_guid);
 #endif
 	/*
 	 * at this point we are the only ones with the pointer
@@ -2347,7 +2376,7 @@ cifs_put_smb_ses(struct cifs_ses *ses)
 	spin_unlock(&cifs_tcp_ses_lock);
 
 	sesInfoFree(ses);
-	cifs_put_tcp_session(server);
+	cifs_put_tcp_session(server, 0);
 }
 
 #ifdef CONFIG_KEYS
@@ -2521,7 +2550,7 @@ cifs_get_smb_ses(struct TCP_Server_Info *server, struct smb_vol *volume_info)
 		mutex_unlock(&ses->session_mutex);
 
 		/* existing SMB ses has a server reference already */
-		cifs_put_tcp_session(server);
+		cifs_put_tcp_session(server, 0);
 		free_xid(xid);
 		return ses;
 	}
@@ -2611,7 +2640,7 @@ cifs_find_tcon(struct cifs_ses *ses, const char *unc)
 	return NULL;
 }
 
-static void
+void
 cifs_put_tcon(struct cifs_tcon *tcon)
 {
 	unsigned int xid;
@@ -3517,6 +3546,44 @@ cifs_get_volume_info(char *mount_data, const char *devname)
 	return volume_info;
 }
 
+static int
+cifs_are_all_path_components_accessible(struct TCP_Server_Info *server,
+					unsigned int xid,
+					struct cifs_tcon *tcon,
+					struct cifs_sb_info *cifs_sb,
+					char *full_path)
+{
+	int rc;
+	char *s;
+	char sep, tmp;
+
+	sep = CIFS_DIR_SEP(cifs_sb);
+	s = full_path;
+
+	rc = server->ops->is_path_accessible(xid, tcon, cifs_sb, "");
+	while (rc == 0) {
+		/* skip separators */
+		while (*s == sep)
+			s++;
+		if (!*s)
+			break;
+		/* next separator */
+		while (*s && *s != sep)
+			s++;
+
+		/*
+		 * temporarily null-terminate the path at the end of
+		 * the current component
+		 */
+		tmp = *s;
+		*s = 0;
+		rc = server->ops->is_path_accessible(xid, tcon, cifs_sb,
+						     full_path);
+		*s = tmp;
+	}
+	return rc;
+}
+
 int
 cifs_mount(struct cifs_sb_info *cifs_sb, struct smb_vol *volume_info)
 {
@@ -3654,6 +3721,18 @@ remote_path_check:
 			kfree(full_path);
 			goto mount_fail_check;
 		}
+
+		if (rc != -EREMOTE) {
+			rc = cifs_are_all_path_components_accessible(server,
+							     xid, tcon, cifs_sb,
+							     full_path);
+			if (rc != 0) {
+				cifs_dbg(VFS, "cannot query dirs between root and final path, "
+					 "enabling CIFS_MOUNT_USE_PREFIX_PATH\n");
+				cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_USE_PREFIX_PATH;
+				rc = 0;
+			}
+		}
 		kfree(full_path);
 	}
 
@@ -3717,7 +3796,7 @@ mount_fail_check:
 		else if (ses)
 			cifs_put_smb_ses(ses);
 		else
-			cifs_put_tcp_session(server);
+			cifs_put_tcp_session(server, 0);
 		bdi_destroy(&cifs_sb->bdi);
 	}
 
@@ -3923,6 +4002,7 @@ cifs_umount(struct cifs_sb_info *cifs_sb)
 
 	bdi_destroy(&cifs_sb->bdi);
 	kfree(cifs_sb->mountdata);
+	kfree(cifs_sb->prepath);
 	call_rcu(&cifs_sb->rcu, delayed_free);
 }
 
@@ -4027,7 +4107,7 @@ cifs_construct_tcon(struct cifs_sb_info *cifs_sb, kuid_t fsuid)
 	ses = cifs_get_smb_ses(master_tcon->ses->server, vol_info);
 	if (IS_ERR(ses)) {
 		tcon = (struct cifs_tcon *)ses;
-		cifs_put_tcp_session(master_tcon->ses->server);
+		cifs_put_tcp_session(master_tcon->ses->server, 0);
 		goto out;
 	}
 

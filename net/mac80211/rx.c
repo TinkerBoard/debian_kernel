@@ -2203,16 +2203,22 @@ ieee80211_rx_h_amsdu(struct ieee80211_rx_data *rx)
 	if (!(status->rx_flags & IEEE80211_RX_AMSDU))
 		return RX_CONTINUE;
 
-	if (ieee80211_has_a4(hdr->frame_control) &&
-	    rx->sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
-	    !rx->sdata->u.vlan.sta)
-		return RX_DROP_UNUSABLE;
+	if (unlikely(ieee80211_has_a4(hdr->frame_control))) {
+		switch (rx->sdata->vif.type) {
+		case NL80211_IFTYPE_AP_VLAN:
+			if (!rx->sdata->u.vlan.sta)
+				return RX_DROP_UNUSABLE;
+			break;
+		case NL80211_IFTYPE_STATION:
+			if (!rx->sdata->u.mgd.use_4addr)
+				return RX_DROP_UNUSABLE;
+			break;
+		default:
+			return RX_DROP_UNUSABLE;
+		}
+	}
 
-	if (is_multicast_ether_addr(hdr->addr1) &&
-	    ((rx->sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
-	      rx->sdata->u.vlan.sta) ||
-	     (rx->sdata->vif.type == NL80211_IFTYPE_STATION &&
-	      rx->sdata->u.mgd.use_4addr)))
+	if (is_multicast_ether_addr(hdr->addr1))
 		return RX_DROP_UNUSABLE;
 
 	skb->dev = dev;
@@ -3390,6 +3396,27 @@ static bool ieee80211_accept_frame(struct ieee80211_rx_data *rx)
 			    !ether_addr_equal(bssid, hdr->addr1))
 				return false;
 		}
+
+		/*
+		 * 802.11-2016 Table 9-26 says that for data frames, A1 must be
+		 * the BSSID - we've checked that already but may have accepted
+		 * the wildcard (ff:ff:ff:ff:ff:ff).
+		 *
+		 * It also says:
+		 *	The BSSID of the Data frame is determined as follows:
+		 *	a) If the STA is contained within an AP or is associated
+		 *	   with an AP, the BSSID is the address currently in use
+		 *	   by the STA contained in the AP.
+		 *
+		 * So we should not accept data frames with an address that's
+		 * multicast.
+		 *
+		 * Accepting it also opens a security problem because stations
+		 * could encrypt it with the GTK and inject traffic that way.
+		 */
+		if (ieee80211_is_data(hdr->frame_control) && multicast)
+			return false;
+
 		return true;
 	case NL80211_IFTYPE_WDS:
 		if (bssid || !ieee80211_is_data(hdr->frame_control))

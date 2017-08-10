@@ -826,13 +826,16 @@ iwl_mvm_ampdu_check_trigger(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
 
 static int iwl_mvm_mac_ampdu_action(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
-				    enum ieee80211_ampdu_mlme_action action,
-				    struct ieee80211_sta *sta, u16 tid,
-				    u16 *ssn, u8 buf_size, bool amsdu)
+				    struct ieee80211_ampdu_params *params)
 {
 	struct iwl_mvm *mvm = IWL_MAC80211_GET_MVM(hw);
 	int ret;
 	bool tx_agg_ref = false;
+	struct ieee80211_sta *sta = params->sta;
+	enum ieee80211_ampdu_mlme_action action = params->action;
+	u16 tid = params->tid;
+	u16 *ssn = &params->ssn;
+	u8 buf_size = params->buf_size;
 
 	IWL_DEBUG_HT(mvm, "A-MPDU action on addr %pM tid %d: action %d\n",
 		     sta->addr, tid, action);
@@ -3992,8 +3995,8 @@ static int iwl_mvm_mac_get_survey(struct ieee80211_hw *hw, int idx,
 	if (idx != 0)
 		return -ENOENT;
 
-	if (fw_has_capa(&mvm->fw->ucode_capa,
-			IWL_UCODE_TLV_CAPA_RADIO_BEACON_STATS))
+	if (!fw_has_capa(&mvm->fw->ucode_capa,
+			 IWL_UCODE_TLV_CAPA_RADIO_BEACON_STATS))
 		return -ENOENT;
 
 	mutex_lock(&mvm->mutex);
@@ -4039,8 +4042,8 @@ static void iwl_mvm_mac_sta_statistics(struct ieee80211_hw *hw,
 	struct iwl_mvm_vif *mvmvif = iwl_mvm_vif_from_mac80211(vif);
 	struct iwl_mvm_sta *mvmsta = iwl_mvm_sta_from_mac80211(sta);
 
-	if (fw_has_capa(&mvm->fw->ucode_capa,
-			IWL_UCODE_TLV_CAPA_RADIO_BEACON_STATS))
+	if (!fw_has_capa(&mvm->fw->ucode_capa,
+			 IWL_UCODE_TLV_CAPA_RADIO_BEACON_STATS))
 		return;
 
 	/* if beacon filtering isn't on mac80211 does it anyway */

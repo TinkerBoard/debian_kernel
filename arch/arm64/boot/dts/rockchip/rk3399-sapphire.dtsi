@@ -42,9 +42,50 @@
 
 #include "dt-bindings/pwm/pwm.h"
 #include "rk3399.dtsi"
+#include "rk3399-opp.dtsi"
 
 / {
 	compatible = "rockchip,rk3399-sapphire", "rockchip,rk3399";
+
+	backlight: backlight {
+		status = "disabled";
+		compatible = "pwm-backlight";
+		pwms = <&pwm0 0 25000 0>;
+		brightness-levels = <
+			  0   1   2   3   4   5   6   7
+			  8   9  10  11  12  13  14  15
+			 16  17  18  19  20  21  22  23
+			 24  25  26  27  28  29  30  31
+			 32  33  34  35  36  37  38  39
+			 40  41  42  43  44  45  46  47
+			 48  49  50  51  52  53  54  55
+			 56  57  58  59  60  61  62  63
+			 64  65  66  67  68  69  70  71
+			 72  73  74  75  76  77  78  79
+			 80  81  82  83  84  85  86  87
+			 88  89  90  91  92  93  94  95
+			 96  97  98  99 100 101 102 103
+			104 105 106 107 108 109 110 111
+			112 113 114 115 116 117 118 119
+			120 121 122 123 124 125 126 127
+			128 129 130 131 132 133 134 135
+			136 137 138 139 140 141 142 143
+			144 145 146 147 148 149 150 151
+			152 153 154 155 156 157 158 159
+			160 161 162 163 164 165 166 167
+			168 169 170 171 172 173 174 175
+			176 177 178 179 180 181 182 183
+			184 185 186 187 188 189 190 191
+			192 193 194 195 196 197 198 199
+			200 201 202 203 204 205 206 207
+			208 209 210 211 212 213 214 215
+			216 217 218 219 220 221 222 223
+			224 225 226 227 228 229 230 231
+			232 233 234 235 236 237 238 239
+			240 241 242 243 244 245 246 247
+			248 249 250 251 252 253 254 255>;
+		default-brightness-level = <200>;
+	};
 
 	clkin_gmac: external-gmac-clock {
 		compatible = "fixed-clock";
@@ -54,13 +95,13 @@
 	};
 
 	dw_hdmi_audio: dw-hdmi-audio {
-		status = "okay";
+		status = "disabled";
 		compatible = "rockchip,dw-hdmi-audio";
 		#sound-dai-cells = <0>;
 	};
 
 	hdmi_sound: hdmi-sound {
-		status = "okay";
+		status = "disabled";
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,mclk-fs = <256>;
@@ -70,24 +111,8 @@
 			sound-dai = <&i2s2>;
 		};
 		simple-audio-card,codec {
-			sound-dai = <&dw_hdmi_audio>;
+			sound-dai = <&hdmi>;
 		};
-	};
-
-	io-domains {
-		compatible = "rockchip,rk3399-io-voltage-domain";
-		rockchip,grf = <&grf>;
-
-		bt656-supply = <&vcc_3v0>;		/* bt656_gpio2ab_ms */
-		audio-supply = <&vcca1v8_codec>;	/* audio_gpio3d4a_ms */
-		sdmmc-supply = <&vcc_sd>;		/* sdmmc_gpio4b_ms */
-		gpio1830-supply = <&vcc_3v0>;		/* gpio1833_gpio4cd_ms */
-	};
-
-	pmu-io-domains {
-		compatible = "rockchip,rk3399-pmu-io-voltage-domain";
-		rockchip,grf = <&pmugrf>;
-		pmu1830-supply = <&vcc_3v0>;
 	};
 
 	sdio_pwrseq: sdio-pwrseq {
@@ -122,6 +147,7 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&host_vbus_drv>;
 		regulator-name = "vcc5v0_host";
+		regulator-always-on;
 	};
 
 	vcc5v0_sys: vcc5v0-sys {
@@ -142,7 +168,7 @@
 
 	vdd_log: vdd-log {
 		compatible = "pwm-regulator";
-		pwms = <&pwm2 0 25000 0>;
+		pwms = <&pwm2 0 25000 1>;
 		regulator-name = "vdd_log";
 		regulator-min-microvolt = <800000>;
 		regulator-max-microvolt = <1400000>;
@@ -180,9 +206,6 @@
 };
 
 &emmc_phy {
-	freq-sel = <200000000>;
-	dr-sel = <50>;
-	opdelay = <4>;
 	status = "okay";
 };
 
@@ -218,6 +241,9 @@
 		reg = <0x40>;
 		vin-supply = <&vcc5v0_sys>;
 		regulator-compatible = "fan53555-reg";
+		pinctrl-names = "default";
+		pinctrl-0 = <&vsel1_gpio>;
+		vsel-gpios = <&gpio1 17 GPIO_ACTIVE_HIGH>;
 		regulator-name = "vdd_cpu_b";
 		regulator-min-microvolt = <712500>;
 		regulator-max-microvolt = <1500000>;
@@ -236,6 +262,9 @@
 		reg = <0x41>;
 		vin-supply = <&vcc5v0_sys>;
 		regulator-compatible = "fan53555-reg";
+		pinctrl-names = "default";
+		pinctrl-0 = <&vsel2_gpio>;
+		vsel-gpios = <&gpio1 14 GPIO_ACTIVE_HIGH>;
 		regulator-name = "vdd_gpu";
 		regulator-min-microvolt = <712500>;
 		regulator-max-microvolt = <1500000>;
@@ -280,6 +309,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <750000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <6001>;
 				regulator-name = "vdd_center";
 				regulator-state-mem {
 					regulator-off-in-suspend;
@@ -291,6 +321,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <750000>;
 				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <6001>;
 				regulator-name = "vdd_cpu_l";
 				regulator-state-mem {
 					regulator-off-in-suspend;
@@ -431,6 +462,22 @@
 	};
 };
 
+&i2c4 {
+	status = "okay";
+	i2c-scl-rising-time-ns = <475>;
+	i2c-scl-falling-time-ns = <26>;
+
+	fusb0: fusb30x@22 {
+		compatible = "fairchild,fusb302";
+		reg = <0x22>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&fusb0_int>;
+		int-n-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>;
+		vbus-5v-gpios = <&gpio2 0 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+};
+
 &i2s0 {
 	status = "okay";
 	rockchip,i2s-broken-burst-len;
@@ -444,6 +491,19 @@
 	status = "okay";
 };
 
+&io_domains {
+	status = "okay";
+
+	bt656-supply = <&vcc_3v0>;		/* bt656_gpio2ab_ms */
+	audio-supply = <&vcca1v8_codec>;	/* audio_gpio3d4a_ms */
+	sdmmc-supply = <&vcc_sd>;		/* sdmmc_gpio4b_ms */
+	gpio1830-supply = <&vcc_3v0>;		/* gpio1833_gpio4cd_ms */
+};
+
+&pcie_phy {
+	status = "okay";
+};
+
 &pcie0 {
 	assigned-clocks = <&cru SCLK_PCIEPHY_REF>;
 	assigned-clock-parents = <&cru SCLK_PCIEPHY_REF100M>;
@@ -453,6 +513,11 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pcie_clkreqn>;
 	status = "okay";
+};
+
+&pmu_io_domains {
+	status = "okay";
+	pmu1830-supply = <&vcc_3v0>;
 };
 
 &pwm0 {
@@ -511,6 +576,15 @@
 	status = "okay";
 };
 
+&tcphy0 {
+	extcon = <&fusb0>;
+	status = "okay";
+};
+
+&tcphy1 {
+	status = "okay";
+};
+
 &tsadc {
 	/* tshut mode 0:CRU 1:GPIO */
 	rockchip,hw-tshut-mode = <1>;
@@ -521,6 +595,7 @@
 
 &u2phy0 {
 	status = "okay";
+	extcon = <&fusb0>;
 
 	u2phy0_otg: otg-port {
 		status = "okay";
@@ -551,6 +626,7 @@
 
 &usbdrd3_0 {
 	status = "okay";
+	extcon = <&fusb0>;
 };
 
 &usbdrd3_1 {
@@ -582,177 +658,6 @@
 	status = "okay";
 };
 
-&cluster0_opp {
-	opp@408000000 {
-		opp-hz = /bits/ 64 <408000000>;
-		opp-microvolt = <800000>;
-		clock-latency-ns = <40000>;
-	};
-	opp@600000000 {
-		opp-hz = /bits/ 64 <600000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@816000000 {
-		opp-hz = /bits/ 64 <816000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@1008000000 {
-		opp-hz = /bits/ 64 <1008000000>;
-		opp-microvolt = <875000>;
-	};
-	opp@1200000000 {
-		opp-hz = /bits/ 64 <1200000000>;
-		opp-microvolt = <925000>;
-	};
-	opp@1416000000 {
-		opp-hz = /bits/ 64 <1416000000>;
-		opp-microvolt = <1050000>;
-	};
-	opp@1512000000 {
-		opp-hz = /bits/ 64 <1512000000>;
-		opp-microvolt = <1075000>;
-	};
-};
-
-&cluster1_opp {
-	opp@408000000 {
-		opp-hz = /bits/ 64 <408000000>;
-		opp-microvolt = <800000>;
-		clock-latency-ns = <40000>;
-	};
-	opp@600000000 {
-		opp-hz = /bits/ 64 <600000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@816000000 {
-		opp-hz = /bits/ 64 <816000000>;
-		opp-microvolt = <825000>;
-	};
-	opp@1008000000 {
-		opp-hz = /bits/ 64 <1008000000>;
-		opp-microvolt = <875000>;
-	};
-	opp@1200000000 {
-		opp-hz = /bits/ 64 <1200000000>;
-		opp-microvolt = <950000>;
-	};
-	opp@1416000000 {
-		opp-hz = /bits/ 64 <1416000000>;
-		opp-microvolt = <1025000>;
-	};
-	opp@1608000000 {
-		opp-hz = /bits/ 64 <1608000000>;
-		opp-microvolt = <1100000>;
-	};
-	opp@1800000000 {
-		opp-hz = /bits/ 64 <1800000000>;
-		opp-microvolt = <1175000>;
-	};
-	opp@1992000000 {
-		opp-hz = /bits/ 64 <1992000000>;
-		opp-microvolt = <1250000>;
-	};
-};
-
-&CPU_COST_A72 {
-	busy-cost-data = <
-		210   129	/*  408MHz */
-		308   184	/*  600MHz */
-		419   246	/*  816MHz */
-		518   335	/* 1008MHz */
-		617   428	/* 1200MHz */
-		728   573	/* 1416MHz */
-		827   724	/* 1608MHz */
-		925   900	/* 1800MHz */
-		1024  1108	/* 1992MHz */
-	>;
-	idle-cost-data = <
-		15
-		15
-		0
-	>;
-};
-
-&CPU_COST_A53 {
-	busy-cost-data = <
-		108    46	/*  408M */
-		159    67	/*  600M */
-		216    90	/*  816M */
-		267    120	/* 1008M */
-		318    153	/* 1200M */
-		375    198	/* 1416M */
-		401    222	/* 1512M */
-	>;
-	idle-cost-data = <
-		6
-		6
-		0
-	>;
-};
-
-&CLUSTER_COST_A72 {
-	busy-cost-data = <
-		210   129	/*  408MHz */
-		308   184	/*  600MHz */
-		419   246	/*  816MHz */
-		518   335	/* 1008MHz */
-		617   428	/* 1200MHz */
-		728   573	/* 1416MHz */
-		827   724	/* 1608MHz */
-		925   900	/* 1800MHz */
-		1024  1108	/* 1992MHz */
-	>;
-	idle-cost-data = <
-		65
-		65
-		65
-	>;
-};
-
-&CLUSTER_COST_A53 {
-	busy-cost-data = <
-		108    46	/*  408M */
-		159    67	/*  600M */
-		216    90	/*  816M */
-		267    120	/* 1008M */
-		318    153	/* 1200M */
-		375    198	/* 1416M */
-		401    222	/* 1512M */
-	>;
-	idle-cost-data = <
-		56
-		56
-		56
-	>;
-};
-
-&gpu_opp_table {
-	opp@200000000 {
-		opp-hz = /bits/ 64 <200000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@300000000 {
-		opp-hz = /bits/ 64 <300000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@400000000 {
-		opp-hz = /bits/ 64 <400000000>;
-		opp-microvolt = <800000>;
-	};
-	opp@500000000 {
-		opp-hz = /bits/ 64 <500000000>;
-		opp-microvolt = <900000>;
-	};
-	opp@600000000 {
-		opp-hz = /bits/ 64 <600000000>;
-		opp-microvolt = <900000>;
-	};
-	opp@800000000 {
-		opp-hz = /bits/ 64 <800000000>;
-		opp-microvolt = <1000000>;
-	};
-};
-
 &pinctrl {
 	pmic {
 		pmic_int_l: pmic-int-l {
@@ -764,12 +669,26 @@
 			rockchip,pins =
 				<1 18 RK_FUNC_GPIO &pcfg_pull_down>;
 		};
+		vsel1_gpio: vsel1-gpio {
+			rockchip,pins =
+				<1 17 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+		vsel2_gpio: vsel2-gpio {
+			rockchip,pins =
+				<1 14 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
 	};
 
 	usb2 {
 		host_vbus_drv: host-vbus-drv {
 			rockchip,pins =
 				<4 25 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	fusb30x {
+		fusb0_int: fusb0-int {
+			rockchip,pins = <1 2 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 };

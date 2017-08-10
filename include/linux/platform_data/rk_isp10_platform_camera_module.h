@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,7 +11,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 
 #ifndef PLATFORM_CAMERA_MODULE_H
@@ -30,7 +30,7 @@ extern const char *PLTFRM_CAMERA_MODULE_PIN_VSYNC;
 
 enum pltfrm_camera_module_pin_state {
 	PLTFRM_CAMERA_MODULE_PIN_STATE_INACTIVE = 0,
-	PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE = 1
+	PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE   = 1
 };
 
 struct pltfrm_camera_module_reg {
@@ -91,7 +91,6 @@ int pltfrm_superpix_camera_module_read_reg(struct v4l2_subdev *sd,
 	u16 data_length,
 	u8 reg,
 	u8 *val);
-
 
 int pltfrm_camera_module_write_reg(struct v4l2_subdev *sd,
 	u16 reg, u8 val);

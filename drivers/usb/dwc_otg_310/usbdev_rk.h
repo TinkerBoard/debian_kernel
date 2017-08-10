@@ -21,6 +21,7 @@
 #include <linux/reset.h>
 #include <linux/mfd/syscon.h>
 #include <linux/regmap.h>
+#include <linux/rk_keys.h>
 #include <linux/rockchip/cru.h>
 #include <linux/rockchip/grf.h>
 #include <linux/rockchip/cpu.h>
@@ -57,7 +58,6 @@ enum rkusb_rst_flag {
 	RST_OTHER,
 };
 
-extern void rk_send_wakeup_key(void);
 /* rk3188 platform data */
 extern struct dwc_otg_platform_data usb20otg_pdata_rk3188;
 extern struct dwc_otg_platform_data usb20host_pdata_rk3188;
@@ -155,4 +155,13 @@ struct rkehci_pdata_id {
 	char name[32];
 	struct rkehci_platform_data *pdata;
 };
+
+#ifdef CONFIG_ARM
+int is_rk3288_usb(void);
+#else
+static inline int is_rk3288_usb(void)
+{
+	return false;
+}
+#endif
 #endif

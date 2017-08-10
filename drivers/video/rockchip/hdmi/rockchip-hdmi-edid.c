@@ -78,7 +78,30 @@ static int hdmi_edid_parse_dtd(unsigned char *block, struct fb_videomode *mode)
 	return E_HDMI_EDID_SUCCESS;
 }
 
-int hdmi_edid_parse_base(unsigned char *buf,
+static int edid_parse_prop_value(unsigned char *buf,
+				 struct hdmi_edid *pedid)
+{
+	unsigned char *block = &buf[0x36];
+
+	pedid->value.vid = ((buf[ID_MANUFACTURER_NAME_END] << 8) |
+				(buf[ID_MANUFACTURER_NAME]));
+	pedid->value.pid = ((buf[ID_MODEL + 1] << 8) |
+				(buf[ID_MODEL]));
+	pedid->value.sn = ((buf[ID_SERIAL_NUMBER + 3] << 24) |
+				(buf[ID_SERIAL_NUMBER + 2] << 16) |
+				(buf[ID_SERIAL_NUMBER + 1] << 8) |
+				buf[ID_SERIAL_NUMBER]);
+	pedid->value.xres = H_ACTIVE;
+	pedid->value.yres = V_ACTIVE;
+
+	pr_info("%s:read:vid=0x%x,pid=0x%x,sn=0x%x,xres=%d,yres=%d\n",
+		__func__, pedid->value.vid, pedid->value.pid,
+		pedid->value.sn, pedid->value.xres, pedid->value.yres);
+
+	return 0;
+}
+
+int hdmi_edid_parse_base(struct hdmi *hdmi, unsigned char *buf,
 			 int *extend_num, struct hdmi_edid *pedid)
 {
 	int rc = E_HDMI_EDID_SUCCESS;
@@ -118,6 +141,9 @@ int hdmi_edid_parse_base(unsigned char *buf,
 		return E_HDMI_EDID_NOMEMORY;
 
 	fb_edid_to_monspecs(buf, pedid->specs);
+
+	if (hdmi->edid_auto_support)
+		edid_parse_prop_value(buf, pedid);
 
 out:
 	/* For some sink, edid checksum is failed because several
@@ -341,14 +367,23 @@ static void hdmi_edid_parse_yuv420cmdb(unsigned char *buf, int count,
 	struct display_modelist *modelist;
 	int i, j, yuv420_mask = 0, vic;
 
-	for (i = 0; i < count - 1; i++) {
-		EDBG("vic which support yuv420 mode is %x\n", buf[i]);
-		yuv420_mask |= buf[i] << (8 * i);
-	}
-	for (i = 0; i < 32; i++) {
-		if (yuv420_mask & (1 << i)) {
+	if (count == 1) {
+		list_for_each(pos, head) {
+			modelist =
+				list_entry(pos, struct display_modelist, list);
+			vic = modelist->vic | HDMI_VIDEO_YUV420;
+			hdmi_add_vic(vic, head);
+		}
+	} else {
+		for (i = 0; i < count - 1; i++) {
+			EDBG("vic which support yuv420 mode is %x\n", buf[i]);
+			yuv420_mask |= buf[i] << (8 * i);
+		}
+		for (i = 0; i < 32; i++) {
+			if (!(yuv420_mask & (1 << i)))
+				continue;
 			j = 0;
-			for (pos = head->next; pos != (head); pos = pos->next) {
+			list_for_each(pos, head) {
 				if (j++ == i) {
 					modelist =
 				list_entry(pos, struct display_modelist, list);
@@ -428,6 +463,12 @@ static int hdmi_edid_parse_extensions_cea(unsigned char *buf,
 				EDBG("[CEA] Colorimetry Data Block\n");
 				EDBG("value is %02x\n", buf[cur_offset + 2]);
 				pedid->colorimetry = buf[cur_offset + 2];
+				break;
+			case 0x06:
+				EDBG("[CEA] HDR Static Metedata data Block\n");
+				for (i = 0; i < count - 1; i++)
+					pedid->hdr.data[i] =
+						buf[cur_offset + 2 + i];
 				break;
 			case 0x0e:
 				EDBG("[CEA] YCBCR 4:2:0 Video Data Block\n");

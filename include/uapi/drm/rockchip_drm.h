@@ -17,6 +17,22 @@
 
 #include <drm/drm.h>
 
+/* memory type definitions. */
+enum drm_rockchip_gem_mem_type {
+	/* Physically Continuous memory and used as default. */
+	ROCKCHIP_BO_CONTIG	= 0 << 0,
+	/* Physically Non-Continuous memory. */
+	ROCKCHIP_BO_NONCONTIG	= 1 << 0,
+	/* non-cachable mapping and used as default. */
+	ROCKCHIP_BO_NONCACHABLE	= 0 << 1,
+	/* cachable mapping. */
+	ROCKCHIP_BO_CACHABLE	= 1 << 1,
+	/* write-combine mapping. */
+	ROCKCHIP_BO_WC		= 1 << 2,
+	ROCKCHIP_BO_MASK	= ROCKCHIP_BO_NONCONTIG | ROCKCHIP_BO_CACHABLE |
+				ROCKCHIP_BO_WC
+};
+
 /**
  * User-desired buffer creation information structure.
  *
@@ -84,6 +100,7 @@ struct drm_rockchip_rga_cmd {
 enum drm_rockchip_rga_buf_type {
 	RGA_BUF_TYPE_USERPTR = 1 << 31,
 	RGA_BUF_TYPE_GEMFD   = 1 << 30,
+	RGA_BUF_TYPE_FLUSH   = 1 << 29,
 };
 
 struct drm_rockchip_rga_set_cmdlist {
@@ -106,6 +123,13 @@ enum rockchip_plane_feture {
 
 enum rockchip_crtc_feture {
 	ROCKCHIP_DRM_CRTC_FEATURE_AFBDC,
+};
+
+enum rockchip_cabc_mode {
+	ROCKCHIP_DRM_CABC_MODE_DISABLE,
+	ROCKCHIP_DRM_CABC_MODE_NORMAL,
+	ROCKCHIP_DRM_CABC_MODE_LOWPOWER,
+	ROCKCHIP_DRM_CABC_MODE_USERSPACE,
 };
 
 #define DRM_ROCKCHIP_GEM_CREATE		0x00

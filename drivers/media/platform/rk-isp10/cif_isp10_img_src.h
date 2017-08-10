@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,7 +11,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 
 #ifndef _CIF_ISP10_IMG_SRC_H

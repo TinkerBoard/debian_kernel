@@ -8,6 +8,11 @@
 #include <linux/file.h>
 #include <linux/pm_runtime.h>
 
+#include <linux/dma-iommu.h>
+#include <drm/rockchip_drm.h>
+#include <linux/dma-mapping.h>
+#include <linux/dma-buf.h>
+
 extern int rockchip_set_system_status(unsigned long status);
 extern int rockchip_clear_system_status(unsigned long status);
 
@@ -18,7 +23,7 @@ static int camsys_mrv_iomux_cb(camsys_extdev_t *extdev, void *ptr)
 	struct pinctrl		*pinctrl;
 	struct pinctrl_state	*state;
 	int retval = 0;
-	char state_str[20] = {0};
+	char state_str[64] = {0};
 	camsys_dev_t *camsys_dev = (camsys_dev_t *)ptr;
 	struct device *dev = &(extdev->pdev->dev);
 	camsys_soc_priv_t *soc;
@@ -151,7 +156,7 @@ static int camsys_mrv_flash_trigger_cb(void *ptr, int mode, unsigned int on)
 	int flash_trigger_io;
 	struct pinctrl		*pinctrl;
 	struct pinctrl_state	*state;
-	char state_str[20] = {0};
+	char state_str[63] = {0};
 	int retval = 0;
 	enum of_gpio_flags flags;
 	camsys_extdev_t *extdev = NULL;
@@ -198,7 +203,7 @@ static int camsys_mrv_flash_trigger_cb(void *ptr, int mode, unsigned int on)
 				}
 			}
 		}
-	} else{
+	} else {
 		strcpy(state_str, "isp_flash_as_trigger_out");
 		pinctrl = devm_pinctrl_get(dev);
 		if (IS_ERR(pinctrl)) {
@@ -281,7 +286,7 @@ static int camsys_mrv_iommu_cb(void *ptr, camsys_sysctrl_t *devctl)
 		iommu_dev =
 			rockchip_get_sysmmu_device_by_compatible
 				(ISP1_IOMMU_COMPATIBLE_NAME);
-	} else{
+	} else {
 		if (CHIP_TYPE == 3399) {
 			iommu_dev =
 				rockchip_get_sysmmu_device_by_compatible
@@ -331,7 +336,7 @@ static int camsys_mrv_iommu_cb(void *ptr, camsys_sysctrl_t *devctl)
 		ret = rockchip_iovmm_activate(dev);
 		ret = ion_map_iommu(dev, client, handle,
 			&(iommu->linear_addr), &(iommu->len));
-	} else{
+	} else {
 		ion_unmap_iommu(dev, client, handle);
 		platform_set_sysmmu(iommu_dev, dev);
 		rockchip_iovmm_deactivate(dev);
@@ -339,6 +344,178 @@ static int camsys_mrv_iommu_cb(void *ptr, camsys_sysctrl_t *devctl)
 iommu_end:
 	return ret;
 }
+
+static int camsys_drm_dma_attach_device(camsys_dev_t *camsys_dev)
+{
+	struct iommu_domain *domain = camsys_dev->domain;
+	struct device *dev = &camsys_dev->pdev->dev;
+	int ret;
+
+	ret = dma_set_coherent_mask(dev, DMA_BIT_MASK(32));
+	if (ret)
+		return ret;
+
+	dma_set_max_seg_size(dev, DMA_BIT_MASK(32));
+	ret = iommu_attach_device(domain, dev);
+	if (ret) {
+		dev_err(dev, "Failed to attach iommu device\n");
+		return ret;
+	}
+
+	if (!common_iommu_setup_dma_ops(dev, 0x10000000, SZ_2G, domain->ops)) {
+		dev_err(dev, "Failed to set dma_ops\n");
+		iommu_detach_device(domain, dev);
+		ret = -ENODEV;
+	}
+
+	return ret;
+}
+
+static void camsys_drm_dma_detach_device(camsys_dev_t *camsys_dev)
+{
+	struct iommu_domain *domain = camsys_dev->domain;
+	struct device *dev = &camsys_dev->pdev->dev;
+
+	iommu_detach_device(domain, dev);
+}
+
+static int camsys_mrv_drm_iommu_cb(void *ptr, camsys_sysctrl_t *devctl)
+{
+	struct device *dev = NULL;
+	camsys_iommu_t *iommu = NULL;
+	struct dma_buf *dma_buf;
+	struct dma_buf_attachment *attach;
+	struct sg_table *sgt;
+	dma_addr_t dma_addr;
+	int index = 0;
+	int ret = 0;
+	camsys_dev_t *camsys_dev = (camsys_dev_t *)ptr;
+
+	dev = &camsys_dev->pdev->dev;
+	iommu = (camsys_iommu_t *)(devctl->rev);
+	if (devctl->on) {
+		/*ummap mapped fd first*/
+		int cur_mapped_cnt = camsys_dev->dma_buf_cnt;
+
+		for (index = 0; index < cur_mapped_cnt; index++) {
+			if (camsys_dev->dma_buf[index].fd == iommu->map_fd)
+				break;
+		}
+		if (index != cur_mapped_cnt) {
+			attach = camsys_dev->dma_buf[index].attach;
+			dma_buf = camsys_dev->dma_buf[index].dma_buf;
+			sgt = camsys_dev->dma_buf[index].sgt;
+			camsys_trace
+			(
+			2,
+			"exist mapped buf, release it before map: attach %p,"
+			"dma_buf %p,sgt %p,fd %d,index %d",
+			attach,
+			dma_buf,
+			sgt,
+			iommu->map_fd,
+			index);
+			dma_buf_unmap_attachment
+				(attach,
+				sgt,
+				DMA_BIDIRECTIONAL);
+			dma_buf_detach(dma_buf, attach);
+			dma_buf_put(dma_buf);
+			if (camsys_dev->dma_buf_cnt == 1)
+				camsys_drm_dma_detach_device(camsys_dev);
+			camsys_dev->dma_buf_cnt--;
+			camsys_dev->dma_buf[index].fd = -1;
+		}
+		/*get a free slot*/
+		for (index = 0; index < CAMSYS_DMA_BUF_MAX_NUM; index++)
+			if (camsys_dev->dma_buf[index].fd == -1)
+				break;
+
+		if (index == CAMSYS_DMA_BUF_MAX_NUM)
+			return -ENOMEM;
+
+		if (camsys_dev->dma_buf_cnt == 0) {
+			ret = camsys_drm_dma_attach_device(camsys_dev);
+			if (ret)
+				return ret;
+		}
+
+		dma_buf = dma_buf_get(iommu->map_fd);
+		if (IS_ERR(dma_buf))
+			return PTR_ERR(dma_buf);
+		attach = dma_buf_attach(dma_buf, dev);
+		if (IS_ERR(attach)) {
+			dma_buf_put(dma_buf);
+			return PTR_ERR(attach);
+		}
+		sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+		if (IS_ERR(sgt)) {
+			dma_buf_detach(dma_buf, attach);
+			dma_buf_put(dma_buf);
+			return PTR_ERR(sgt);
+		}
+		dma_addr = sg_dma_address(sgt->sgl);
+		camsys_dev->dma_buf[index].dma_addr = dma_addr;
+		camsys_dev->dma_buf[index].attach	= attach;
+		camsys_dev->dma_buf[index].dma_buf = dma_buf;
+		camsys_dev->dma_buf[index].sgt = sgt;
+		camsys_dev->dma_buf[index].fd = iommu->map_fd;
+		iommu->linear_addr = dma_addr;
+		iommu->len = sg_dma_len(sgt->sgl);
+		camsys_dev->dma_buf_cnt++;
+		camsys_trace
+			(
+			2,
+			"dma buf map: dma_addr 0x%lx,attach %p,"
+			"dma_buf %p,sgt %p,fd %d,buf_cnt %d",
+			(unsigned long)dma_addr,
+			attach,
+			dma_buf,
+			sgt,
+			iommu->map_fd,
+			camsys_dev->dma_buf_cnt);
+	} else {
+		if (
+			(camsys_dev->dma_buf_cnt == 0) ||
+			(index < 0) ||
+			(index >= CAMSYS_DMA_BUF_MAX_NUM))
+			return -EINVAL;
+
+		for (index = 0; index < camsys_dev->dma_buf_cnt; index++) {
+			if (camsys_dev->dma_buf[index].fd == iommu->map_fd)
+				break;
+		}
+		if (index == camsys_dev->dma_buf_cnt) {
+			camsys_warn("can't find map fd %d", iommu->map_fd);
+			return -EINVAL;
+		}
+		attach = camsys_dev->dma_buf[index].attach;
+		dma_buf = camsys_dev->dma_buf[index].dma_buf;
+		sgt = camsys_dev->dma_buf[index].sgt;
+		dma_addr = sg_dma_address(sgt->sgl);
+		camsys_trace
+				(
+				2,
+				"dma buf unmap: dma_addr 0x%lx,attach %p,"
+				"dma_buf %p,sgt %p,index %d",
+				(unsigned long)dma_addr,
+				attach,
+				dma_buf,
+				sgt,
+				index);
+		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
+		dma_buf_detach(dma_buf, attach);
+		dma_buf_put(dma_buf);
+		if (camsys_dev->dma_buf_cnt == 1)
+			camsys_drm_dma_detach_device(camsys_dev);
+
+		camsys_dev->dma_buf_cnt--;
+		camsys_dev->dma_buf[index].fd = -1;
+	}
+
+	return ret;
+}
+
 static int camsys_mrv_reset_cb(void *ptr, unsigned int on)
 {
 	camsys_dev_t *camsys_dev = (camsys_dev_t *)ptr;
@@ -372,7 +549,7 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 			if (on == 1)
 				isp_clk = 210000000;
 			else
-				isp_clk = 210000000;
+				isp_clk = 420000000;
 
 			if (strstr(camsys_dev->miscdev.name,
 				"camsys_marvin1")) {
@@ -389,7 +566,7 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 
 				clk_prepare_enable(clk->pclkin_isp);
 				clk_prepare_enable(clk->cif_clk_out);
-			} else{
+			} else {
 				clk_set_rate(clk->clk_isp0, isp_clk);
 				clk_prepare_enable(clk->hclk_isp0_noc);
 				clk_prepare_enable(clk->hclk_isp0_wrapper);
@@ -401,16 +578,14 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 				clk_prepare_enable(clk->pclk_dphy_ref);
 			}
 
-		clk_set_rate(clk->clk_isp0, isp_clk);
-		clk_set_rate(clk->clk_isp1, isp_clk);
+			clk->in_on = true;
 
-		clk->in_on = true;
-
-		camsys_trace(1, "%s clock(f: %ld Hz) in turn on",
-			dev_name(camsys_dev->miscdev.this_device), isp_clk);
-		camsys_mrv_reset_cb(ptr, 1);
-		udelay(100);
-		camsys_mrv_reset_cb(ptr, 0);
+			camsys_trace(1, "%s clock(f: %ld Hz) in turn on",
+				     dev_name(camsys_dev->miscdev.this_device),
+				     isp_clk);
+			camsys_mrv_reset_cb(ptr, 1);
+			udelay(100);
+			camsys_mrv_reset_cb(ptr, 0);
 		} else if (!on && clk->in_on) {
 			if (strstr(camsys_dev->miscdev.name,
 				"camsys_marvin1")) {
@@ -425,7 +600,7 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 				clk_disable_unprepare(clk->pclk_dphy_ref);
 
 				clk_disable_unprepare(clk->pclkin_isp);
-			} else{
+			} else {
 				clk_disable_unprepare(clk->hclk_isp0_noc);
 				clk_disable_unprepare(clk->hclk_isp0_wrapper);
 				clk_disable_unprepare(clk->aclk_isp0_noc);
@@ -437,11 +612,11 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 				clk_disable_unprepare(clk->pclk_dphy_ref);
 			}
 
-		/* rockchip_clear_system_status(SYS_STATUS_ISP); */
-		clk->in_on = false;
-		camsys_trace(1, "%s clock in turn off",
-			dev_name(camsys_dev->miscdev.this_device));
-		}
+			/* rockchip_clear_system_status(SYS_STATUS_ISP); */
+			clk->in_on = false;
+			camsys_trace(1, "%s clock in turn off",
+				     dev_name(camsys_dev->miscdev.this_device));
+			}
 	} else{
 		if (on && !clk->in_on) {
 			/* rockchip_set_system_status(SYS_STATUS_ISP); */
@@ -463,12 +638,10 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 		if (CHIP_TYPE == 3368 || CHIP_TYPE == 3366) {
 			clk_prepare_enable(clk->cif_clk_out);
 			clk_prepare_enable(clk->pclk_dphyrx);
-			if (CHIP_TYPE == 3368)
-				clk_prepare_enable(clk->clk_vio0_noc);
-		} else{
+		} else {
 			clk_prepare_enable(clk->clk_mipi_24m);
 		}
-			clk->in_on = true;
+		clk->in_on = true;
 
 		camsys_trace(1, "%s clock(f: %ld Hz) in turn on",
 			dev_name(camsys_dev->miscdev.this_device), isp_clk);
@@ -484,9 +657,7 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 		if (CHIP_TYPE == 3368 || CHIP_TYPE == 3366) {
 			clk_disable_unprepare(clk->cif_clk_out);
 			clk_disable_unprepare(clk->pclk_dphyrx);
-			if (CHIP_TYPE == 3368)
-				clk_disable_unprepare(clk->clk_vio0_noc);
-		} else{
+		} else {
 			clk_disable_unprepare(clk->clk_mipi_24m);
 		}
 		/* clk_disable_unprepare(clk->pd_isp); */
@@ -514,7 +685,7 @@ static int camsys_mrv_clkout_cb(void *ptr, unsigned int on, unsigned int inclk)
 		clk_set_rate(clk->cif_clk_out, inclk);
 		clk_prepare_enable(clk->cif_clk_out);
 		clk->out_on = on;
-		camsys_trace(1, "camsys %s clock out(rate: %dHz) turn on",
+		camsys_trace(1, "%s clock out(rate: %dHz) turn on",
 			dev_name(camsys_dev->miscdev.this_device),
 					inclk);
 	} else if (!on && clk->out_on) {
@@ -745,6 +916,11 @@ static int camsys_mrv_remove_cb(struct platform_device *pdev)
 		mrv_clk = NULL;
 	}
 
+	camsys_drm_dma_detach_device(camsys_dev);
+	iommu_group_remove_device(&camsys_dev->pdev->dev);
+	iommu_put_dma_cookie(camsys_dev->domain);
+	iommu_domain_free(camsys_dev->domain);
+
 	return 0;
 }
 int camsys_mrv_probe_cb(struct platform_device *pdev, camsys_dev_t *camsys_dev)
@@ -752,6 +928,9 @@ int camsys_mrv_probe_cb(struct platform_device *pdev, camsys_dev_t *camsys_dev)
 	int err = 0;
 	camsys_mrv_clk_t *mrv_clk = NULL;
 	struct resource register_res;
+	struct iommu_domain *domain = NULL;
+	struct iommu_group *group;
+	struct device_node *np;
 
 	err = of_address_to_resource(pdev->dev.of_node, 0, &register_res);
 	if (err < 0) {
@@ -831,9 +1010,7 @@ int camsys_mrv_probe_cb(struct platform_device *pdev, camsys_dev_t *camsys_dev)
 				devm_clk_get(&pdev->dev, "pclk_isp1");
 			mrv_clk->pclk_dphytxrx	   =
 				devm_clk_get(&pdev->dev, "pclk_dphytxrx");
-		}
-		else
-		{
+		} else{
 			mrv_clk->hclk_isp0_noc	   =
 				devm_clk_get(&pdev->dev, "hclk_isp0_noc");
 			mrv_clk->hclk_isp0_wrapper =
@@ -868,9 +1045,7 @@ int camsys_mrv_probe_cb(struct platform_device *pdev, camsys_dev_t *camsys_dev)
 				err = -EINVAL;
 				goto clk_failed;
 			}
-		}
-		else
-		{
+		} else{
 			if (IS_ERR_OR_NULL(mrv_clk->hclk_isp0_noc)       ||
 				IS_ERR_OR_NULL(mrv_clk->hclk_isp0_wrapper)   ||
 				IS_ERR_OR_NULL(mrv_clk->aclk_isp0_noc)       ||
@@ -885,10 +1060,9 @@ int camsys_mrv_probe_cb(struct platform_device *pdev, camsys_dev_t *camsys_dev)
 				goto clk_failed;
 			}
 		}
-	clk_set_rate(mrv_clk->clk_isp0, 210000000);
 	} else{
-		mrv_clk->pd_isp		  =
-			devm_clk_get(&pdev->dev, "pd_isp");
+		/*mrv_clk->pd_isp	  =                */
+		/*	devm_clk_get(&pdev->dev, "pd_isp");*/
 		mrv_clk->aclk_isp	  =
 			devm_clk_get(&pdev->dev, "aclk_isp");
 		mrv_clk->hclk_isp	  =
@@ -906,7 +1080,8 @@ int camsys_mrv_probe_cb(struct platform_device *pdev, camsys_dev_t *camsys_dev)
 		mrv_clk->clk_mipi_24m =
 			devm_clk_get(&pdev->dev, "clk_mipi_24m");
 
-		if (IS_ERR_OR_NULL(mrv_clk->pd_isp)      ||
+		if (
+			/*IS_ERR_OR_NULL(mrv_clk->pd_isp)    ||*/
 			IS_ERR_OR_NULL(mrv_clk->aclk_isp)    ||
 			IS_ERR_OR_NULL(mrv_clk->hclk_isp)    ||
 			IS_ERR_OR_NULL(mrv_clk->isp)         ||
@@ -930,13 +1105,48 @@ int camsys_mrv_probe_cb(struct platform_device *pdev, camsys_dev_t *camsys_dev)
 	mrv_clk->in_on = false;
 	mrv_clk->out_on = 0;
 
+	np = of_parse_phandle(pdev->dev.of_node, "iommus", 0);
+	if (np) {
+		int index = 0;
+		/* iommu domain */
+		domain = iommu_domain_alloc(&platform_bus_type);
+		if (!domain)
+			goto clk_failed;
+
+		err = iommu_get_dma_cookie(domain);
+		if (err)
+			goto err_free_domain;
+
+		group = iommu_group_get(&pdev->dev);
+		if (!group) {
+			group = iommu_group_alloc();
+			if (IS_ERR(group)) {
+				dev_err(&pdev->dev, "Failed to allocate IOMMU group\n");
+				goto err_put_cookie;
+			}
+
+			err = iommu_group_add_device(group, &pdev->dev);
+			iommu_group_put(group);
+			if (err) {
+				dev_err(&pdev->dev, "failed to add device to IOMMU group\n");
+				goto err_put_cookie;
+			}
+		}
+		camsys_dev->domain = domain;
+		camsys_dev->dma_buf_cnt = 0;
+		camsys_dev->iommu_cb = camsys_mrv_drm_iommu_cb;
+		for (index = 0; index < CAMSYS_DMA_BUF_MAX_NUM; index++)
+			camsys_dev->dma_buf[index].fd = -1;
+	} else {
+		camsys_dev->iommu_cb = camsys_mrv_iommu_cb;
+	}
+
 	camsys_dev->clk = (void *)mrv_clk;
 	camsys_dev->clkin_cb = camsys_mrv_clkin_cb;
 	camsys_dev->clkout_cb = camsys_mrv_clkout_cb;
 	camsys_dev->reset_cb = camsys_mrv_reset_cb;
 	camsys_dev->iomux = camsys_mrv_iomux_cb;
 	camsys_dev->flash_trigger_cb = camsys_mrv_flash_trigger_cb;
-	camsys_dev->iommu_cb = camsys_mrv_iommu_cb;
 
 	camsys_dev->miscdev.minor = MISC_DYNAMIC_MINOR;
 	camsys_dev->miscdev.name = miscdev_name;
@@ -963,7 +1173,12 @@ int camsys_mrv_probe_cb(struct platform_device *pdev, camsys_dev_t *camsys_dev)
 misc_register_failed:
 	if (!IS_ERR_OR_NULL(camsys_dev->miscdev.this_device))
 		misc_deregister(&camsys_dev->miscdev);
-
+err_put_cookie:
+	if (domain)
+		iommu_put_dma_cookie(domain);
+err_free_domain:
+	if (domain)
+		iommu_domain_free(domain);
 clk_failed:
 	if (mrv_clk != NULL) {
 		if (!IS_ERR_OR_NULL(mrv_clk->pd_isp))
@@ -987,13 +1202,13 @@ clk_failed:
 		if (!IS_ERR_OR_NULL(mrv_clk->cif_clk_out))
 			clk_put(mrv_clk->cif_clk_out);
 
-	if (CHIP_TYPE == 3368 || CHIP_TYPE == 3366) {
-		if (!IS_ERR_OR_NULL(mrv_clk->pclk_dphyrx))
-			clk_put(mrv_clk->pclk_dphyrx);
+		if (CHIP_TYPE == 3368 || CHIP_TYPE == 3366) {
+			if (!IS_ERR_OR_NULL(mrv_clk->pclk_dphyrx))
+				clk_put(mrv_clk->pclk_dphyrx);
 
-		if (!IS_ERR_OR_NULL(mrv_clk->clk_vio0_noc))
-		clk_put(mrv_clk->clk_vio0_noc);
-	}
+			if (!IS_ERR_OR_NULL(mrv_clk->clk_vio0_noc))
+				clk_put(mrv_clk->clk_vio0_noc);
+		}
 
 		kfree(mrv_clk);
 		mrv_clk = NULL;

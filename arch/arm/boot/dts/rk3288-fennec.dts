@@ -48,7 +48,7 @@
 	compatible = "rockchip,rk3288-fennec", "rockchip,rk3288";
 
 	memory {
-		reg = <0x0 0x80000000>;
+		reg = <0x0 0x0 0x0 0x80000000>;
 		device_type = "memory";
 	};
 
@@ -57,12 +57,6 @@
 		#clock-cells = <0>;
 		clock-frequency = <125000000>;
 		clock-output-names = "ext_gmac";
-	};
-
-	io-domains {
-		compatible = "rockchip,rk3288-io-voltage-domain";
-		rockchip,grf = <&grf>;
-		wifi-supply = <&vcc_wl>;
 	};
 
 	sdio_pwrseq: sdio-pwrseq {
@@ -86,11 +80,27 @@
 		simple-audio-card,format = "i2s";
 		simple-audio-card,name = "rockchip,fennec-codec";
 		simple-audio-card,mclk-fs = <512>;
-		simple-audio-card,cpu {
-			sound-dai = <&i2s>;
+
+		simple-audio-card,dai-link@0 {
+			format = "i2s";
+			cpu {
+				sound-dai = <&i2s>;
+			};
+			codec {
+				sound-dai = <&hdmi>;
+			};
+
 		};
-		simple-audio-card,codec {
-			sound-dai = <&hdmi>;
+
+		simple-audio-card,dai-link@1 {
+			format = "i2s";
+			cpu {
+				sound-dai = <&i2s>;
+			};
+
+			codec {
+				sound-dai = <&es8323>;
+			};
 		};
 	};
 
@@ -204,7 +214,10 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	#sound-dai-cells = <0>;
-	ddc-i2c-bus = <&i2c5>;
+	status = "okay";
+};
+
+&hevc_service {
 	status = "okay";
 };
 
@@ -399,12 +412,31 @@
 	};
 };
 
-&i2c5 {
+&i2c2 {
 	status = "okay";
+
+	es8323: es8323@10 {
+		compatible = "everest,es8323";
+		reg = <0x10>;
+		hp-det-gpio = <&gpio5 19 GPIO_ACTIVE_HIGH>;
+		clock-names = "mclk";
+		clocks = <&cru SCLK_I2S0_OUT>;
+		#sound-dai-cells = <0>;
+	};
 };
 
 &i2s {
 	#sound-dai-cells = <0>;
+	status = "okay";
+};
+
+&io_domains {
+	status = "okay";
+
+	wifi-supply = <&vcc_wl>;
+};
+
+&rga {
 	status = "okay";
 };
 
@@ -424,6 +456,62 @@
 	pinctrl-0 = <&sdio0_bus4 &sdio0_cmd &sdio0_clk>;
 	sd-uhs-sdr104;
 	supports-sdio;
+};
+
+&tsadc {
+	rockchip,hw-tshut-mode = <0>; /* tshut mode 0:CRU 1:GPIO */
+	rockchip,hw-tshut-polarity = <0>; /* tshut polarity 0:LOW 1:HIGH */
+	status = "okay";
+};
+
+&uart0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0_xfer &uart0_cts>;
+	status = "okay";
+};
+
+&uart2 {
+	status = "okay";
+};
+
+&usbphy {
+	status = "okay";
+};
+
+&usb_host0_ehci {
+	status = "okay";
+};
+
+&usb_host1 {
+	status = "okay";
+};
+
+&usb_otg {
+	status = "okay";
+};
+
+&usb_hsic {
+	status = "okay";
+};
+
+&vopb {
+	status = "okay";
+};
+
+&vopb_mmu {
+	status = "okay";
+};
+
+&vopl {
+	status = "okay";
+};
+
+&vopl_mmu {
+	status = "okay";
+};
+
+&vpu_service {
+	status = "okay";
 };
 
 &pinctrl {
@@ -508,54 +596,4 @@
 			rockchip,pins = <4 19 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
-};
-
-&uart0 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&uart0_xfer &uart0_cts>;
-	status = "okay";
-};
-
-&uart2 {
-	status = "okay";
-};
-
-&usbphy {
-	status = "okay";
-};
-
-&usb_host0_ehci {
-	status = "okay";
-};
-
-&usb_host1 {
-	status = "okay";
-};
-
-&usb_otg {
-	status = "okay";
-};
-
-&usb_hsic {
-	status = "okay";
-};
-
-&vopb {
-	status = "okay";
-};
-
-&vopb_mmu {
-	status = "okay";
-};
-
-&vopl {
-	status = "okay";
-};
-
-&vopl_mmu {
-	status = "okay";
-};
-
-&vpu {
-	status = "okay";
 };

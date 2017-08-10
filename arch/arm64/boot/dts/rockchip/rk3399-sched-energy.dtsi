@@ -1,150 +1,121 @@
-/* static struct idle_state idle_states_cluster_a53[] = { */
-/*        { .power = 56 }, /\* arch_cpu_idle() (active idle) = WFI *\/ */
-/*        { .power = 56 }, /\* WFI *\/ */
-/*        { .power = 56 }, /\* cpu-sleep-0 *\/ */
-/* }; */
+/*
+ * Copyright (c) 2016 Fuzhou Rockchip Electronics Co., Ltd
+ *
+ * This file is dual-licensed: you can use it either under the terms
+ * of the GPL or the X11 license, at your option. Note that this dual
+ * licensing only applies to this file, and not this project as a
+ * whole.
+ *
+ *  a) This library is free software; you can redistribute it and/or
+ *     modify it under the terms of the GNU General Public License as
+ *     published by the Free Software Foundation; either version 2 of the
+ *     License, or (at your option) any later version.
+ *
+ *     This library is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ * Or, alternatively,
+ *
+ *  b) Permission is hereby granted, free of charge, to any person
+ *     obtaining a copy of this software and associated documentation
+ *     files (the "Software"), to deal in the Software without
+ *     restriction, including without limitation the rights to use,
+ *     copy, modify, merge, publish, distribute, sublicense, and/or
+ *     sell copies of the Software, and to permit persons to whom the
+ *     Software is furnished to do so, subject to the following
+ *     conditions:
+ *
+ *     The above copyright notice and this permission notice shall be
+ *     included in all copies or substantial portions of the Software.
+ *
+ *     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ *     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ *     OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ *     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ *     HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ *     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ *     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ *     OTHER DEALINGS IN THE SOFTWARE.
+ */
 
-/* static struct idle_state idle_states_cluster_a72[] = { */
-/*        { .power = 65 }, /\* arch_cpu_idle() (active idle) = WFI *\/ */
-/*        { .power = 65 }, /\* WFI *\/ */
-/*        { .power = 65 }, /\* cpu-sleep-0 *\/ */
-/* }; */
+/ {
+	energy-costs {
+		RK3399_CPU_COST_0: rk3399-core-cost0 {
+			busy-cost-data = <
+				108    46	/*  408M */
+				159    67	/*  600M */
+				216    90	/*  816M */
+				267    120	/* 1008M */
+				318    153	/* 1200M */
+				375    198	/* 1416M */
+				401    222	/* 1512M */
+			>;
+			idle-cost-data = <
+				  6
+				  6
+				  0
+				  0
+			>;
+		};
 
-/* static struct capacity_state cap_states_cluster_a53[] = { */
-/*         /\* Power per cluster *\/ */
-/*        { .cap =  121, .power = 26, }, /\*  408 MHz *\/ */
-/*        { .cap =  179, .power = 30, }, /\*  600 MHz *\/ */
-/*        { .cap =  243, .power = 39, }, /\*  816 MHz *\/ */
-/*        { .cap =  300, .power = 47, }, /\*  1008 MHz *\/ */
-/*        { .cap =  357, .power = 57, }, /\*  1200 Mhz *\/ */
-/*        { .cap =  421, .power = 67, }, /\*  1416 Mhz *\/ */
-/* }; */
+		RK3399_CPU_COST_1: rk3399-core-cost1 {
+			busy-cost-data = <
+				210   129	/*  408MHz */
+				308   184	/*  600MHz */
+				419   246	/*  816MHz */
+				518   335	/* 1008MHz */
+				617   428	/* 1200MHz */
+				728   573	/* 1416MHz */
+				827   724	/* 1608MHz */
+				925   900	/* 1800MHz */
+				1024  1108	/* 1992MHz */
+			>;
+			idle-cost-data = <
+				  15
+				  15
+				   0
+				   0
+			>;
+		};
 
-/* static struct capacity_state cap_states_cluster_a72[] = { */
-/*         /\* Power per cluster *\/ */
-/*        { .cap =  232, .power = 24, }, /\*  408 MHz *\/ */
-/*        { .cap =  341, .power = 32, }, /\*  600 MHz *\/ */
-/*        { .cap =  464, .power = 43, }, /\*  816 MHz *\/ */
-/*        { .cap =  573, .power = 49, }, /\* 1008 MHz *\/ */
-/*        { .cap =  683, .power = 64, }, /\* 1200 MHz *\/ */
-/*        { .cap =  805, .power = 74, }, /\* 1416 MHz *\/ */
-/*        { .cap =  915, .power = 84, }, /\* 1608 MHz *\/ */
-/*        { .cap = 1024, .power = 94, }, /\* 1800 MHz *\/ */
-/* }; */
+		RK3399_CLUSTER_COST_0: rk3399-cluster-cost0 {
+			busy-cost-data = <
+				108    46	/*  408M */
+				159    67	/*  600M */
+				216    90	/*  816M */
+				267    120	/* 1008M */
+				318    153	/* 1200M */
+				375    198	/* 1416M */
+				401    222	/* 1512M */
+			>;
+			idle-cost-data = <
+				56
+				56
+				56
+				56
+			>;
+		};
 
-/* static struct sched_group_energy energy_cluster_a53 = { */
-/*        .nr_idle_states = ARRAY_SIZE(idle_states_cluster_a53), */
-/*        .idle_states    = idle_states_cluster_a53, */
-/*        .nr_cap_states  = ARRAY_SIZE(cap_states_cluster_a53), */
-/*        .cap_states     = cap_states_cluster_a53, */
-/* }; */
-
-/* static struct sched_group_energy energy_cluster_a57 = { */
-/*        .nr_idle_states = ARRAY_SIZE(idle_states_cluster_a72), */
-/*        .idle_states    = idle_states_cluster_a72, */
-/*        .nr_cap_states  = ARRAY_SIZE(cap_states_cluster_a72), */
-/*        .cap_states     = cap_states_cluster_a72, */
-/* }; */
-
-/* static struct idle_state idle_states_core_a53[] = { */
-/*        { .power = 6 }, /\* arch_cpu_idle() (active idle) = WFI *\/ */
-/*        { .power = 6 }, /\* WFI *\/ */
-/*        { .power = 0 }, /\* cpu-sleep-0 *\/ */
-/* }; */
-
-/* static struct idle_state idle_states_core_a72[] = { */
-/*        { .power = 15 }, /\* arch_cpu_idle() (active idle) = WFI *\/ */
-/*        { .power = 15 }, /\* WFI *\/ */
-/*        { .power = 0  }, /\* cpu-sleep-0 *\/ */
-/* }; */
-
-/* static struct capacity_state cap_states_core_a53[] = { */
-/*         /\* Power per cpu *\/ */
-/*        { .cap =  121, .power = 40, }, /\*  408 MHz *\/ */
-/*        { .cap =  179, .power = 62, }, /\*  600 MHz *\/ */
-/*        { .cap =  243, .power = 90, }, /\*  816 MHz *\/ */
-/*        { .cap =  300, .power = 126, }, /\*  1008 MHz *\/ */
-/*        { .cap =  357, .power = 196, }, /\*  1200 Mhz *\/ */
-/*        { .cap =  421, .power = 246, }, /\*  1416 Mhz *\/ */
-/* }; */
-
-/* static struct capacity_state cap_states_core_a72[] = { */
-/*         /\* Power per cpu *\/ */
-/*        { .cap =  232, .power =  349, }, /\*  408 MHz *\/ */
-/*        { .cap =  341, .power =  547, }, /\*  600 MHz *\/ */
-/*        { .cap =  464, .power =  794, }, /\*  816 MHz *\/ */
-/*        { .cap =  573, .power = 1141, }, /\* 1008 MHz *\/ */
-/*        { .cap =  683, .power = 1850, }, /\* 1200 MHz *\/ */
-/*        { .cap =  805, .power = 2499, }, /\* 1416 MHz *\/ */
-/*        { .cap =  915, .power = 2922, }, /\* 1608 MHz *\/ */
-/*        { .cap = 1024, .power = 3416, }, /\* 1800 MHz *\/ */
-/* }; */
-
-energy-costs {
-	CPU_COST_A72: core-cost0 {
-		busy-cost-data = <
-			232   349	/*  408MHz */
-			341   547	/*  600MHz */
-			464   794	/*  816MHz */
-			573   1141	/* 1008MHz */
-			683   1850	/* 1200MHz */
-		//	805   2499	/* 1416MHz */
-		//	915   2922	/* 1608MHz */
-		//	1024  3416	/* 1800MHz */
-		>;
-		idle-cost-data = <
-		      15
-		      15
-		       0
-		>;
-	};
-	CPU_COST_A53: core-cost1 {
-		busy-cost-data = <
-			121    40	/*  408M */
-			179    62	/*  600M */
-			243    90	/*  816M */
-			300    126	/* 1008M */
-			357    196	/* 1200M */
-			421    246	/* 1416M */
-		//	449    263	/* 1512M */
-		>;
-		idle-cost-data = <
-		      6
-		      6
-		      0
-		>;
-	};
-	CLUSTER_COST_A72: cluster-cost0 {
-		busy-cost-data = <
-			232   349	/*  408MHz */
-			341   547	/*  600MHz */
-			464   794	/*  816MHz */
-			573   1141	/* 1008MHz */
-			683   1850	/* 1200MHz */
-		//	805   2499	/* 1416MHz */
-		//	915   2922	/* 1608MHz */
-		//	1024  3416	/* 1800MHz */
-		>;
-		idle-cost-data = <
-			 65
-			 65
-			 65
-		>;
-	};
-	CLUSTER_COST_A53: cluster-cost1 {
-		busy-cost-data = <
-			121    40	/*  408M */
-			179    62	/*  600M */
-			243    90	/*  816M */
-			300    126	/* 1008M */
-			357    196	/* 1200M */
-			421    246	/* 1416M */
-		//	449    263	/* 1512M */
-		>;
-		idle-cost-data = <
-			56
-			56
-			56
-		>;
+		RK3399_CLUSTER_COST_1: rk3399-cluster-cost1 {
+			busy-cost-data = <
+				210   129	/*  408MHz */
+				308   184	/*  600MHz */
+				419   246	/*  816MHz */
+				518   335	/* 1008MHz */
+				617   428	/* 1200MHz */
+				728   573	/* 1416MHz */
+				827   724	/* 1608MHz */
+				925   900	/* 1800MHz */
+				1024  1108	/* 1992MHz */
+			>;
+			idle-cost-data = <
+				 65
+				 65
+				 65
+				 65
+			>;
+		};
 	};
 };

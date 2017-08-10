@@ -39,7 +39,6 @@
  */
 
 /dts-v1/;
-
 #include <dt-bindings/clock/rockchip,rk808.h>
 #include "rk3288.dtsi"
 
@@ -61,7 +60,28 @@
 
 	memory {
 		device_type = "memory";
-		reg = <0x0 0x80000000>;
+		reg = <0x0 0x0 0x0 0x80000000>;
+	};
+
+	wireless-bluetooth {
+		compatible = "bluetooth-platdata";
+		uart_rts_gpios = <&gpio4 19 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default","rts_gpio";
+		pinctrl-0 = <&uart0_rts>;
+		pinctrl-1 = <&uart0_gpios>;
+		BT,reset_gpio    = <&gpio4 29 GPIO_ACTIVE_HIGH>;
+		BT,wake_gpio     = <&gpio4 26 GPIO_ACTIVE_HIGH>;
+		BT,wake_host_irq = <&gpio4 31 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
+	wireless-wlan {
+		compatible = "wlan-platdata";
+		rockchip,grf = <&grf>;
+		wifi_chip_type = "ap6212";
+		sdio_vref = <1800>;
+		WIFI,host_wake_irq = <&gpio4 30 GPIO_ACTIVE_HIGH>;
+		status = "okay";
 	};
 
 	wireless-bluetooth {
@@ -142,15 +162,15 @@
 			linux,default-trigger = "default-on";
 		};
 
-                act-led {
-                        gpios=<&gpio1 24 GPIO_ACTIVE_HIGH>;
-                        linux,default-trigger="mmc0";
-                };
+		act-led {
+			gpios=<&gpio1 24 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger="mmc0";
+		};
 
-                led1-led {
-                        gpios=<&gpio1 25 GPIO_ACTIVE_HIGH>;
-                        linux,default-trigger="default-off";
-                };
+		led1-led {
+			gpios=<&gpio1 25 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger="default-off";
+		};
 	};
 
 	sound-simple-card {
@@ -198,6 +218,34 @@
 		regulator-max-microvolt = <1000000>;
 		regulator-name = "vdd_logic";
 	};
+/*	
+	vcc_cam: vcc-cam {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_cam";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_pwr>;
+		enable-active-high;
+		gpio = <&gpio2 0 GPIO_ACTIVE_HIGH>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	vcc_led: vcc-led {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_cam";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_mclk>;
+		enable-active-high;
+		gpio = <&gpio2 11 GPIO_ACTIVE_HIGH>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+*/
+};
+
+&cif_isp0 {
+	rockchip,camera-modules-attached = <&camera0 &camera1>;
+	status = "okay";
 };
 
 &cpu0 {
@@ -220,12 +268,7 @@
 	status = "ok";
 };
 
-&cif_isp0 {
-	rockchip,camera-modules-attached = <&camera1>;
-	status = "okay";
-};
-
-&mipi_dsi {
+&dsi0 {
 	status = "okay";
 	mipi_panel: mipi-panel {
 		compatible ="asus,tc358762";
@@ -233,7 +276,6 @@
 		status = "okay";
 	};
 };
-
 
 &gpu {
 	mali-supply = <&vdd_gpu>;
@@ -255,6 +297,10 @@
 	};
 };
 
+&hevc_service {
+	status = "okay";
+};
+
 &i2c0 {
 	status = "okay";
 	clock-frequency = <400000>;
@@ -267,7 +313,7 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&pmic_int &global_pwroff &dvs_1 &dvs_2>;
 		dvs-gpios = <&gpio0 11 GPIO_ACTIVE_HIGH>,
-			   <&gpio0 12 GPIO_ACTIVE_HIGH>;
+				<&gpio0 12 GPIO_ACTIVE_HIGH>;
 
 		rockchip,system-power-controller;
 		wakeup-source;
@@ -452,24 +498,16 @@
 &i2c2 {
 	status = "okay";
 
-	afc0:af-controller@0 {
+	camera0: camera-module@36 {
 		status = "okay";
-		compatible = "silicon touch,vm149C-v4l2-i2c-subdev";
-		reg = < 0x0c >;
-	};
-
-	camera1:camera-module@1 {
-		status = "okay";
-		compatible = "sony,imx219-v4l2-i2c-subdev";
-		reg = < 0x10 >;
+		compatible = "ovti,ov7750-v4l2-i2c-subdev";
+		reg = <0x36>;
 		device_type = "v4l2-i2c-subdev";
-		clocks = <&cru SCLK_CIFOUT>;
+
+		clocks = <&cru SCLK_VIP_OUT>;
 		clock-names = "clk_cif_out";
-		pinctrl-names = "default", "sleep";
-		pinctrl-0 = <&cam0_default_pins>;
-		pinctrl-1 = <&cam0_sleep_pins>;
-		rockchip,pd-gpio = <&gpio2 0 GPIO_ACTIVE_LOW>;
-		rockchip,pd-gpio-is_active_low;
+
+		rockchip,camera-module-mclk-name = "clk_cif_out";
 		rockchip,camera-module-regulator-names = "vcc33_mipi";
 		rockchip,camera-module-regulator-voltages = <3300000>;
 		rockchip,camera-module-dovdd = "1.8v";
@@ -490,50 +528,103 @@
 		rockchip,camera-module-mipi-dphy-index = <0>;
 	};
 
-    m24c08@50 {
-        compatible = "at,24c08";
-        reg = <0x50>;
-    };
+	camera1: camera-module@10 {
+		status = "okay";
+		compatible = "sony,imx219-v4l2-i2c-subdev";
+		reg = <0x10>;
+		device_type = "v4l2-i2c-subdev";
+
+		clocks = <&cru SCLK_VIP_OUT>;
+		clock-names = "clk_cif_out";
+
+		pinctrl-names = "rockchip,camera_default",
+			"rockchip,camera_sleep";
+		pinctrl-0 = <&cam0_default_pins>;
+		pinctrl-1 = <&cam0_sleep_pins>;
+
+		rockchip,pd-gpio = <&gpio2 0 GPIO_ACTIVE_LOW>;
+
+		rockchip,camera-module-mclk-name = "clk_cif_out";
+		rockchip,camera-module-regulator-names = "vcc33_mipi";
+		rockchip,camera-module-regulator-voltages = <3300000>;
+		rockchip,camera-module-dovdd = "1.8v";
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "cmk-cb0695-fv1";
+		rockchip,camera-module-len-name = "lg9569a2";
+		rockchip,camera-module-fov-h = "66.0";
+		rockchip,camera-module-fov-v = "50.1";
+		rockchip,camera-module-orientation = <0>;
+		rockchip,camera-module-iq-flip = <0>;
+		rockchip,camera-module-iq-mirror = <0>;
+		rockchip,camera-module-flip = <0>;
+		rockchip,camera-module-mirror = <0>;
+
+		/* resolution.w, resolution.h, defrect.left, defrect.top, defrect.w, defrect.h */
+		rockchip,camera-module-defrect0 = <3264 2448 0 0 3264 2448>;
+		rockchip,camera-module-flash-support = <0>;
+		rockchip,camera-module-mipi-dphy-index = <0>;
+	};
+	m24c08@50 {
+		compatible = "at,24c08";
+		reg = <0x50>;
+	};
 };
 
 &i2c1 {
-        status = "okay";
+	status = "okay";
+
+	pcm5122: pcm5122@4c {
+		#sound-dai-cells = <0>;
+		compatible = "ti,pcm5122";
+		reg = <0x4c>;
+		status = "disabled";
+	};
 };
 
 &i2c3 {
-        status = "okay";
+	status = "okay";
 };
 
 &i2c4 {
-        status = "okay";
-};
-
-&i2c5 {
-       status = "okay";
+	status = "okay";
 };
 
 
 &spi2 {
-        status = "okay";
-        max-freq = <50000000>;
-        spidev@0 {
-                 compatible = "rockchip,spi_tinker";
-                 reg = <0>;
-                 spi-max-frequency = <50000000>;
-                 spi-cpha = <1>;
-                 //spi-cpol = <1>;
-        };
-        spidev@1 {
-                 compatible = "rockchip,spi_tinker";
-                 reg = <1>;
-                 spi-max-frequency = <50000000>;
-                 spi-cpha = <1>;
-                 //spi-cpol = <1>;
-        };
+	status = "okay";
+	max-freq = <50000000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi2_clk &spi2_tx &spi2_rx &spi2_cs0 &spi2_cs1>;
+	#address-cells = <2>;
+
+	spidev@0 {
+		compatible = "rockchip,spi_tinker";
+		reg = <0>;
+		spi-max-frequency = <50000000>;
+		spi-cpha = <1>;
+	};
+
+	spidev@1 {
+		compatible = "rockchip,spi_tinker";
+		reg = <1>;
+		spi-max-frequency = <50000000>;
+		spi-cpha = <1>;
+	};
 };
 
 &i2s {
 	#sound-dai-cells = <0>;
+	status = "okay";
+};
+
+&io_domains {
+	status = "okay";
+
+	sdcard-supply = <&vccio_sd>;
+	wifi-supply = <&vcc_18>;
+};
+
+&isp_mmu {
 	status = "okay";
 };
 
@@ -649,10 +740,6 @@
 	status = "okay";
 };
 
-&hevc_service {
-	status = "okay";
-};
-
 &vpu_service {
 	status = "okay";
 };
@@ -753,17 +840,28 @@
 		};
 	};
 
+/*
 	cam_pins {
-		cam0_default_pins:cam0_default_pins {
-			rockchip,pins = <0 17 RK_FUNC_GPIO &pcfg_pull_none>,/*sensor power pin: GPIO0_C1 */
-			<2 0 RK_FUNC_GPIO &pcfg_pull_none>,/*sensor power down pin: GPIO2_A0*/
-			<2 11 RK_FUNC_1 &pcfg_pull_none>;/*sensor mclk: cif_clkout*/
+		cam_mclk: cam-mclk {
+			rockchip,pins = <2 11 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
-		cam0_sleep_pins:cam0_sleep_pins {
-			rockchip,pins = <0 17 RK_FUNC_GPIO &pcfg_pull_none>,/*sensor power pin: GPIO0_C1 */
-			<2 0 RK_FUNC_GPIO &pcfg_pull_none>,/* cif power down pin */
-			<2 11 RK_FUNC_GPIO &pcfg_pull_none>;/* cif_clkout */
+		cam_pwr: cam-pwr {
+			rockchip,pins = <2 0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+*/
+	cam_pins {
+		cam0_default_pins: cam0-default-pins {
+			rockchip,pins = <0 17 RK_FUNC_GPIO &pcfg_pull_none>,
+			<2 0 RK_FUNC_GPIO &pcfg_pull_none>,
+			<2 11 RK_FUNC_1 &pcfg_pull_none>;
+		};
+
+		cam0_sleep_pins: cam0-sleep-pins {
+			rockchip,pins = <0 17 RK_FUNC_GPIO &pcfg_pull_none>,
+			<2 0 RK_FUNC_GPIO &pcfg_pull_none>,
+			<2 11 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 };

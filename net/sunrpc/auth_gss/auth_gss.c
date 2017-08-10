@@ -340,11 +340,13 @@ gss_release_msg(struct gss_upcall_msg *gss_msg)
 }
 
 static struct gss_upcall_msg *
-__gss_find_upcall(struct rpc_pipe *pipe, kuid_t uid)
+__gss_find_upcall(struct rpc_pipe *pipe, kuid_t uid, const struct gss_auth *auth)
 {
 	struct gss_upcall_msg *pos;
 	list_for_each_entry(pos, &pipe->in_downcall, list) {
 		if (!uid_eq(pos->uid, uid))
+			continue;
+		if (auth && pos->auth->service != auth->service)
 			continue;
 		atomic_inc(&pos->count);
 		dprintk("RPC:       %s found msg %p\n", __func__, pos);
@@ -365,7 +367,7 @@ gss_add_msg(struct gss_upcall_msg *gss_msg)
 	struct gss_upcall_msg *old;
 
 	spin_lock(&pipe->lock);
-	old = __gss_find_upcall(pipe, gss_msg->uid);
+	old = __gss_find_upcall(pipe, gss_msg->uid, gss_msg->auth);
 	if (old == NULL) {
 		atomic_inc(&gss_msg->count);
 		list_add(&gss_msg->list, &pipe->in_downcall);
@@ -539,9 +541,13 @@ gss_setup_upcall(struct gss_auth *gss_auth, struct rpc_cred *cred)
 		return gss_new;
 	gss_msg = gss_add_msg(gss_new);
 	if (gss_msg == gss_new) {
-		int res = rpc_queue_upcall(gss_new->pipe, &gss_new->msg);
+		int res;
+		atomic_inc(&gss_msg->count);
+		res = rpc_queue_upcall(gss_new->pipe, &gss_new->msg);
 		if (res) {
 			gss_unhash_msg(gss_new);
+			atomic_dec(&gss_msg->count);
+			gss_release_msg(gss_new);
 			gss_msg = ERR_PTR(res);
 		}
 	} else
@@ -714,7 +720,7 @@ gss_pipe_downcall(struct file *filp, const char __user *src, size_t mlen)
 	err = -ENOENT;
 	/* Find a matching upcall */
 	spin_lock(&pipe->lock);
-	gss_msg = __gss_find_upcall(pipe, uid);
+	gss_msg = __gss_find_upcall(pipe, uid, NULL);
 	if (gss_msg == NULL) {
 		spin_unlock(&pipe->lock);
 		goto err_put_ctx;
@@ -834,6 +840,7 @@ gss_pipe_destroy_msg(struct rpc_pipe_msg *msg)
 			warn_gssd();
 		gss_release_msg(gss_msg);
 	}
+	gss_release_msg(gss_msg);
 }
 
 static void gss_pipe_dentry_destroy(struct dentry *dir,

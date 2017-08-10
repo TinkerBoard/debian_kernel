@@ -98,6 +98,7 @@ obj-$(CONFIG_USB_PHY)		+= usb/
 obj-$(CONFIG_USB)		+= usb/
 obj-$(CONFIG_PCI)		+= usb/
 obj-$(CONFIG_USB_GADGET)	+= usb/
+obj-$(CONFIG_OF)		+= usb/
 obj-$(CONFIG_SERIO)		+= input/serio/
 obj-$(CONFIG_GAMEPORT)		+= input/gameport/
 obj-$(CONFIG_INPUT)		+= input/
@@ -174,3 +175,6 @@ obj-$(CONFIG_ANDROID)		+= android/
 obj-$(CONFIG_NVMEM)		+= nvmem/
 obj-$(CONFIG_FPGA)		+= fpga/
 obj-$(CONFIG_RK_NAND)		+= rk_nand/
+obj-$(CONFIG_RK_HEADSET)	+= headset_observe/
+
+obj-y				+= miniarm/

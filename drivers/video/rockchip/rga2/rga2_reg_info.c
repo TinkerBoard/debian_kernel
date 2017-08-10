@@ -981,7 +981,12 @@ void format_name_convert(uint32_t *df, uint32_t sf)
 
 void RGA_MSG_2_RGA2_MSG(struct rga_req *req_rga, struct rga2_req *req)
 {
-    u16 alpha_mode_0, alpha_mode_1;
+	u16 alpha_mode_0, alpha_mode_1;
+
+	if (req_rga->render_mode & RGA_BUF_GEM_TYPE_MASK)
+		req->buf_type = RGA_BUF_GEM_TYPE_MASK & RGA_BUF_GEM_TYPE_DMA;
+
+	req_rga->render_mode &= (~RGA_BUF_GEM_TYPE_MASK);
 
     if (req_rga->render_mode == 6)
         req->render_mode = update_palette_table_mode;
@@ -1049,7 +1054,7 @@ void RGA_MSG_2_RGA2_MSG(struct rga_req *req_rga, struct rga2_req *req)
     req->bitblt_mode = req_rga->bsfilter_flag;
 
     req->src_a_global_val = req_rga->alpha_global_value;
-    req->dst_a_global_val = 0;
+    req->dst_a_global_val = req_rga->alpha_global_value;
     req->rop_code = req_rga->rop_code;
     req->rop_mode = 0;
 
@@ -1080,10 +1085,10 @@ void RGA_MSG_2_RGA2_MSG(struct rga_req *req_rga, struct rga2_req *req)
     req->alpha_rop_flag |= (((req_rga->alpha_rop_flag >> 5) & 1) << 6); // dst_dither_down
     req->alpha_rop_flag |= (((req_rga->alpha_rop_flag >> 6) & 1) << 7); // gradient fill mode sel
 
-    if(((req_rga->alpha_rop_flag) & 1)) {
-        if((req_rga->alpha_rop_flag >> 3) & 1) {
+    if (((req_rga->alpha_rop_flag) & 1)) {
+        if ((req_rga->alpha_rop_flag >> 3) & 1) {
             /* porter duff alpha enable */
-            switch(req_rga->PD_mode)
+            switch (req_rga->PD_mode)
             {
                 case 0: //dst = 0
                     break;
@@ -1129,6 +1134,10 @@ void RGA_MSG_2_RGA2_MSG(struct rga_req *req_rga, struct rga2_req *req)
                     break;
                 case 11://dst = ((256-da)*sc + (256-sa)*dc) >> 8;
                     break;
+		case 12:
+		    req->alpha_mode_0 = 0x0010;
+		    req->alpha_mode_1 = 0x0820;
+		    break;
                 default:
                     break;
             }
@@ -1194,7 +1203,13 @@ void memcpy_img_info(struct rga_img_info_t *dst, struct rga_img_info_32_t *src)
 }
 void RGA_MSG_2_RGA2_MSG_32(struct rga_req_32 *req_rga, struct rga2_req *req)
 {
-    u16 alpha_mode_0, alpha_mode_1;
+	u16 alpha_mode_0, alpha_mode_1;
+
+	if (req_rga->render_mode & RGA_BUF_GEM_TYPE_MASK)
+		req->buf_type = RGA_BUF_GEM_TYPE_MASK & RGA_BUF_GEM_TYPE_DMA;
+
+	req_rga->render_mode &= (~RGA_BUF_GEM_TYPE_MASK);
+
     if (req_rga->render_mode == 6)
         req->render_mode = update_palette_table_mode;
     else if (req_rga->render_mode == 7)
@@ -1248,7 +1263,7 @@ void RGA_MSG_2_RGA2_MSG_32(struct rga_req_32 *req_rga, struct rga2_req *req)
     req->rop_mask_addr = req_rga->rop_mask_addr;
     req->bitblt_mode = req_rga->bsfilter_flag;
     req->src_a_global_val = req_rga->alpha_global_value;
-    req->dst_a_global_val = 0;
+    req->dst_a_global_val = req_rga->alpha_global_value;
     req->rop_code = req_rga->rop_code;
     req->rop_mode = 0;
     req->color_fill_mode = req_rga->color_fill_mode;
@@ -1320,6 +1335,10 @@ void RGA_MSG_2_RGA2_MSG_32(struct rga_req_32 *req_rga, struct rga2_req *req)
                     break;
                 case 11://dst = ((256-da)*sc + (256-sa)*dc) >> 8;
                     break;
+		case 12:
+		    req->alpha_mode_0 = 0x0010;
+		    req->alpha_mode_1 = 0x0820;
+		    break;
                 default:
                     break;
             }

@@ -13,6 +13,12 @@
 #define ONE_DUAL	1
 #define DUAL		2
 #define DUAL_LCD	3
+
+#define DEFAULT_MODE			0
+#define ONE_VOP_DUAL_MIPI_HOR_SCAN	1
+#define ONE_VOP_DUAL_MIPI_VER_SCAN	2
+#define TWO_VOP_TWO_SCREEN		3
+
 /********************************************************************
 **          display output interface supported by rockchip	   **
 ********************************************************************/
@@ -74,6 +80,9 @@
 #define COLOR_YCBCR_BT2020	4
 
 #define IS_YUV_COLOR(x)                ((x) >= COLOR_YCBCR)
+
+#define SCREEN_VIDEO_MODE	0
+#define SCREEN_CMD_MODE		1
 
 /* fb win map */
 #define FB_DEFAULT_ORDER		0

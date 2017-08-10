@@ -8,9 +8,13 @@ rockchipdrm-$(CONFIG_DRM_FBDEV_EMULATION) += rockchip_drm_fbdev.o
 
 obj-$(CONFIG_ROCKCHIP_DRM_RGA) += rockchip_drm_rga.o
 obj-$(CONFIG_ROCKCHIP_DW_HDMI) += dw_hdmi-rockchip.o
+obj-$(CONFIG_ROCKCHIP_CDN_DP) += cdn-dp.o
+cdn-dp-objs := cdn-dp-core.o cdn-dp-reg.o
 obj-$(CONFIG_ROCKCHIP_DW_MIPI_DSI) += dw-mipi-dsi.o
 obj-$(CONFIG_ROCKCHIP_ANALOGIX_DP) += analogix_dp-rockchip.o
 obj-$(CONFIG_ROCKCHIP_INNO_HDMI) += inno_hdmi.o
 obj-$(CONFIG_ROCKCHIP_LVDS) += rockchip_lvds.o
 
+obj-$(CONFIG_ROCKCHIP_DRM_BACKLIGHT) += rockchip_drm_backlight.o
 obj-$(CONFIG_DRM_ROCKCHIP) += rockchip_vop_reg.o rockchipdrm.o
+obj-$(CONFIG_ROCKCHIP_DRM_TVE) += rockchip_drm_tve.o

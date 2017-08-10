@@ -100,6 +100,7 @@ static void fuse_file_put(struct fuse_file *ff, bool sync)
 			iput(req->misc.release.inode);
 			fuse_put_request(ff->fc, req);
 		} else if (sync) {
+			__set_bit(FR_FORCE, &req->flags);
 			__clear_bit(FR_BACKGROUND, &req->flags);
 			fuse_request_send(ff->fc, req);
 			iput(req->misc.release.inode);
@@ -417,6 +418,15 @@ static int fuse_flush(struct file *file, fl_owner_t id)
 	fuse_sync_writes(inode);
 	mutex_unlock(&inode->i_mutex);
 
+	if (test_bit(AS_ENOSPC, &file->f_mapping->flags) &&
+	    test_and_clear_bit(AS_ENOSPC, &file->f_mapping->flags))
+		err = -ENOSPC;
+	if (test_bit(AS_EIO, &file->f_mapping->flags) &&
+	    test_and_clear_bit(AS_EIO, &file->f_mapping->flags))
+		err = -EIO;
+	if (err)
+		return err;
+
 	req = fuse_get_req_nofail_nopages(fc, file);
 	memset(&inarg, 0, sizeof(inarg));
 	inarg.fh = ff->fh;
@@ -462,6 +472,21 @@ int fuse_fsync_common(struct file *file, loff_t start, loff_t end,
 		goto out;
 
 	fuse_sync_writes(inode);
+
+	/*
+	 * Due to implementation of fuse writeback
+	 * filemap_write_and_wait_range() does not catch errors.
+	 * We have to do this directly after fuse_sync_writes()
+	 */
+	if (test_bit(AS_ENOSPC, &file->f_mapping->flags) &&
+	    test_and_clear_bit(AS_ENOSPC, &file->f_mapping->flags))
+		err = -ENOSPC;
+	if (test_bit(AS_EIO, &file->f_mapping->flags) &&
+	    test_and_clear_bit(AS_EIO, &file->f_mapping->flags))
+		err = -EIO;
+	if (err)
+		goto out;
+
 	err = sync_inode_metadata(inode, 1);
 	if (err)
 		goto out;
@@ -516,13 +541,13 @@ void fuse_read_fill(struct fuse_req *req, struct file *file, loff_t pos,
 	req->out.args[0].size = count;
 }
 
-static void fuse_release_user_pages(struct fuse_req *req, int write)
+static void fuse_release_user_pages(struct fuse_req *req, bool should_dirty)
 {
 	unsigned i;
 
 	for (i = 0; i < req->num_pages; i++) {
 		struct page *page = req->pages[i];
-		if (write)
+		if (should_dirty)
 			set_page_dirty_lock(page);
 		put_page(page);
 	}
@@ -1307,6 +1332,7 @@ ssize_t fuse_direct_io(struct fuse_io_priv *io, struct iov_iter *iter,
 		       loff_t *ppos, int flags)
 {
 	int write = flags & FUSE_DIO_WRITE;
+	bool should_dirty = !write && iter_is_iovec(iter);
 	int cuse = flags & FUSE_DIO_CUSE;
 	struct file *file = io->file;
 	struct inode *inode = file->f_mapping->host;
@@ -1351,7 +1377,7 @@ ssize_t fuse_direct_io(struct fuse_io_priv *io, struct iov_iter *iter,
 			nres = fuse_send_read(req, io, pos, nbytes, owner);
 
 		if (!io->async)
-			fuse_release_user_pages(req, !write);
+			fuse_release_user_pages(req, should_dirty);
 		if (req->out.h.error) {
 			if (!res)
 				res = req->out.h.error;
@@ -1972,6 +1998,10 @@ static int fuse_write_end(struct file *file, struct address_space *mapping,
 {
 	struct inode *inode = page->mapping->host;
 
+	/* Haven't copied anything?  Skip zeroing, size extending, dirtying. */
+	if (!copied)
+		goto unlock;
+
 	if (!PageUptodate(page)) {
 		/* Zero any unwritten bytes at the end of the page */
 		size_t endoff = (pos + copied) & ~PAGE_CACHE_MASK;
@@ -1982,6 +2012,8 @@ static int fuse_write_end(struct file *file, struct address_space *mapping,
 
 	fuse_write_update_size(inode, pos + copied);
 	set_page_dirty(page);
+
+unlock:
 	unlock_page(page);
 	page_cache_release(page);
 

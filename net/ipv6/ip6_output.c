@@ -571,7 +571,10 @@ int ip6_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
 	int ptr, offset = 0, err = 0;
 	u8 *prevhdr, nexthdr = 0;
 
-	hlen = ip6_find_1stfragopt(skb, &prevhdr);
+	err = ip6_find_1stfragopt(skb, &prevhdr);
+	if (err < 0)
+		goto fail;
+	hlen = err;
 	nexthdr = *prevhdr;
 
 	mtu = ip6_skb_dst_mtu(skb);
@@ -742,13 +745,14 @@ slow_path:
 	 *	Fragment the datagram.
 	 */
 
-	*prevhdr = NEXTHDR_FRAGMENT;
 	troom = rt->dst.dev->needed_tailroom;
 
 	/*
 	 *	Keep copying data until we run out.
 	 */
 	while (left > 0)	{
+		u8 *fragnexthdr_offset;
+
 		len = left;
 		/* IF: it doesn't fit, use 'mtu' - the data space left */
 		if (len > mtu)
@@ -792,6 +796,10 @@ slow_path:
 		 *	Copy the packet header into the new buffer.
 		 */
 		skb_copy_from_linear_data(skb, skb_network_header(frag), hlen);
+
+		fragnexthdr_offset = skb_network_header(frag);
+		fragnexthdr_offset += prevhdr - skb_network_header(skb);
+		*fragnexthdr_offset = NEXTHDR_FRAGMENT;
 
 		/*
 		 *	Build fragment header.
@@ -1424,6 +1432,11 @@ alloc_new_skb:
 			 */
 			alloclen += sizeof(struct frag_hdr);
 
+			copy = datalen - transhdrlen - fraggap;
+			if (copy < 0) {
+				err = -EINVAL;
+				goto error;
+			}
 			if (transhdrlen) {
 				skb = sock_alloc_send_skb(sk,
 						alloclen + hh_len,
@@ -1473,13 +1486,9 @@ alloc_new_skb:
 				data += fraggap;
 				pskb_trim_unique(skb_prev, maxfraglen);
 			}
-			copy = datalen - transhdrlen - fraggap;
-
-			if (copy < 0) {
-				err = -EINVAL;
-				kfree_skb(skb);
-				goto error;
-			} else if (copy > 0 && getfrag(from, data + transhdrlen, offset, copy, fraggap, skb) < 0) {
+			if (copy > 0 &&
+			    getfrag(from, data + transhdrlen, offset,
+				    copy, fraggap, skb) < 0) {
 				err = -EFAULT;
 				kfree_skb(skb);
 				goto error;

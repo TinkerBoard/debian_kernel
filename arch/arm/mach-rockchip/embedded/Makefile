@@ -25,12 +25,6 @@ targets := rk3288_resume.o rk3288_ddr_resume.o \
 	rk3288_resume.elf rk3288_resume.lds \
 	rk3288_resume.bin rk3288_resume.bin.o
 
-obj-$(CONFIG_ARM_RK3288_DMC_DEVFREQ) += rk3288_sram.bin.o
-
-targets := rk3288-dmc-sram.o \
-	rk3288_sram.elf rk3288_sram.lds \
-	rk3288_sram.bin rk3288_sram.bin.o
-
 # Reset objcopy flags, ARM puts "-O binary" here.
 OBJCOPYFLAGS :=
 
@@ -50,25 +44,12 @@ $(obj)/rk3288_resume.elf: $(obj)/rk3288_resume.lds \
 			  FORCE
 	$(call if_changed,ld)
 
-LDFLAGS_rk3288_sram.elf := -Bstatic -nostdlib --check-sections -T
-$(obj)/rk3288_sram.elf: $(obj)/rk3288_sram.lds $(obj)/rk3288-dmc-sram.o \
-			  FORCE
-	$(call if_changed,ld)
-
 # Create binary data for the kernel
 OBJCOPYFLAGS_rk3288_resume.bin := -O binary
 $(obj)/rk3288_resume.bin: $(obj)/rk3288_resume.elf FORCE
 	$(call if_changed,objcopy)
 
-OBJCOPYFLAGS_rk3288_sram.bin := -O binary
-$(obj)/rk3288_sram.bin: $(obj)/rk3288_sram.elf FORCE
-	$(call if_changed,objcopy)
-
 # Import the data into the kernel
 OBJCOPYFLAGS_rk3288_resume.bin.o += -B $(ARCH) -I binary -O elf32-littlearm
 $(obj)/rk3288_resume.bin.o: $(obj)/rk3288_resume.bin FORCE
-	$(call if_changed,objcopy)
-
-OBJCOPYFLAGS_rk3288_sram.bin.o += -B $(ARCH) -I binary -O elf32-littlearm
-$(obj)/rk3288_sram.bin.o: $(obj)/rk3288_sram.bin FORCE
 	$(call if_changed,objcopy)

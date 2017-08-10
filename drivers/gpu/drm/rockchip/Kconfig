@@ -25,6 +25,16 @@ config ROCKCHIP_DRM_RGA
 	  solid roration, scaling, color format transform, say Y to enable its
 	  driver
 
+config ROCKCHIP_CDN_DP
+	tristate "Rockchip cdn DP"
+	depends on DRM_ROCKCHIP
+	select SND_SOC_HDMI_CODEC if SND_SOC
+	help
+	  This selects support for Rockchip SoC specific extensions
+	  for the cdn DP driver. If you want to enable Dp on
+	  RK3399 based SoC, you should select this
+	  option.
+
 config ROCKCHIP_DW_HDMI
         tristate "Rockchip specific extensions for Synopsys DW HDMI"
         depends on DRM_ROCKCHIP
@@ -71,3 +81,18 @@ config ROCKCHIP_LVDS
 	  Rockchip rk3288 SoC has LVDS TX Controller can be used, and it
 	  support LVDS, rgb, dual LVDS output mode. say Y to enable its
 	  driver.
+
+config ROCKCHIP_DRM_TVE
+	tristate "Rockchip TVE support"
+	depends on DRM_ROCKCHIP
+	help
+	  Choose this option to enable support for Rockchip TVE controllers.
+	  say Y to enable its driver.
+
+config ROCKCHIP_DRM_BACKLIGHT
+	tristate "Rockchip DRM Backlight"
+	depends on DRM_ROCKCHIP
+	help
+	  This selects support for Rockchip backlight manager,
+	  Vop cabc function request using vop self pwm devices, needed a
+	  unique backlight devices to manager vop and soc pwm devices.

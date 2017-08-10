@@ -305,7 +305,7 @@ static int inno_hdmi_config_video_avi(struct inno_hdmi *hdmi,
 	union hdmi_infoframe frame;
 	int rc;
 
-	rc = drm_hdmi_avi_infoframe_from_display_mode(&frame.avi, mode);
+	rc = drm_hdmi_avi_infoframe_from_display_mode(&frame.avi, mode, false);
 
 	if (hdmi->hdmi_data.enc_out_format == HDMI_COLORSPACE_YUV444)
 		frame.avi.colorspace = HDMI_COLORSPACE_YUV444;
@@ -589,6 +589,7 @@ inno_hdmi_encoder_atomic_check(struct drm_encoder *encoder,
 
 	s->output_mode = ROCKCHIP_OUT_MODE_P888;
 	s->output_type = DRM_MODE_CONNECTOR_HDMIA;
+	s->bus_format = MEDIA_BUS_FMT_RGB888_1X24;
 
 	return 0;
 }

@@ -56,7 +56,7 @@
 #define DW_MCI_DMA_THRESHOLD	16
 
 #define DW_MCI_FREQ_MAX	200000000	/* unit: HZ */
-#define DW_MCI_FREQ_MIN	400000		/* unit: HZ */
+#define DW_MCI_FREQ_MIN	100000		/* unit: HZ */
 
 #define IDMAC_INT_CLR		(SDMMC_IDMAC_INT_AI | SDMMC_IDMAC_INT_NI | \
 				 SDMMC_IDMAC_INT_CES | SDMMC_IDMAC_INT_DU | \
@@ -366,6 +366,21 @@ static void dw_mci_wait_while_busy(struct dw_mci *host, u32 cmd_flags)
 	}
 }
 
+static inline void dw_mci_set_cto(struct dw_mci *host)
+{
+	unsigned int cto_clks;
+	unsigned int cto_ms;
+
+	cto_clks = mci_readl(host, TMOUT) & 0xff;
+	cto_ms = DIV_ROUND_UP(cto_clks, host->bus_hz / 1000);
+
+	/* add a bit spare time */
+	cto_ms += 10;
+
+	mod_timer(&host->cto_timer,
+		  jiffies + msecs_to_jiffies(cto_ms) + 1);
+}
+
 static void dw_mci_start_command(struct dw_mci *host,
 				 struct mmc_command *cmd, u32 cmd_flags)
 {
@@ -377,6 +392,10 @@ static void dw_mci_start_command(struct dw_mci *host,
 	mci_writel(host, CMDARG, cmd->arg);
 	wmb(); /* drain writebuffer */
 	dw_mci_wait_while_busy(host, cmd_flags);
+
+	/* response expected command only */
+	if (cmd_flags & SDMMC_CMD_RESP_EXP)
+		dw_mci_set_cto(host);
 
 	mci_writel(host, CMD, cmd_flags | SDMMC_CMD_START);
 }
@@ -2432,6 +2451,7 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 		}
 
 		if (pending & DW_MCI_CMD_ERROR_FLAGS) {
+			del_timer(&host->cto_timer);
 			mci_writel(host, RINTSTS, DW_MCI_CMD_ERROR_FLAGS);
 			host->cmd_status = pending;
 			smp_wmb(); /* drain writebuffer */
@@ -2476,6 +2496,7 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 		}
 
 		if (pending & SDMMC_INT_CMD_DONE) {
+			del_timer(&host->cto_timer);
 			mci_writel(host, RINTSTS, SDMMC_INT_CMD_DONE);
 			dw_mci_cmd_interrupt(host, pending);
 		}
@@ -2612,6 +2633,8 @@ static int dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 		mmc->f_min = DW_MCI_FREQ_MIN;
 		mmc->f_max = DW_MCI_FREQ_MAX;
 	} else {
+		dev_info(host->dev,
+			"'clock-freq-min-max' property was deprecated.\n");
 		mmc->f_min = freq[0];
 		mmc->f_max = freq[1];
 	}
@@ -2899,6 +2922,30 @@ static void dw_mci_cmd11_timer(unsigned long arg)
 	tasklet_schedule(&host->tasklet);
 }
 
+static void dw_mci_cto_timer(unsigned long arg)
+{
+	struct dw_mci *host = (struct dw_mci *)arg;
+
+	switch (host->state) {
+	case STATE_SENDING_CMD11:
+	case STATE_SENDING_CMD:
+	case STATE_SENDING_STOP:
+		/*
+		 * If CMD_DONE interrupt does NOT come in sending command
+		 * state, we should notify the driver to terminate current
+		 * transfer and report a command timeout to the core.
+		 */
+		host->cmd_status = SDMMC_INT_RTO;
+		set_bit(EVENT_CMD_COMPLETE, &host->pending_events);
+		tasklet_schedule(&host->tasklet);
+		break;
+	default:
+		dev_warn(host->dev, "Unexpected command timeout, state %d\n",
+			 host->state);
+		break;
+	}
+}
+
 static void dw_mci_dto_timer(unsigned long arg)
 {
 	struct dw_mci *host = (struct dw_mci *)arg;
@@ -3098,6 +3145,9 @@ int dw_mci_probe(struct dw_mci *host)
 		    dw_mci_cmd11_timer, (unsigned long)host);
 
 	host->quirks = host->pdata->quirks;
+
+	setup_timer(&host->cto_timer,
+		    dw_mci_cto_timer, (unsigned long)host);
 
 	if (host->quirks & DW_MCI_QUIRK_BROKEN_DTO)
 		setup_timer(&host->dto_timer,

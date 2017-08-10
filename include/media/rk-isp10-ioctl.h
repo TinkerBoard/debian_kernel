@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,7 +11,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 #include <linux/v4l2-controls.h>
 #include <media/rk-isp10-config.h>
@@ -20,7 +20,7 @@
 #ifndef _RK_ISP10_IOCTL_H
 #define _RK_ISP10_IOCTL_H
 
-/*Private IOCTLs */
+/* Private IOCTLs */
 /* DPCC */
 #define CIFISP_IOC_G_DPCC \
 	_IOR('v', BASE_VIDIOC_PRIVATE + 0, struct cifisp_dpcc_config)
@@ -105,7 +105,7 @@
 #define CIFISP_IOC_G_LAST_CONFIG \
 	_IOR('v', BASE_VIDIOC_PRIVATE + 35, struct cifisp_last_capture_config)
 
-/*  CIF-ISP Private control IDs */
+/* CIF-ISP Private control IDs */
 #define V4L2_CID_CIFISP_DPCC    (V4L2_CID_PRIVATE_BASE + 0)
 #define V4L2_CID_CIFISP_BLS    (V4L2_CID_PRIVATE_BASE + 1)
 #define V4L2_CID_CIFISP_SDG    (V4L2_CID_PRIVATE_BASE + 2)

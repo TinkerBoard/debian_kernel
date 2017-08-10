@@ -40,6 +40,8 @@
 #include "blk.h"
 #include "blk-mq.h"
 
+#include <linux/math64.h>
+
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_complete);
@@ -515,7 +517,9 @@ EXPORT_SYMBOL_GPL(blk_queue_bypass_end);
 
 void blk_set_queue_dying(struct request_queue *q)
 {
-	queue_flag_set_unlocked(QUEUE_FLAG_DYING, q);
+	spin_lock_irq(q->queue_lock);
+	queue_flag_set(QUEUE_FLAG_DYING, q);
+	spin_unlock_irq(q->queue_lock);
 
 	if (q->mq_ops)
 		blk_mq_wake_waiters(q);
@@ -2019,7 +2023,14 @@ end_io:
  */
 blk_qc_t generic_make_request(struct bio *bio)
 {
-	struct bio_list bio_list_on_stack;
+	/*
+	 * bio_list_on_stack[0] contains bios submitted by the current
+	 * make_request_fn.
+	 * bio_list_on_stack[1] contains bios that were submitted before
+	 * the current make_request_fn, but that haven't been processed
+	 * yet.
+	 */
+	struct bio_list bio_list_on_stack[2];
 	blk_qc_t ret = BLK_QC_T_NONE;
 
 	if (!generic_make_request_checks(bio))
@@ -2036,7 +2047,7 @@ blk_qc_t generic_make_request(struct bio *bio)
 	 * should be added at the tail
 	 */
 	if (current->bio_list) {
-		bio_list_add(current->bio_list, bio);
+		bio_list_add(&current->bio_list[0], bio);
 		goto out;
 	}
 
@@ -2055,24 +2066,39 @@ blk_qc_t generic_make_request(struct bio *bio)
 	 * bio_list, and call into ->make_request() again.
 	 */
 	BUG_ON(bio->bi_next);
-	bio_list_init(&bio_list_on_stack);
-	current->bio_list = &bio_list_on_stack;
+	bio_list_init(&bio_list_on_stack[0]);
+	current->bio_list = bio_list_on_stack;
 	do {
 		struct request_queue *q = bdev_get_queue(bio->bi_bdev);
 
 		if (likely(blk_queue_enter(q, __GFP_DIRECT_RECLAIM) == 0)) {
+			struct bio_list lower, same;
+
+			/* Create a fresh bio_list for all subordinate requests */
+			bio_list_on_stack[1] = bio_list_on_stack[0];
+			bio_list_init(&bio_list_on_stack[0]);
 
 			ret = q->make_request_fn(q, bio);
 
 			blk_queue_exit(q);
-
-			bio = bio_list_pop(current->bio_list);
+			/* sort new bios into those for a lower level
+			 * and those for the same level
+			 */
+			bio_list_init(&lower);
+			bio_list_init(&same);
+			while ((bio = bio_list_pop(&bio_list_on_stack[0])) != NULL)
+				if (q == bdev_get_queue(bio->bi_bdev))
+					bio_list_add(&same, bio);
+				else
+					bio_list_add(&lower, bio);
+			/* now assemble so we handle the lowest level first */
+			bio_list_merge(&bio_list_on_stack[0], &lower);
+			bio_list_merge(&bio_list_on_stack[0], &same);
+			bio_list_merge(&bio_list_on_stack[0], &bio_list_on_stack[1]);
 		} else {
-			struct bio *bio_next = bio_list_pop(current->bio_list);
-
 			bio_io_error(bio);
-			bio = bio_next;
 		}
+		bio = bio_list_pop(&bio_list_on_stack[0]);
 	} while (bio);
 	current->bio_list = NULL; /* deactivate */
 
@@ -3539,3 +3565,85 @@ int __init blk_dev_init(void)
 
 	return 0;
 }
+
+/*
+ * Blk IO latency support. We want this to be as cheap as possible, so doing
+ * this lockless (and avoiding atomics), a few off by a few errors in this
+ * code is not harmful, and we don't want to do anything that is
+ * perf-impactful.
+ * TODO : If necessary, we can make the histograms per-cpu and aggregate
+ * them when printing them out.
+ */
+void
+blk_zero_latency_hist(struct io_latency_state *s)
+{
+	memset(s->latency_y_axis_read, 0,
+	       sizeof(s->latency_y_axis_read));
+	memset(s->latency_y_axis_write, 0,
+	       sizeof(s->latency_y_axis_write));
+	s->latency_reads_elems = 0;
+	s->latency_writes_elems = 0;
+}
+EXPORT_SYMBOL(blk_zero_latency_hist);
+
+ssize_t
+blk_latency_hist_show(struct io_latency_state *s, char *buf)
+{
+	int i;
+	int bytes_written = 0;
+	u_int64_t num_elem, elem;
+	int pct;
+
+	num_elem = s->latency_reads_elems;
+	if (num_elem > 0) {
+		bytes_written += scnprintf(buf + bytes_written,
+			   PAGE_SIZE - bytes_written,
+			   "IO svc_time Read Latency Histogram (n = %llu):\n",
+			   num_elem);
+		for (i = 0;
+		     i < ARRAY_SIZE(latency_x_axis_us);
+		     i++) {
+			elem = s->latency_y_axis_read[i];
+			pct = div64_u64(elem * 100, num_elem);
+			bytes_written += scnprintf(buf + bytes_written,
+						   PAGE_SIZE - bytes_written,
+						   "\t< %5lluus%15llu%15d%%\n",
+						   latency_x_axis_us[i],
+						   elem, pct);
+		}
+		/* Last element in y-axis table is overflow */
+		elem = s->latency_y_axis_read[i];
+		pct = div64_u64(elem * 100, num_elem);
+		bytes_written += scnprintf(buf + bytes_written,
+					   PAGE_SIZE - bytes_written,
+					   "\t> %5dms%15llu%15d%%\n", 10,
+					   elem, pct);
+	}
+	num_elem = s->latency_writes_elems;
+	if (num_elem > 0) {
+		bytes_written += scnprintf(buf + bytes_written,
+			   PAGE_SIZE - bytes_written,
+			   "IO svc_time Write Latency Histogram (n = %llu):\n",
+			   num_elem);
+		for (i = 0;
+		     i < ARRAY_SIZE(latency_x_axis_us);
+		     i++) {
+			elem = s->latency_y_axis_write[i];
+			pct = div64_u64(elem * 100, num_elem);
+			bytes_written += scnprintf(buf + bytes_written,
+						   PAGE_SIZE - bytes_written,
+						   "\t< %5lluus%15llu%15d%%\n",
+						   latency_x_axis_us[i],
+						   elem, pct);
+		}
+		/* Last element in y-axis table is overflow */
+		elem = s->latency_y_axis_write[i];
+		pct = div64_u64(elem * 100, num_elem);
+		bytes_written += scnprintf(buf + bytes_written,
+					   PAGE_SIZE - bytes_written,
+					   "\t> %5dms%15llu%15d%%\n", 10,
+					   elem, pct);
+	}
+	return bytes_written;
+}
+EXPORT_SYMBOL(blk_latency_hist_show);

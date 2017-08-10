@@ -33,10 +33,10 @@ static int camsys_mipiphy_clkin_cb(void *ptr, unsigned int on)
 		}
 	}
 	if (on)
-		camsys_trace(1, "%s mipi phy clk in turn on",
+		camsys_trace(2, "%s mipiphy clk turn on",
 		dev_name(camsys_dev->miscdev.this_device));
 	else
-		camsys_trace(1, "%s mipi phy clk in turn off",
+		camsys_trace(2, "%s mipiphy clk turn off",
 		dev_name(camsys_dev->miscdev.this_device));
 
 	return 0;
@@ -171,7 +171,6 @@ struct platform_device *pdev, camsys_dev_t *camsys_dev)
 			}
 		}
 
-		memset(str, sizeof(str), 0x00);
 		sprintf(str, "hclk_mipiphy%d", i);
 
 		clk = devm_clk_get(&pdev->dev, str);
@@ -207,13 +206,16 @@ struct platform_device *pdev, camsys_dev_t *camsys_dev)
 
 	}
 
-	if (CHIP_TYPE == 3368 || CHIP_TYPE == 3366 || CHIP_TYPE == 3399) {
+	if (CHIP_TYPE == 3368 || CHIP_TYPE == 3366 ||
+	    CHIP_TYPE == 3399 || CHIP_TYPE == 3288) {
 
 		if (CHIP_TYPE == 3399) {
 			camsys_dev->dsiphy_reg =
 				kzalloc(sizeof(camsys_meminfo_t), GFP_KERNEL);
 			if (camsys_dev->dsiphy_reg == NULL) {
 				camsys_err("malloc camsys_meminfo_t for dsiphy_reg failed!");
+				err = -ENOMEM;
+				goto fail;
 			}
 
 			if (of_property_read_u32_array(
@@ -242,6 +244,8 @@ struct platform_device *pdev, camsys_dev_t *camsys_dev)
 				kzalloc(sizeof(camsys_meminfo_t), GFP_KERNEL);
 			if (camsys_dev->csiphy_reg == NULL) {
 				camsys_err("malloc camsys_meminfo_t for csiphy_reg failed!");
+				err = -ENOMEM;
+				goto fail;
 			}
 
 			if (of_property_read_u32_array(
@@ -271,11 +275,11 @@ struct platform_device *pdev, camsys_dev_t *camsys_dev)
 		/* get cru base */
 		node = of_parse_phandle(dev->of_node, "rockchip,cru", 0);
 		camsys_dev->rk_cru_base = (unsigned long)of_iomap(node, 0);
-		camsys_trace(1, "rk_cru_base=0x%lx", camsys_dev->rk_cru_base);
+		camsys_trace(2, "rk_cru_base=0x%lx", camsys_dev->rk_cru_base);
 		/* get grf base */
 		node = of_parse_phandle(dev->of_node, "rockchip,grf", 0);
 		camsys_dev->rk_grf_base = (unsigned long)of_iomap(node, 0);
-		camsys_trace(1, "rk_grf_base=0x%lx", camsys_dev->rk_grf_base);
+		camsys_trace(2, "rk_grf_base=0x%lx", camsys_dev->rk_grf_base);
 	}
 
 	return 0;

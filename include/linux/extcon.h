@@ -45,6 +45,7 @@
 /* USB external connector */
 #define EXTCON_USB		1
 #define EXTCON_USB_HOST		2
+#define EXTCON_USB_VBUS_EN	3
 
 /* Charging external connector */
 #define EXTCON_CHG_USB_SDP	5	/* Standard Downstream Port */
@@ -99,10 +100,6 @@
 /*
  * Properties of EXTCON_TYPE_USB.
  *
- * - EXTCON_PROP_USB_ID
- * @type:	integer (intval)
- * @value:	0 (low) or 1 (high)
- * @default:	0 (low)
  * - EXTCON_PROP_USB_VBUS
  * @type:	integer (intval)
  * @value:	0 (low) or 1 (high)
@@ -111,10 +108,15 @@
  * @type:	integer (intval)
  * @value:	0 (normal) or 1 (flip)
  * @default:	0 (normal)
+ * - EXTCON_PROP_USB_SS (SuperSpeed)
+ * @type:       integer (intval)
+ * @value:      0 (USB/USB2) or 1 (USB3)
+ * @default:    0 (USB/USB2)
+ *
  */
-#define EXTCON_PROP_USB_ID		0
-#define EXTCON_PROP_USB_VBUS		1
-#define EXTCON_PROP_USB_TYPEC_POLARITY	2
+#define EXTCON_PROP_USB_VBUS		0
+#define EXTCON_PROP_USB_TYPEC_POLARITY	1
+#define EXTCON_PROP_USB_SS		2
 
 #define EXTCON_PROP_USB_MIN		0
 #define EXTCON_PROP_USB_MAX		2

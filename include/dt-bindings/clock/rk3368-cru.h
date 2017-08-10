@@ -44,13 +44,12 @@
 #define SCLK_I2S_8CH		82
 #define SCLK_SPDIF_8CH		83
 #define SCLK_I2S_2CH		84
-#define SCLK_TIMER0		85
-#define SCLK_TIMER1		86
-#define SCLK_TIMER2		87
-#define SCLK_TIMER3		88
-#define SCLK_TIMER4		89
-#define SCLK_TIMER5		90
-#define SCLK_TIMER6		91
+#define SCLK_TIMER00		85
+#define SCLK_TIMER01		86
+#define SCLK_TIMER02		87
+#define SCLK_TIMER03		88
+#define SCLK_TIMER04		89
+#define SCLK_TIMER05		90
 #define SCLK_OTGPHY0		93
 #define SCLK_OTG_ADP		96
 #define SCLK_HSICPHY480M	97
@@ -86,6 +85,13 @@
 #define SCLK_CRYPTO		130
 #define SCLK_VIP_SRC		131
 #define SCLK_VIP_OUT		132
+#define SCLK_TIMER10		133
+#define SCLK_TIMER11		134
+#define SCLK_TIMER12		135
+#define SCLK_TIMER13		136
+#define SCLK_TIMER14		137
+#define SCLK_TIMER15		138
+#define SCLK_DDRCLK		139
 
 #define DCLK_VOP		190
 #define MCLK_CRYPTO		191
@@ -109,6 +115,7 @@
 #define ACLK_VIDEO		208
 #define ACLK_BUS		209
 #define ACLK_PERI		210
+#define ACLK_CCI_PRE		211
 
 /* pclk gates */
 #define PCLK_GPIO0		320
@@ -157,6 +164,8 @@
 #define PCLK_WDT		368
 #define PCLK_DPHYRX		369
 #define PCLK_DPHYTX0		370
+#define PCLK_EFUSE256		371
+#define PCLK_EFUSE1024		372
 
 /* hclk gates */
 #define HCLK_USB_PERI		447

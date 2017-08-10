@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,7 +11,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 
 #ifndef CONFIG_OF
@@ -45,7 +45,7 @@ static struct {
 	bool rtrace;
 	bool ftrace;
 	bool internal;
-	spinlock_t lock;
+	spinlock_t lock;/* spin lock */
 } cif_isp10_reg_trace;
 #endif
 #endif
@@ -93,6 +93,7 @@ void cif_isp10_pltfrm_debug_register_print_cb(
 	void *cntxt) {
 #ifndef CONFIG_DEBUG_FS
 	struct cif_isp10_pltfrm_data *pdata = dev->platform_data;
+
 	pdata->dbgfs.print_cntxt = cntxt;
 	pdata->dbgfs.print_func = print;
 #endif
@@ -138,8 +139,9 @@ static int cif_isp10_dbgfs_fill_csi_config_from_string(
 		if (IS_ERR_VALUE(kstrtou32(token, 10,
 				&csi_config->ana_bandgab_bias)))
 			goto wrong_token_format;
-	} else
+	} else {
 		csi_config->ana_bandgab_bias = (u32)-1;
+	}
 
 	return 0;
 missing_token:
@@ -188,7 +190,7 @@ static int cif_isp10_dbgfs_csi_configs_init(
 			cfg = kmalloc(
 				sizeof(struct cif_isp10_pltfrm_csi_config),
 			GFP_KERNEL);
-			if (cfg == NULL) {
+			if (!cfg) {
 				cif_isp10_pltfrm_pr_err(dev,
 					"memory allocation failed\n");
 				ret = -ENOMEM;
@@ -248,8 +250,8 @@ static ssize_t cif_isp10_dbgfs_csi_read(
 
 	if (list_empty(csi_configs))
 		if (IS_ERR_VALUE(cif_isp10_dbgfs_csi_configs_init(
-				dev, inp, csi_configs)))
-				return -EFAULT;
+		dev, inp, csi_configs)))
+			return -EFAULT;
 
 	if (*pos)
 		return 0;
@@ -322,8 +324,8 @@ static ssize_t cif_isp10_dbgfs_csi_write(
 
 	if (list_empty(csi_configs))
 		if (IS_ERR_VALUE(cif_isp10_dbgfs_csi_configs_init(
-				dev, inp, csi_configs)))
-				return -EFAULT;
+		dev, inp, csi_configs)))
+			return -EFAULT;
 
 	memset(cif_isp10_dbgfs_buf, 0, CIF_ISP10_DBGFS_BUF_SIZE);
 	ret = simple_write_to_buffer(strp,
@@ -334,6 +336,7 @@ static ssize_t cif_isp10_dbgfs_csi_write(
 	token = strsep(&strp, " ");
 	if (!strcmp(token, "push")) {
 		struct cif_isp10_pltfrm_csi_config cfg;
+
 		token = strsep(&strp, " ");
 		if (IS_ERR_OR_NULL(token)) {
 			cif_isp10_pltfrm_pr_err(dev,
@@ -355,9 +358,8 @@ static ssize_t cif_isp10_dbgfs_csi_write(
 		if (IS_ERR_VALUE(ret))
 			return ret;
 	} else if (!strncmp(token, "reset", 5)) {
-
 	} else {
-		cif_isp10_pltfrm_pr_err(dev, "unkown command %s\n", token);
+		cif_isp10_pltfrm_pr_err(dev, "unknown command %s\n", token);
 		return -EINVAL;
 	}
 
@@ -476,6 +478,7 @@ static ssize_t cif_isp10_dbgfs_write(
 			}
 		} else if (pdata->dbgfs.print_func) {
 			unsigned long flags;
+
 			local_irq_save(flags);
 			while (token) {
 				pdata->dbgfs.print_func(
@@ -542,12 +545,12 @@ static ssize_t cif_isp10_dbgfs_write(
 			iowrite32(val, pdata->base_addr + addr);
 		} else {
 			cif_isp10_pltfrm_pr_err(dev,
-				"unkown command %s\n", token);
+				"unknown command %s\n", token);
 			return -EINVAL;
 		}
 	} else {
 		cif_isp10_pltfrm_pr_err(dev,
-			"unkown command %s\n", token);
+			"unknown command %s\n", token);
 		return -EINVAL;
 	}
 	return count;
@@ -710,6 +713,9 @@ static ssize_t cif_isp10_dbgfs_reg_trace_write(
 
 	if (count > CIF_ISP10_DBGFS_BUF_SIZE) {
 		cif_isp10_pltfrm_pr_err(dev, "command line too long\n");
+		if (!in_irq())
+			spin_unlock_irqrestore(
+				&cif_isp10_reg_trace.lock, flags);
 		return -EINVAL;
 	}
 
@@ -803,7 +809,7 @@ static ssize_t cif_isp10_dbgfs_reg_trace_write(
 			goto err;
 		}
 	} else {
-		cif_isp10_pltfrm_pr_err(dev, "unkown command %s\n", token);
+		cif_isp10_pltfrm_pr_err(dev, "unknown command %s\n", token);
 		ret = -EINVAL;
 		goto err;
 	}
@@ -892,6 +898,7 @@ inline void cif_isp10_pltfrm_write_reg(
 #ifdef CONFIG_CIF_ISP10_REG_TRACE
 	{
 		unsigned long flags = 0;
+
 		if (!in_irq())
 			spin_lock_irqsave(&cif_isp10_reg_trace.lock, flags);
 		cif_isp10_reg_trace.internal = true;
@@ -946,6 +953,190 @@ inline u32 cif_isp10_pltfrm_read_reg(
 	return ioread32(addr);
 }
 
+#ifdef CIF_ISP10_MODE_DMA_SG
+int cif_isp10_dma_attach_device(struct cif_isp10_device *cif_isp10_dev)
+{
+	struct iommu_domain *domain = cif_isp10_dev->domain;
+	struct device *dev = cif_isp10_dev->dev;
+	int ret;
+
+	cif_isp10_pltfrm_pr_dbg(NULL, "camsys_drm_dma_attach_device\n");
+
+	ret = dma_set_coherent_mask(dev, DMA_BIT_MASK(32));
+	if (ret)
+		return ret;
+
+	dma_set_max_seg_size(dev, DMA_BIT_MASK(32));
+	ret = iommu_attach_device(domain, dev);
+	if (ret) {
+		dev_err(dev, "Failed to attach iommu device\n");
+		return ret;
+	}
+
+	if (!common_iommu_setup_dma_ops(dev, 0x10000000, SZ_2G, domain->ops)) {
+		dev_err(dev, "Failed to set dma_ops\n");
+		iommu_detach_device(domain, dev);
+		ret = -ENODEV;
+	}
+
+	return ret;
+}
+
+void cif_isp10_dma_detach_device(struct cif_isp10_device *cif_isp10_dev)
+{
+	struct iommu_domain *domain = cif_isp10_dev->domain;
+	struct device *dev = cif_isp10_dev->dev;
+
+	cif_isp10_pltfrm_pr_dbg(NULL, "camsys_drm_dma_detach_device\n");
+
+	iommu_detach_device(domain, dev);
+}
+
+int cif_isp10_drm_iommu_cb(struct device *dev,
+	struct cif_isp10_device *cif_isp10_dev,
+	bool on)
+{
+	struct cif_isp10_iommu *iommu = NULL;
+	struct cif_isp10_iommu fake_iommu;
+	struct dma_buf *dma_buffer;
+	struct dma_buf_attachment *attach;
+	struct sg_table *sgt;
+	dma_addr_t dma_addr;
+	int index = 0;
+	int ret = 0;
+	struct cif_isp10_device *camsys_dev = cif_isp10_dev;
+
+	fake_iommu.client_fd = -1;
+	fake_iommu.len = 0;
+	fake_iommu.linear_addr = 0;
+	fake_iommu.map_fd = -1;
+	iommu = &fake_iommu;
+
+	if (on) {
+		/*ummap mapped fd first*/
+		int cur_mapped_cnt = camsys_dev->dma_buf_cnt;
+
+		for (index = 0; index < cur_mapped_cnt; index++) {
+			if (camsys_dev->dma_buffer[index].fd == iommu->map_fd)
+				break;
+		}
+
+		if (index != cur_mapped_cnt) {
+			attach = camsys_dev->dma_buffer[index].attach;
+			dma_buffer = camsys_dev->dma_buffer[index].dma_buffer;
+			sgt = camsys_dev->dma_buffer[index].sgt;
+			cif_isp10_pltfrm_pr_dbg(NULL,
+				"exist mapped buf,release it before map:\n");
+			cif_isp10_pltfrm_pr_dbg(NULL,
+				"attach %p,dma_buf %p,sgt %p,fd %d,index %d\n",
+				attach,
+				dma_buffer,
+				sgt,
+				iommu->map_fd,
+				index);
+			dma_buf_unmap_attachment
+				(attach,
+				sgt,
+				DMA_BIDIRECTIONAL);
+			dma_buf_detach(dma_buffer, attach);
+			dma_buf_put(dma_buffer);
+			if (camsys_dev->dma_buf_cnt == 1)
+				cif_isp10_dma_attach_device(camsys_dev);
+			camsys_dev->dma_buf_cnt--;
+			camsys_dev->dma_buffer[index].fd = -1;
+		}
+		/*get a free slot*/
+		for (index = 0; index < VB2_MAX_FRAME; index++)
+			if (camsys_dev->dma_buffer[index].fd == -1)
+				break;
+
+		if (index == VB2_MAX_FRAME)
+			return -ENOMEM;
+
+		if (camsys_dev->dma_buf_cnt == 0) {
+			ret = cif_isp10_dma_attach_device(camsys_dev);
+			if (ret)
+				return ret;
+		}
+
+		dma_buffer = dma_buf_get(iommu->map_fd);
+		if (IS_ERR(dma_buffer))
+			return PTR_ERR(dma_buffer);
+		attach = dma_buf_attach(dma_buffer, dev);
+		if (IS_ERR(attach)) {
+			dma_buf_put(dma_buffer);
+			return PTR_ERR(attach);
+		}
+		sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+		if (IS_ERR(sgt)) {
+			dma_buf_detach(dma_buffer, attach);
+			dma_buf_put(dma_buffer);
+			return PTR_ERR(sgt);
+		}
+		dma_addr = sg_dma_address(sgt->sgl);
+		camsys_dev->dma_buffer[index].dma_addr = dma_addr;
+		camsys_dev->dma_buffer[index].attach	= attach;
+		camsys_dev->dma_buffer[index].dma_buffer = dma_buffer;
+		camsys_dev->dma_buffer[index].sgt = sgt;
+		camsys_dev->dma_buffer[index].fd = iommu->map_fd;
+		iommu->linear_addr = dma_addr;
+		iommu->len = sg_dma_len(sgt->sgl);
+		camsys_dev->dma_buf_cnt++;
+
+		cif_isp10_pltfrm_pr_dbg(NULL,
+			"dma buf map: dma_addr 0x%lx\n",
+			(unsigned long)dma_addr);
+		cif_isp10_pltfrm_pr_dbg(NULL,
+			"attach %p, dma_buf %p,sgt %p,fd %d,buf_cnt %d\n",
+			attach,
+			dma_buffer,
+			sgt,
+			iommu->map_fd,
+			camsys_dev->dma_buf_cnt);
+	} else {
+		if (
+			(camsys_dev->dma_buf_cnt == 0) ||
+			(index < 0) ||
+			(index >= VB2_MAX_FRAME))
+			return -EINVAL;
+
+		for (index = 0; index < camsys_dev->dma_buf_cnt; index++) {
+			if (camsys_dev->dma_buffer[index].fd == iommu->map_fd)
+				break;
+		}
+		if (index == camsys_dev->dma_buf_cnt) {
+			cif_isp10_pltfrm_pr_warn(NULL,
+				"can't find map fd %d",
+				iommu->map_fd);
+			return -EINVAL;
+		}
+		attach = camsys_dev->dma_buffer[index].attach;
+		dma_buffer = camsys_dev->dma_buffer[index].dma_buffer;
+		sgt = camsys_dev->dma_buffer[index].sgt;
+		dma_addr = sg_dma_address(sgt->sgl);
+		cif_isp10_pltfrm_pr_dbg(NULL,
+			"dma buf unmap: dma_addr 0x%lx",
+			(unsigned long)dma_addr);
+		cif_isp10_pltfrm_pr_dbg(NULL,
+			"attach %p,dma_buf %p,sgt %p,index %d",
+			attach,
+			dma_buffer,
+			sgt,
+			index);
+		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
+		dma_buf_detach(dma_buffer, attach);
+		dma_buf_put(dma_buffer);
+		if (camsys_dev->dma_buf_cnt == 1)
+			cif_isp10_dma_detach_device(camsys_dev);
+
+		camsys_dev->dma_buf_cnt--;
+		camsys_dev->dma_buffer[index].fd = -1;
+	}
+
+	return ret;
+}
+#endif
+
 int cif_isp10_pltfrm_dev_init(
 	struct cif_isp10_device *cif_isp10_dev,
 	struct device **_dev,
@@ -959,12 +1150,18 @@ int cif_isp10_pltfrm_dev_init(
 	struct resource *res;
 	void __iomem *base_addr;
 	unsigned int i, irq;
+#ifdef CIF_ISP10_MODE_DMA_SG
+	struct iommu_domain *domain;
+	struct iommu_group *group;
+	struct device_node *np;
+	int err = 0;
+#endif
 
 	dev_set_drvdata(dev, cif_isp10_dev);
 	cif_isp10_dev->dev = dev;
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
-	if (NULL == pdata) {
+	if (!pdata) {
 		cif_isp10_pltfrm_pr_err(dev,
 			"could not allocate memory for platform data\n");
 		ret = -ENOMEM;
@@ -972,7 +1169,7 @@ int cif_isp10_pltfrm_dev_init(
 	}
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "register");
-	if (res == NULL) {
+	if (!res) {
 		cif_isp10_pltfrm_pr_err(NULL,
 			"platform_get_resource_byname failed\n");
 		ret = -ENODEV;
@@ -992,7 +1189,8 @@ int cif_isp10_pltfrm_dev_init(
 	irq = platform_get_irq_byname(pdev, "cif_isp10_irq");
 	if (IS_ERR_VALUE(irq)) {
 		ret = irq;
-		cif_isp10_pltfrm_pr_err(NULL, "platform_get_irq_byname failed\n");
+		cif_isp10_pltfrm_pr_err(NULL,
+		"platform_get_irq_byname failed\n");
 		goto err;
 	}
 
@@ -1000,11 +1198,16 @@ int cif_isp10_pltfrm_dev_init(
 			irq,
 			cif_isp10_pltfrm_irq_handler,
 			NULL,
+#ifdef CIF_ISP10_MODE_DMA_SG
+			0x80,
+#else
 			0,
+#endif
 			dev_driver_string(dev),
 			dev);
 	if (IS_ERR_VALUE(ret)) {
-		cif_isp10_pltfrm_pr_err(NULL, "devm_request_threaded_irq failed\n");
+		cif_isp10_pltfrm_pr_err(NULL,
+		"devm_request_threaded_irq failed\n");
 		goto err;
 	}
 	pdata->irq = irq;
@@ -1036,6 +1239,45 @@ int cif_isp10_pltfrm_dev_init(
 
 	for (i = 0; i < ARRAY_SIZE(pdata->irq_handlers); i++)
 		pdata->irq_handlers[i].mis = -EINVAL;
+
+#ifdef CIF_ISP10_MODE_DMA_SG
+		np = of_find_node_by_name(NULL, "isp_mmu");
+		if (!np) {
+			int index = 0;
+			/* iommu domain */
+			domain = iommu_domain_alloc(&platform_bus_type);
+			if (!domain)
+				goto err;
+
+			err = iommu_get_dma_cookie(domain);
+			if (err)
+				goto err_free_domain;
+
+			group = iommu_group_get(&pdev->dev);
+			if (!group) {
+				group = iommu_group_alloc();
+				if (IS_ERR(group)) {
+					dev_err(&pdev->dev, "Failed to allocate IOMMU group\n");
+					goto err_put_cookie;
+				}
+
+				err = iommu_group_add_device(group, &pdev->dev);
+				iommu_group_put(group);
+				if (err) {
+					dev_err(&pdev->dev, "failed to add device to IOMMU group\n");
+					goto err_put_cookie;
+				}
+			}
+			cif_isp10_dev->domain = domain;
+			cif_isp10_dev->dma_buf_cnt = 0;
+			for (index = 0; index < VB2_MAX_FRAME; index++)
+				cif_isp10_dev->dma_buffer[index].fd = -1;
+
+			cif_isp10_drm_iommu_cb(&pdev->dev, cif_isp10_dev, true);
+		} else {
+			//cif_isp10_mrv_iommu_cb();
+		}
+#endif
 
 	dev->platform_data = pdata;
 
@@ -1087,6 +1329,13 @@ int cif_isp10_pltfrm_dev_init(
 #endif
 
 	return 0;
+
+#ifdef CIF_ISP10_MODE_DMA_SG
+err_put_cookie:
+	iommu_put_dma_cookie(domain);
+err_free_domain:
+	iommu_domain_free(domain);
+#endif
 err:
 	cif_isp10_pltfrm_pr_err(NULL, "failed with error %d\n", ret);
 	if (!IS_ERR_OR_NULL(pdata))
@@ -1110,7 +1359,7 @@ int cif_isp10_pltfrm_soc_init(
 		cfg_para.cfg_para = &init_para;
 		init_para.pdev = pdev;
 		init_para.isp_base = cif_isp10_dev->config.base_addr;
-		ret = (soc_cfg->soc_cfg)(&cfg_para);
+		ret = soc_cfg->soc_cfg(&cfg_para);
 		if (ret == 0)
 			cif_isp10_dev->soc_cfg = soc_cfg;
 	}
@@ -1132,7 +1381,7 @@ int cif_isp10_pltfrm_mipi_dphy_config(
 			PLTFRM_MIPI_DPHY_CFG;
 		cfg_para.cfg_para =
 			(void *)(&cif_isp10_dev->config.cam_itf.cfg.mipi);
-		ret = (soc_cfg->soc_cfg)(&cfg_para);
+		ret = soc_cfg->soc_cfg(&cfg_para);
 	}
 
 	return ret;
@@ -1152,13 +1401,13 @@ int cif_isp10_pltfrm_pm_set_state(
 	case CIF_ISP10_PM_STATE_SUSPENDED:
 		cfg_para.cmd = PLTFRM_CLKDIS;
 		cfg_para.cfg_para = NULL;
-		ret = (soc_cfg->soc_cfg)(&cfg_para);
+		ret = soc_cfg->soc_cfg(&cfg_para);
 		break;
 	case CIF_ISP10_PM_STATE_SW_STNDBY:
 	case CIF_ISP10_PM_STATE_STREAMING:
 		cfg_para.cmd = PLTFRM_CLKEN;
 		cfg_para.cfg_para = NULL;
-		ret = (soc_cfg->soc_cfg)(&cfg_para);
+		ret = soc_cfg->soc_cfg(&cfg_para);
 		break;
 	default:
 		cif_isp10_pltfrm_pr_err(dev,
@@ -1204,7 +1453,7 @@ int cif_isp10_pltfrm_pinctrl_set_state(
 	cif_isp10_pltfrm_pr_dbg(dev,
 		"set pinctrl state to %d\n", pinctrl_state);
 
-	if (NULL == pdata) {
+	if (!pdata) {
 		cif_isp10_pltfrm_pr_err(dev,
 			"unable to retrieve CIF platform data\n");
 		ret = -EINVAL;
@@ -1212,7 +1461,6 @@ int cif_isp10_pltfrm_pinctrl_set_state(
 	}
 	if (IS_ERR_OR_NULL(pdata->pinctrl))
 		return 0;
-
 
 	switch (pinctrl_state) {
 	case CIF_ISP10_PINCTRL_STATE_SLEEP:
@@ -1296,7 +1544,7 @@ int cif_isp10_pltfrm_irq_register_isr(
 		}
 	}
 	if (IS_ERR_VALUE(slot)) {
-		if (NULL == isr)
+		if (!isr)
 			return 0;
 		cif_isp10_pltfrm_pr_err(dev,
 			"cannot register ISR for IRQ %s, too many ISRs already registered\n",
@@ -1305,11 +1553,12 @@ int cif_isp10_pltfrm_irq_register_isr(
 		goto err;
 	}
 	pdata->irq_handlers[slot].isr = isr;
-	if (NULL == isr) {
+	if (!isr) {
 		pdata->irq_handlers[slot].mis = -EINVAL;
 		skip_request_irq = true;
-	} else
+	} else {
 		pdata->irq_handlers[slot].mis = mis;
+	}
 
 	return 0;
 err:
@@ -1359,14 +1608,13 @@ int cif_isp10_pltfrm_get_img_src_device(
 			goto err;
 	}
 
-	for (index = 0; index < size/sizeof(*phandle); index++) {
+	for (index = 0; index < size / sizeof(*phandle); index++) {
 		camera_list_node = of_parse_phandle(node,
 			"rockchip,camera-modules-attached", index);
 		of_node_put(node);
 		if (IS_ERR_OR_NULL(camera_list_node)) {
 			cif_isp10_pltfrm_pr_err(dev,
-				"invalid index %d for property"
-				"'rockchip,camera-modules-attached'\n",
+				"invalid index %d for property 'rockchip,camera-modules-attached'\n",
 				index);
 				ret = -EINVAL;
 				goto err;
@@ -1379,9 +1627,7 @@ int cif_isp10_pltfrm_get_img_src_device(
 			of_node_put(camera_list_node);
 			if (IS_ERR_OR_NULL(client)) {
 				cif_isp10_pltfrm_pr_err(dev,
-					"could not get camera i2c client,"
-					" maybe not yet created, deferring"
-					" device probing...\n");
+					"could not get camera i2c client, maybe not yet created, deferring device probing...\n");
 				continue;
 			}
 		} else {
@@ -1405,13 +1651,13 @@ int cif_isp10_pltfrm_get_img_src_device(
 			num_cameras++;
 			if (num_cameras >= array_len) {
 				cif_isp10_pltfrm_pr_err(dev,
-					"cif isp10 isn't support > %d"
-					"'camera modules attached'\n",
+					"cif isp10 isn't support > %d 'camera modules attached'\n",
 					array_len);
 				break;
 			}
-		} else
-		continue;
+		} else {
+			continue;
+		}
 	}
 
 	return num_cameras;
@@ -1425,8 +1671,12 @@ err:
 }
 
 void cif_isp10_pltfrm_dev_release(
-	struct device *dev)
+	struct device *dev, struct cif_isp10_device *cif_isp10_dev)
 {
+#ifdef CIF_ISP10_MODE_DMA_SG
+		cif_isp10_drm_iommu_cb(dev, cif_isp10_dev, false);
+#endif
+
 #ifndef CONFIG_DEBUG_FS
 	{
 		struct cif_isp10_pltfrm_data *pdata =

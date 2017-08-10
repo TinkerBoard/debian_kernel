@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2015 ARM Limited. All rights reserved.
+ * Copyright (C) 2013-2017 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -600,8 +600,8 @@ u32 mali_mem_cow_release(mali_mem_backend *mem_bkend, mali_bool is_mali_mapped)
 	alloc = mem_bkend->mali_allocation;
 	MALI_DEBUG_ASSERT_POINTER(alloc);
 
-	 session = alloc->session;
-	 MALI_DEBUG_ASSERT_POINTER(session);
+	session = alloc->session;
+	MALI_DEBUG_ASSERT_POINTER(session);
 
 	if (MALI_MEM_BACKEND_FLAG_SWAP_COWED != (MALI_MEM_BACKEND_FLAG_SWAP_COWED & mem_bkend->flags)) {
 		/* Unmap the memory from the mali virtual address space. */
@@ -689,7 +689,7 @@ void _mali_mem_cow_copy_page(mali_page_node *src_node, mali_page_node *dst_node)
 	}
 	kunmap_atomic(dst);
 	dma_addr = dma_map_page(&mali_platform_device->dev, dst_page,
-				0, _MALI_OSK_MALI_PAGE_SIZE, DMA_TO_DEVICE);
+				0, _MALI_OSK_MALI_PAGE_SIZE, DMA_BIDIRECTIONAL);
 
 	if (dst_node->type == MALI_PAGE_NODE_SWAP) {
 		dst_node->swap_it->dma_addr = dma_addr;

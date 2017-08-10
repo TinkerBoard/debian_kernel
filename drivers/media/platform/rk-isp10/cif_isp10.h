@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,7 +11,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 
 #ifndef _CIF_ISP10_H
@@ -24,47 +24,69 @@
 #include <linux/platform_data/rk_isp10_platform.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-controls_rockchip.h>
+#include <media/videobuf2-v4l2.h>
+
+#include <linux/dma-iommu.h>
+#include <drm/rockchip_drm.h>
+#include <linux/dma-mapping.h>
+#include <linux/dma-buf.h>
+
 /*****************************************************************************/
+
+#if IS_ENABLED(CONFIG_VIDEOBUF2_DMA_CONTIG)
+#define CIF_ISP10_MODE_DMA_CONTIG 1
+#endif
+
+#if IS_ENABLED(CONFIG_VIDEOBUF2_DMA_SG)
+#define CIF_ISP10_MODE_DMA_SG 1
+#endif
+
+#if !defined(CIF_ISP10_MODE_DMA_CONTIG) && \
+	!defined(CIF_ISP10_MODE_DMA_SG)
+#error One of the videobuf buffer modes(COTING/SG) \
+	must be selected in the config
+#endif
+
 /* Definitions */
 
 #define CONFIG_CIF_ISP_AUTO_UPD_CFG_BUG
 
-#define CIF_ISP10_NUM_INPUTS 10
+#define CIF_ISP10_NUM_INPUTS    10
 
 /* FORMAT */
-#define MAX_NB_FORMATS	30
+#define MAX_NB_FORMATS          30
 
-#define CONTRAST_DEF	0x80
-#define BRIGHTNESS_DEF	0x0
-#define HUE_DEF	0x0
+#define CONTRAST_DEF            0x80
+#define BRIGHTNESS_DEF          0x0
+#define HUE_DEF                 0x0
 
 /*
-	MIPI CSI2.0
-*/
-#define CSI2_DT_YUV420_8b	(0x18)
-#define CSI2_DT_YUV420_10b	(0x19)
-#define CSI2_DT_YUV422_8b	(0x1E)
-#define CSI2_DT_YUV422_10b	(0x1F)
-#define CSI2_DT_RGB565	(0x22)
-#define CSI2_DT_RGB666	(0x23)
-#define CSI2_DT_RGB888	(0x24)
-#define CSI2_DT_RAW8	(0x2A)
-#define CSI2_DT_RAW10	(0x2B)
-#define CSI2_DT_RAW12	(0x2C)
+ *	MIPI CSI2.0
+ */
+#define CSI2_DT_YUV420_8b       (0x18)
+#define CSI2_DT_YUV420_10b      (0x19)
+#define CSI2_DT_YUV422_8b       (0x1E)
+#define CSI2_DT_YUV422_10b      (0x1F)
+#define CSI2_DT_RGB565          (0x22)
+#define CSI2_DT_RGB666          (0x23)
+#define CSI2_DT_RGB888          (0x24)
+#define CSI2_DT_RAW8            (0x2A)
+#define CSI2_DT_RAW10           (0x2B)
+#define CSI2_DT_RAW12           (0x2C)
 
 enum cif_isp10_img_src_state {
-	CIF_ISP10_IMG_SRC_STATE_OFF = 0,
+	CIF_ISP10_IMG_SRC_STATE_OFF       = 0,
 	CIF_ISP10_IMG_SRC_STATE_SW_STNDBY = 1,
 	CIF_ISP10_IMG_SRC_STATE_STREAMING = 2
 };
 
 enum cif_isp10_state {
 	/* path not yet opened: */
-	CIF_ISP10_STATE_DISABLED = 0,
+	CIF_ISP10_STATE_DISABLED  = 0,
 	/* path opened but not yet configured: */
-	CIF_ISP10_STATE_INACTIVE = 1,
+	CIF_ISP10_STATE_INACTIVE  = 1,
 	/* path opened and configured, ready for streaming: */
-	CIF_ISP10_STATE_READY = 2,
+	CIF_ISP10_STATE_READY     = 2,
 	/* path is streaming: */
 	CIF_ISP10_STATE_STREAMING = 3
 };
@@ -77,22 +99,28 @@ enum cif_isp10_pm_state {
 };
 
 enum cif_isp10_inp {
-	CIF_ISP10_INP_CSI = 0x10000000,
-	CIF_ISP10_INP_CPI = 0x20000000,
+	CIF_ISP10_INP_CSI     = 0x10000000,
+	CIF_ISP10_INP_CPI     = 0x20000000,
 
-	CIF_ISP10_INP_DMA = 0x30000000, /* DMA -> ISP */
-	CIF_ISP10_INP_DMA_IE = 0x31000000, /* DMA -> IE */
-	CIF_ISP10_INP_DMA_SP = 0x32000000, /* DMA -> SP */
+	CIF_ISP10_INP_DMA     = 0x30000000, /* DMA -> ISP */
+	CIF_ISP10_INP_DMA_IE  = 0x31000000, /* DMA -> IE */
+	CIF_ISP10_INP_DMA_SP  = 0x32000000, /* DMA -> SP */
 	CIF_ISP10_INP_DMA_MAX = 0x33000000,
 
-	CIF_ISP10_INP_MAX = 0x7fffffff
+	CIF_ISP10_INP_MAX     = 0x7fffffff
 };
-#define CIF_ISP10_INP_IS_DMA(inp)	((inp & 0xf0000000) == CIF_ISP10_INP_DMA)
-#define CIF_ISP10_INP_IS_MIPI(inp)	((inp & 0xf0000000) == CIF_ISP10_INP_CSI)
-#define CIF_ISP10_INP_IS_DVP(inp)	((inp & 0xf0000000) == CIF_ISP10_INP_CPI)
-#define CIF_ISP10_INP_NEED_ISP(inp)	(inp <  CIF_ISP10_INP_DMA_IE)
-#define CIF_ISP10_INP_DMA_CNT()	((CIF_ISP10_INP_DMA_MAX -\
-							CIF_ISP10_INP_DMA) >> 24)
+
+#define CIF_ISP10_INP_IS_DMA(inp) \
+	(((inp) & 0xf0000000) == CIF_ISP10_INP_DMA)
+#define CIF_ISP10_INP_IS_MIPI(inp) \
+	(((inp) & 0xf0000000) == CIF_ISP10_INP_CSI)
+#define CIF_ISP10_INP_IS_DVP(inp) \
+	(((inp) & 0xf0000000) == CIF_ISP10_INP_CPI)
+#define CIF_ISP10_INP_NEED_ISP(inp) \
+	((inp) <  CIF_ISP10_INP_DMA_IE)
+#define CIF_ISP10_INP_DMA_CNT() \
+	((CIF_ISP10_INP_DMA_MAX -\
+	CIF_ISP10_INP_DMA) >> 24)
 
 enum cif_isp10_pinctrl_state {
 	CIF_ISP10_PINCTRL_STATE_SLEEP,
@@ -108,164 +136,159 @@ enum cif_isp10_flash_mode {
 };
 
 enum cif_isp10_cid {
-	CIF_ISP10_CID_FLASH_MODE = 0,
-	CIF_ISP10_CID_EXPOSURE_TIME = 1,
-	CIF_ISP10_CID_ANALOG_GAIN = 2,
-	CIF_ISP10_CID_WB_TEMPERATURE = 3,
-	CIF_ISP10_CID_BLACK_LEVEL = 4,
-	CIF_ISP10_CID_AUTO_GAIN = 5,
-	CIF_ISP10_CID_AUTO_EXPOSURE = 6,
-	CIF_ISP10_CID_AUTO_WHITE_BALANCE = 7,
-	CIF_ISP10_CID_FOCUS_ABSOLUTE = 8,
+	CIF_ISP10_CID_FLASH_MODE                  = 0,
+	CIF_ISP10_CID_EXPOSURE_TIME               = 1,
+	CIF_ISP10_CID_ANALOG_GAIN                 = 2,
+	CIF_ISP10_CID_WB_TEMPERATURE              = 3,
+	CIF_ISP10_CID_BLACK_LEVEL                 = 4,
+	CIF_ISP10_CID_AUTO_GAIN                   = 5,
+	CIF_ISP10_CID_AUTO_EXPOSURE               = 6,
+	CIF_ISP10_CID_AUTO_WHITE_BALANCE          = 7,
+	CIF_ISP10_CID_FOCUS_ABSOLUTE              = 8,
 	CIF_ISP10_CID_AUTO_N_PRESET_WHITE_BALANCE = 9,
-	CIF_ISP10_CID_SCENE_MODE = 10,
-	CIF_ISP10_CID_SUPER_IMPOSE = 11,
-	CIF_ISP10_CID_JPEG_QUALITY = 12,
-	CIF_ISP10_CID_IMAGE_EFFECT = 13,
-	CIF_ISP10_CID_HFLIP = 14,
-	CIF_ISP10_CID_VFLIP = 15,
-	CIF_ISP10_CID_AUTO_FPS = 16,
-	CIF_ISP10_CID_VBLANKING = 17,
-	CIF_ISP10_CID_ISO_SENSITIVITY = 18,
+	CIF_ISP10_CID_SCENE_MODE                  = 10,
+	CIF_ISP10_CID_SUPER_IMPOSE                = 11,
+	CIF_ISP10_CID_JPEG_QUALITY                = 12,
+	CIF_ISP10_CID_IMAGE_EFFECT                = 13,
+	CIF_ISP10_CID_HFLIP                       = 14,
+	CIF_ISP10_CID_VFLIP                       = 15,
+	CIF_ISP10_CID_AUTO_FPS                    = 16,
+	CIF_ISP10_CID_VBLANKING                   = 17,
+	CIF_ISP10_CID_ISO_SENSITIVITY             = 18,
+	CIF_ISP10_CID_MIN_BUFFER_FOR_CAPTURE      = 19,
 
 };
 
 /* correspond to bit field values */
 enum cif_isp10_image_effect {
-	CIF_ISP10_IE_BW = 0,
+	CIF_ISP10_IE_BW       = 0,
 	CIF_ISP10_IE_NEGATIVE = 1,
-	CIF_ISP10_IE_SEPIA = 2,
-	CIF_ISP10_IE_C_SEL = 3,
-	CIF_ISP10_IE_EMBOSS = 4,
-	CIF_ISP10_IE_SKETCH = 5,
+	CIF_ISP10_IE_SEPIA    = 2,
+	CIF_ISP10_IE_C_SEL    = 3,
+	CIF_ISP10_IE_EMBOSS   = 4,
+	CIF_ISP10_IE_SKETCH   = 5,
 	CIF_ISP10_IE_NONE /* not a bit field value */
 };
 
-#define CIF_ISP10_PIX_FMT_MASK					0xf0000000
-#define CIF_ISP10_PIX_FMT_MASK_BPP				0x0003f000
-
-#define CIF_ISP10_PIX_FMT_YUV_MASK_CPLANES	0x00000003
-#define CIF_ISP10_PIX_FMT_YUV_MASK_UVSWAP	0x00000004
-#define CIF_ISP10_PIX_FMT_YUV_MASK_YCSWAP		0x00000008
-#define CIF_ISP10_PIX_FMT_YUV_MASK_X			0x00000f00
-#define CIF_ISP10_PIX_FMT_YUV_MASK_Y			0x000000f0
-
-#define CIF_ISP10_PIX_FMT_RGB_MASK_PAT		0x000000f0
-
-#define CIF_ISP10_PIX_FMT_BAYER_MASK_PAT		0x000000f0
-
+#define CIF_ISP10_PIX_FMT_MASK                  0xf0000000
+#define CIF_ISP10_PIX_FMT_MASK_BPP              0x0003f000
+#define CIF_ISP10_PIX_FMT_YUV_MASK_CPLANES      0x00000003
+#define CIF_ISP10_PIX_FMT_YUV_MASK_UVSWAP       0x00000004
+#define CIF_ISP10_PIX_FMT_YUV_MASK_YCSWAP       0x00000008
+#define CIF_ISP10_PIX_FMT_YUV_MASK_X            0x00000f00
+#define CIF_ISP10_PIX_FMT_YUV_MASK_Y            0x000000f0
+#define CIF_ISP10_PIX_FMT_RGB_MASK_PAT          0x000000f0
+#define CIF_ISP10_PIX_FMT_BAYER_MASK_PAT        0x000000f0
 #define CIF_ISP10_PIX_FMT_GET_BPP(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_MASK_BPP) >> 12)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_MASK_BPP) >> 12)
 #define cif_isp10_pix_fmt_set_bpp(pix_fmt, bpp) \
 	{ \
-		pix_fmt = ((pix_fmt & ~CIF_ISP10_PIX_FMT_MASK_BPP) | \
-			((bpp << 12) & CIF_ISP10_PIX_FMT_MASK_BPP)); \
+		pix_fmt = (((pix_fmt) & ~CIF_ISP10_PIX_FMT_MASK_BPP) | \
+			(((bpp) << 12) & CIF_ISP10_PIX_FMT_MASK_BPP)); \
 	}
 
 #define CIF_ISP10_PIX_FMT_YUV_GET_NUM_CPLANES(pix_fmt) \
-	(pix_fmt & CIF_ISP10_PIX_FMT_YUV_MASK_CPLANES)
+	((pix_fmt) & CIF_ISP10_PIX_FMT_YUV_MASK_CPLANES)
 #define CIF_ISP10_PIX_FMT_YUV_IS_YC_SWAPPED(pix_fmt) \
-	(pix_fmt & CIF_ISP10_PIX_FMT_YUV_MASK_YCSWAP)
+	((pix_fmt) & CIF_ISP10_PIX_FMT_YUV_MASK_YCSWAP)
 #define CIF_ISP10_PIX_FMT_YUV_IS_UV_SWAPPED(pix_fmt) \
-		(pix_fmt & CIF_ISP10_PIX_FMT_YUV_MASK_UVSWAP)
+		((pix_fmt) & CIF_ISP10_PIX_FMT_YUV_MASK_UVSWAP)
 #define CIF_ISP10_PIX_FMT_YUV_GET_X_SUBS(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_YUV_MASK_X) >> 8)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_YUV_MASK_X) >> 8)
 #define CIF_ISP10_PIX_FMT_YUV_GET_Y_SUBS(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_YUV_MASK_Y) >> 4)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_YUV_MASK_Y) >> 4)
 #define cif_isp10_pix_fmt_set_y_subs(pix_fmt, y_subs) \
 	{ \
-		pix_fmt = ((pix_fmt & ~CIF_ISP10_PIX_FMT_YUV_MASK_Y) | \
+		pix_fmt = (((pix_fmt) & ~CIF_ISP10_PIX_FMT_YUV_MASK_Y) | \
 			((y_subs << 4) & CIF_ISP10_PIX_FMT_YUV_MASK_Y)); \
 	}
 #define cif_isp10_pix_fmt_set_x_subs(pix_fmt, x_subs) \
 	{ \
-		pix_fmt = ((pix_fmt & ~CIF_ISP10_PIX_FMT_YUV_MASK_X) | \
-			((x_subs << 8) & CIF_ISP10_PIX_FMT_YUV_MASK_X)); \
+		pix_fmt = (((pix_fmt) & ~CIF_ISP10_PIX_FMT_YUV_MASK_X) | \
+			(((x_subs) << 8) & CIF_ISP10_PIX_FMT_YUV_MASK_X)); \
 	}
 #define cif_isp10_pix_fmt_set_yc_swapped(pix_fmt, yc_swapped) \
 	{ \
-		pix_fmt = ((pix_fmt & ~CIF_ISP10_PIX_FMT_YUV_MASK_YCSWAP) | \
-			((yc_swapped << 3) & \
+		pix_fmt = (((pix_fmt) & ~CIF_ISP10_PIX_FMT_YUV_MASK_YCSWAP) | \
+			(((yc_swapped) << 3) & \
 			CIF_ISP10_PIX_FMT_YUV_MASK_YCSWAP)); \
 	}
 
 #define CIF_ISP10_PIX_FMT_BAYER_PAT_IS_BGGR(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_BAYER_MASK_PAT) == 0x0)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_BAYER_MASK_PAT) == 0x0)
 #define CIF_ISP10_PIX_FMT_BAYER_PAT_IS_GBRG(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_BAYER_MASK_PAT) == 0x10)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_BAYER_MASK_PAT) == 0x10)
 #define CIF_ISP10_PIX_FMT_BAYER_PAT_IS_GRBG(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_BAYER_MASK_PAT) == 0x20)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_BAYER_MASK_PAT) == 0x20)
 #define CIF_ISP10_PIX_FMT_BAYER_PAT_IS_RGGB(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_BAYER_MASK_PAT) == 0x30)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_BAYER_MASK_PAT) == 0x30)
 
 #define CIF_ISP10_PIX_FMT_IS_YUV(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_MASK) == 0x10000000)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_MASK) == 0x10000000)
 #define CIF_ISP10_PIX_FMT_IS_RGB(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_MASK) == 0x20000000)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_MASK) == 0x20000000)
 #define CIF_ISP10_PIX_FMT_IS_RAW_BAYER(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_MASK) == 0x30000000)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_MASK) == 0x30000000)
 #define CIF_ISP10_PIX_FMT_IS_JPEG(pix_fmt) \
-	((pix_fmt & CIF_ISP10_PIX_FMT_MASK) == 0x40000000)
+	(((pix_fmt) & CIF_ISP10_PIX_FMT_MASK) == 0x40000000)
 
 #define CIF_ISP10_PIX_FMT_IS_INTERLEAVED(pix_fmt) \
 	(!CIF_ISP10_PIX_FMT_IS_YUV(pix_fmt) ||\
 	!CIF_ISP10_PIX_FMT_YUV_GET_NUM_CPLANES(pix_fmt))
 
-
-
 enum cif_isp10_pix_fmt {
 	/* YUV */
-	CIF_YUV400				= 0x10008000,
-	CIF_YVU400				= 0x10008004,
+	CIF_YUV400			= 0x10008000,
+	CIF_YVU400			= 0x10008004,
 
-	CIF_YUV420I				= 0x1000c220,
+	CIF_YUV420I			= 0x1000c220,
 	CIF_YUV420SP			= 0x1000c221,	/* NV12 */
-	CIF_YUV420P				= 0x1000c222,
-	CIF_YVU420I				= 0x1000c224,
+	CIF_YUV420P			= 0x1000c222,
+	CIF_YVU420I			= 0x1000c224,
 	CIF_YVU420SP			= 0x1000c225,	/* NV21 */
-	CIF_YVU420P				= 0x1000c226,	/* YV12 */
+	CIF_YVU420P			= 0x1000c226,	/* YV12 */
 
-	CIF_YUV422I				= 0x10010240,
+	CIF_YUV422I			= 0x10010240,
 	CIF_YUV422SP			= 0x10010241,
-	CIF_YUV422P				= 0x10010242,
-	CIF_YVU422I				= 0x10010244,
+	CIF_YUV422P			= 0x10010242,
+	CIF_YVU422I			= 0x10010244,
 	CIF_YVU422SP			= 0x10010245,
-	CIF_YVU422P				= 0x10010246,
+	CIF_YVU422P			= 0x10010246,
 
-	CIF_YUV444I				= 0x10018440,
+	CIF_YUV444I			= 0x10018440,
 	CIF_YUV444SP			= 0x10018441,
-	CIF_YUV444P				= 0x10018442,
-	CIF_YVU444I				= 0x10018444,
+	CIF_YUV444P			= 0x10018442,
+	CIF_YVU444I			= 0x10018444,
 	CIF_YVU444SP			= 0x10018445,
-	CIF_YVU444P				= 0x10018446,
+	CIF_YVU444P			= 0x10018446,
 
-	CIF_UYV400				= 0x10008008,
+	CIF_UYV400			= 0x10008008,
 
-	CIF_UYV420I				= 0x1000c228,
+	CIF_UYV420I			= 0x1000c228,
 	CIF_UYV420SP			= 0x1000c229,
-	CIF_UYV420P				= 0x1000c22a,
-	CIF_VYU420I				= 0x1000c22c,
+	CIF_UYV420P			= 0x1000c22a,
+	CIF_VYU420I			= 0x1000c22c,
 	CIF_VYU420SP			= 0x1000c22d,
-	CIF_VYU420P				= 0x1000c22e,
+	CIF_VYU420P			= 0x1000c22e,
 
-	CIF_UYV422I				= 0x10010248,
+	CIF_UYV422I			= 0x10010248,
 	CIF_UYV422SP			= 0x10010249,
-	CIF_UYV422P				= 0x1001024a,
-	CIF_VYU422I				= 0x1001024c,
+	CIF_UYV422P			= 0x1001024a,
+	CIF_VYU422I			= 0x1001024c,
 	CIF_VYU422SP			= 0x1001024d,
-	CIF_VYU422P				= 0x1001024e,
+	CIF_VYU422P			= 0x1001024e,
 
-	CIF_UYV444I				= 0x10018448,
+	CIF_UYV444I			= 0x10018448,
 	CIF_UYV444SP			= 0x10018449,
-	CIF_UYV444P				= 0x1001844a,
-	CIF_VYU444I				= 0x1001844c,
+	CIF_UYV444P			= 0x1001844a,
+	CIF_VYU444I			= 0x1001844c,
 	CIF_VYU444SP			= 0x1001844d,
-	CIF_VYU444P				= 0x1001844e,
+	CIF_VYU444P			= 0x1001844e,
 
 	/* RGB */
-	CIF_RGB565				= 0x20010000,
-	CIF_RGB666				= 0x20012000,
-	CIF_RGB888				= 0x20018000,
+	CIF_RGB565			= 0x20010000,
+	CIF_RGB666			= 0x20012000,
+	CIF_RGB888			= 0x20018000,
 
 	/* RAW Bayer */
 	CIF_BAYER_SBGGR8		= 0x30008000,
@@ -284,12 +307,12 @@ enum cif_isp10_pix_fmt {
 	CIF_BAYER_SRGGB12		= 0x3000c030,
 
 	/* JPEG */
-	CIF_JPEG					= 0x40008000,
+	CIF_JPEG			= 0x40008000,
 
 	/* Data */
-	CIF_DATA					= 0x70000000,
+	CIF_DATA			= 0x70000000,
 
-	CIF_UNKNOWN_FORMAT	= 0x80000000
+	CIF_UNKNOWN_FORMAT		= 0x80000000
 };
 
 enum cif_isp10_stream_id {
@@ -306,12 +329,12 @@ enum cif_isp10_stream_id {
 
 enum cif_isp10_buff_fmt {
 	/* values correspond to bitfield values */
-	CIF_ISP10_BUFF_FMT_PLANAR = 0,
-	CIF_ISP10_BUFF_FMT_SEMIPLANAR = 1,
-	CIF_ISP10_BUFF_FMT_INTERLEAVED = 2,
+	CIF_ISP10_BUFF_FMT_PLANAR 	= 0,
+	CIF_ISP10_BUFF_FMT_SEMIPLANAR 	= 1,
+	CIF_ISP10_BUFF_FMT_INTERLEAVED 	= 2,
 
-	CIF_ISP10_BUFF_FMT_RAW8 = 0,
-	CIF_ISP10_BUFF_FMT_RAW12 = 2
+	CIF_ISP10_BUFF_FMT_RAW8 	= 0,
+	CIF_ISP10_BUFF_FMT_RAW12 	= 2
 };
 
 enum cif_isp10_jpeg_header {
@@ -426,15 +449,11 @@ struct cif_isp10_mi_config {
 	struct cif_isp10_mi_path_config dma;
 };
 
-#ifdef NO_YET
 struct cif_isp10_buffer {
-	struct list_head list;
-	u32 dma_addr;
-	u32 size;
+	struct vb2_v4l2_buffer vb;
+	struct list_head queue;
+	unsigned long int size;
 };
-#else
-#define cif_isp10_buffer videobuf_buffer
-#endif
 
 struct cif_isp10_metadata_s {
 	unsigned int cnt;
@@ -447,8 +466,8 @@ struct cif_isp10_stream {
 	enum cif_isp10_state state;
 	enum cif_isp10_state saved_state;
 	struct list_head buf_queue;
-	struct videobuf_buffer *curr_buf;
-	struct videobuf_buffer *next_buf;
+	struct cif_isp10_buffer *curr_buf;
+	struct cif_isp10_buffer *next_buf;
 	bool updt_cfg;
 	bool stall;
 	bool stop;
@@ -549,7 +568,6 @@ struct cif_isp10_isp_vs_work {
 	enum cif_isp10_isp_vs_cmd cmd;
 	void *param;
 };
-/* ======================================================================== */
 
 struct cif_isp10_fmt {
 	char *name;
@@ -560,9 +578,22 @@ struct cif_isp10_fmt {
 	unsigned char overlay;
 };
 
-/* ======================================================================== */
+#ifdef CIF_ISP10_MODE_DMA_SG
+struct cif_isp10_iommu {
+	int client_fd;
+	int map_fd;
+	unsigned long linear_addr;
+	unsigned long len;
+};
 
-/* =============================================== */
+struct cif_isp10_dma_buf {
+	struct dma_buf *dma_buffer;
+	struct dma_buf_attachment *attach;
+	struct sg_table *sgt;
+	dma_addr_t dma_addr;
+	int fd;
+};
+#endif
 
 struct cif_isp10_device {
 	unsigned int dev_id;
@@ -577,6 +608,13 @@ struct cif_isp10_device {
 	struct cif_isp10_img_src *img_src;
 	struct cif_isp10_img_src *img_src_array[CIF_ISP10_NUM_INPUTS];
 	unsigned int img_src_cnt;
+	struct vb2_alloc_ctx *alloc_ctx;
+
+#ifdef CIF_ISP10_MODE_DMA_SG
+	struct iommu_domain *domain;
+	struct cif_isp10_dma_buf dma_buffer[VB2_MAX_FRAME];
+	int dma_buf_cnt;
+#endif
 	struct cif_isp10_img_src_exps img_src_exps;
 
 	struct cif_isp10_config config;
@@ -587,11 +625,14 @@ struct cif_isp10_device {
 
 	struct workqueue_struct *vs_wq;
 	void (*sof_event)(struct cif_isp10_device *dev, __u32 frame_sequence);
-	/* requeue_bufs() is used to clean and rebuild the local buffer
-	lists xx_stream.buf_queue. This is used e.g. in the CAPTURE use
-	case where we start MP and SP separately and needs to shortly
-	stop and start SP when start MP */
-	void (*requeue_bufs)(struct cif_isp10_device *dev, enum cif_isp10_stream_id stream_id);
+	/*
+	 * requeue_bufs() is used to clean and rebuild the local buffer
+	 * lists xx_stream.buf_queue. This is used e.g. in the CAPTURE use
+	 * case where we start MP and SP separately and needs to shortly
+	 * stop and start SP when start MP
+	 */
+	void (*requeue_bufs)(struct cif_isp10_device *dev,
+				enum cif_isp10_stream_id stream_id);
 	bool   b_isp_frame_in;
 	bool   b_mi_frame_end;
 	int   otf_zsl_mode;
@@ -608,12 +649,36 @@ int get_cif_isp10_output_format_size(void);
 struct v4l2_fmtdesc *get_cif_isp10_output_format_desc(int index);
 int get_cif_isp10_output_format_desc_size(void);
 
-/*Clean code starts from here*************************************************/
+/* Clean code starts from here */
+
+static inline
+struct cif_isp10_stream *to_stream_by_id(struct cif_isp10_device *dev,
+					 enum cif_isp10_stream_id id)
+{
+	if (WARN_ON(id != CIF_ISP10_STREAM_MP &&
+		id != CIF_ISP10_STREAM_SP &&
+		id != CIF_ISP10_STREAM_DMA &&
+		id != CIF_ISP10_STREAM_ISP))
+		return &dev->sp_stream;
+
+	switch (id) {
+	case CIF_ISP10_STREAM_MP:
+		return &dev->mp_stream;
+	case CIF_ISP10_STREAM_SP:
+		return &dev->sp_stream;
+	case CIF_ISP10_STREAM_DMA:
+		return &dev->dma_stream;
+	case CIF_ISP10_STREAM_ISP:
+		return NULL;
+	}
+	return NULL;
+}
 
 struct cif_isp10_device *cif_isp10_create(
 	CIF_ISP10_PLTFRM_DEVICE pdev,
 	void (*sof_event)(struct cif_isp10_device *dev, __u32 frame_sequence),
-	void (*requeue_bufs)(struct cif_isp10_device *dev, enum cif_isp10_stream_id stream_id),
+	void (*requeue_bufs)(struct cif_isp10_device *dev,
+				enum cif_isp10_stream_id stream_id),
 	struct pltfrm_soc_cfg *soc_cfg);
 
 void cif_isp10_destroy(
@@ -684,7 +749,8 @@ const char *cif_isp10_g_input_name(
 int cif_isp10_calc_min_out_buff_size(
 	struct cif_isp10_device *dev,
 	enum cif_isp10_stream_id stream_id,
-	u32 *size);
+	u32 *size,
+	bool payload);
 
 int cif_isp10_s_ctrl(
 	struct cif_isp10_device *dev,

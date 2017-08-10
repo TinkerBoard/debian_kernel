@@ -1,5 +1,5 @@
 /*
-**************************************************************************
+ *************************************************************************
  * Rockchip driver for CIF ISP 1.0
  * (Based on Intel driver for sofiaxxx)
  *
@@ -11,20 +11,20 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
-**************************************************************************
+ *************************************************************************
  */
 
 #ifndef _CIF_ISP10_ISP_H
 #define _CIF_ISP10_ISP_H
 
 #include <media/v4l2-common.h>
-#include <media/videobuf-core.h>
+#include <media/videobuf2-core.h>
 #include <media/rk-isp10-ioctl.h>
 #include <media/v4l2-controls_rockchip.h>
 
-/****************************************************************************
-*                                                     ISP device struct
-****************************************************************************/
+/*
+ * ISP device struct
+ */
 enum cif_isp10_pix_fmt;
 
 enum cif_isp10_pix_fmt_quantization {
@@ -53,8 +53,10 @@ struct cif_isp10_isp_meas_stats {
 };
 
 struct cif_isp10_isp_dev {
-	/* Purpose of mutex is to protect and serialize use
-		of isp data structure and CIF API calls. */
+	/*
+	 * Purpose of mutex is to protect and serialize use
+	 * of isp data structure and CIF API calls.
+	 */
 	struct mutex mutex;
 	/* Current ISP parameters */
 	spinlock_t config_lock;
@@ -74,8 +76,8 @@ struct cif_isp10_isp_dev {
 
 	/* ISP statistics related */
 	spinlock_t irq_lock;
+	/* ISP statistics related */
 	spinlock_t req_lock;
-	struct videobuf_queue vbq_stat;
 	struct list_head stat;
 	void __iomem *base_addr;    /* registers base address */
 
@@ -91,19 +93,22 @@ struct cif_isp10_isp_dev {
 	struct workqueue_struct *readout_wq;
 
 	unsigned int *dev_id;
+
+	struct vb2_queue vb2_vidq;
 };
 
 enum cif_isp10_isp_readout_cmd {
 	CIF_ISP10_ISP_READOUT_MEAS = 0,
 	CIF_ISP10_ISP_READOUT_META = 1,
 };
+
 struct cif_isp10_isp_readout_work {
 	struct work_struct work;
 	struct cif_isp10_isp_dev *isp_dev;
 
 	unsigned int frame_id;
 	enum cif_isp10_isp_readout_cmd readout;
-	struct videobuf_buffer *vb;
+	struct vb2_buffer *vb;
 	unsigned int stream_id;
 };
 

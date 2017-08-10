@@ -48,76 +48,27 @@
 / {
 	model = "Rockchip RK3399 Evaluation Board v3 edp (Android)";
 	compatible = "rockchip,android", "rockchip,rk3399-evb-rev3", "rockchip,rk3399";
-};
 
-&vdd_center {
-	rockchip,pwm_id= <3>;
-	rockchip,pwm_voltage = <900000>;
-};
+	edp_panel: edp-panel {
+		compatible = "lg,lp079qx1-sp0v", "panel-simple";
+		backlight = <&backlight>;
+		power-supply = <&vcc3v3_s0>;
+		enable-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
 
-&rk_screen {
-	#include <dt-bindings/display/screen-timing/lcd-F402.dtsi>
-};
-
-&vopb_rk_fb {
-	status = "okay";
-	power_ctr: power_ctr {
-		rockchip,debug = <0>;
-		lcd_en: lcd-en {
-			rockchip,power_type = <GPIO>;
-			gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
-			rockchip,delay = <10>;
+		ports {
+			panel_in_edp: endpoint {
+				remote-endpoint = <&edp_out_panel>;
+			};
 		};
-
-		/*lcd_cs: lcd-cs {
-			rockchip,power_type = <GPIO>;
-			gpios = <&gpio0 21 GPIO_ACTIVE_HIGH>;//GPIO_C5 = 21
-			rockchip,delay = <10>;
-		};*/
-
-		/*lcd_rst: lcd-rst {
-			rockchip,power_type = <GPIO>;
-			gpios = <&gpio3 GPIO_D6 GPIO_ACTIVE_HIGH>;
-			rockchip,delay = <5>;
-		};*/
 	};
-};
-
-&vopl_rk_fb {
-	status = "okay";
-};
-
-&edp_rk_fb {
-	status = "okay";
-};
-
-&hdmi_rk_fb {
-	status = "okay";
-	rockchip,hdmi_video_source = <DISPLAY_SOURCE_LCDC1>;
 };
 
 &i2s2 {
 	status = "okay";
 };
 
-&dw_hdmi_audio {
-	status = "okay";
-};
-
-&hdmi_sound {
-	status = "okay";
-};
-
-&spdif {
-	status = "okay";
-};
-
-&spdif_out {
-	status = "okay";
-};
-
-&spdif_sound {
-	status = "okay";
+&gt9xx {
+	status = "disabled";
 };
 
 &i2c4 {
@@ -130,3 +81,25 @@
 		rst_gpio_number = <&gpio4 22 GPIO_ACTIVE_HIGH>;
 	};
 };
+
+&edp {
+	status = "okay";
+
+	ports {
+		edp_out: port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			edp_out_panel: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&panel_in_edp>;
+			};
+		};
+	};
+};
+
+&route_edp {
+	status = "okay";
+};
+

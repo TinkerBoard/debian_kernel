@@ -51,6 +51,18 @@ struct ehci_platform_priv {
 
 static const char hcd_name[] = "ehci-platform";
 
+static void ehci_rockchip_relinquish_port(struct usb_hcd *hcd, int portnum)
+{
+	struct ehci_hcd *ehci = hcd_to_ehci(hcd);
+	u32 __iomem *status_reg = &ehci->regs->port_status[--portnum];
+	u32 portsc;
+
+	portsc = ehci_readl(ehci, status_reg);
+	portsc &= ~(PORT_OWNER | PORT_RWC_BITS);
+
+	ehci_writel(ehci, portsc, status_reg);
+}
+
 static int ehci_platform_reset(struct usb_hcd *hcd)
 {
 	struct platform_device *pdev = to_platform_device(hcd->self.controller);
@@ -203,8 +215,9 @@ static int ehci_platform_probe(struct platform_device *dev)
 			hcd->has_tt = 1;
 
 		if (of_property_read_bool(dev->dev.of_node,
-					  "no-relinquish-port"))
-			ehci_platform_hc_driver.relinquish_port = NULL;
+					  "rockchip-relinquish-port"))
+			ehci_platform_hc_driver.relinquish_port =
+					  ehci_rockchip_relinquish_port;
 
 		priv->num_phys = of_count_phandle_with_args(dev->dev.of_node,
 				"phys", "#phy-cells");
@@ -290,6 +303,8 @@ static int ehci_platform_probe(struct platform_device *dev)
 	}
 	hcd->rsrc_start = res_mem->start;
 	hcd->rsrc_len = resource_size(res_mem);
+	if (priv->num_phys == 1)
+		hcd->phy = priv->phys[0];
 
 	err = usb_add_hcd(hcd, irq, IRQF_SHARED);
 	if (err)

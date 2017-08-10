@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2014 ARM Limited. All rights reserved.
+ * Copyright (C) 2010-2017 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -131,6 +131,7 @@ typedef enum {
 	MALI_PROFILING_EVENT_REASON_SUSPEND_RESUME_SW_FB_JOBS_WAIT             = 46, /* USED */
 	MALI_PROFILING_EVENT_REASON_SUSPEND_RESUME_SW_FB_NOFRAMES_WAIT         = 47, /* USED */
 	MALI_PROFILING_EVENT_REASON_SUSPEND_RESUME_SW_FB_NOJOBS_WAIT           = 48, /* USED */
+	MALI_PROFILING_EVENT_REASON_SUSPEND_RESUME_SW_SUBMIT_LIMITER_WAIT      = 49, /* USED */
 } cinstr_profiling_event_reason_suspend_resume_sw_t;
 
 /**

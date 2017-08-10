@@ -77,6 +77,57 @@ static const struct inv_hw_s hw_info[INV_NUM_PARTS] = {
 	{128, "MPU6515"},
 };
 
+/* define INV_REG_NUM_MAX the max register unmbers of all sensor type */
+#define INV_REG_NUM_MAX 128
+static u8 inv_reg_data[128] = {0};
+/**
+ *  inv_reg_store() - Register store for hw poweroff.
+ */
+int inv_reg_store(struct inv_mpu_iio_s *st)
+{
+	int ii;
+	char data;
+
+	if (!st->chip_config.enable)
+		st->set_power_state(st, true);
+	for (ii = 0; ii < st->hw->num_reg; ii++) {
+		/* don't read fifo r/w register */
+		if (ii == st->reg.fifo_r_w)
+			data = 0;
+		else
+			inv_plat_read(st, ii, 1, &data);
+		inv_reg_data[ii] = data;
+	}
+	if (!st->chip_config.enable)
+		st->set_power_state(st, false);
+
+	return 0;
+}
+
+/**
+ *  inv_reg_recover() - Register recover for hw poweroff.
+ */
+int inv_reg_recover(struct inv_mpu_iio_s *st)
+{
+	int ii;
+	char data;
+
+	if (!st->chip_config.enable)
+		st->set_power_state(st, true);
+	for (ii = 0; ii < st->hw->num_reg; ii++) {
+		data = inv_reg_data[ii];
+		/* don't write fifo r/w register */
+		if (ii == st->reg.fifo_r_w)
+			continue;
+		else
+			inv_plat_single_write(st, ii, data);
+	}
+	if (!st->chip_config.enable)
+		st->set_power_state(st, false);
+
+	return 0;
+}
+
 static void inv_setup_reg(struct inv_reg_map_s *reg)
 {
 	reg->sample_rate_div	= REG_SAMPLE_RATE_DIV;
@@ -1047,7 +1098,10 @@ static ssize_t inv_temperature_show(struct device *dev,
 		pr_err("Could not read temperature register.\n");
 		return result;
 	}
-	temp = (signed short)(be16_to_cpup((short *)&data[0]));
+	if (st->use_hid)
+		temp = st->hid_temperature;
+	else
+		temp = (signed short)(be16_to_cpup((short *)&data[0]));
 	switch (st->chip_type) {
 	case INV_MPU3050:
 		cur_scale = scale[0];
@@ -1069,7 +1123,10 @@ static ssize_t inv_temperature_show(struct device *dev,
 
 	INV_I2C_INC_TEMPREAD(1);
 
-	return sprintf(buf, "%ld %lld\n", scale_t, get_time_ns());
+	if (st->use_hid)
+		return sprintf(buf, "%ld %lld\n", scale_t, st->hid_timestamp);
+	else
+		return sprintf(buf, "%ld %lld\n", scale_t, get_time_ns());
 }
 
 /**
@@ -1705,6 +1762,7 @@ int inv_check_chip_type(struct inv_mpu_iio_s *st, const char *name)
 	struct inv_reg_map_s *reg;
 	int result;
 	int t_ind;
+	int timeout = 10;
 
 	if (!strcmp(name, "itg3500"))
 		st->chip_type = INV_ITG3500;
@@ -1730,9 +1788,14 @@ int inv_check_chip_type(struct inv_mpu_iio_s *st, const char *name)
 	reg = &st->reg;
 	st->setup_reg(reg);
 	/* reset to make sure previous state are not there */
-	result = inv_plat_single_write(st, reg->pwr_mgmt_1, BIT_H_RESET);
-	if (result)
-		return result;
+	while (timeout) {
+		result = inv_plat_single_write(st, reg->pwr_mgmt_1, BIT_H_RESET);
+		if (!result)
+			break;
+		pr_err("inv_mpu: reset chip failed, err = %d\n", result);
+		timeout--;
+		msleep(POWER_UP_TIME);
+	}
 	msleep(POWER_UP_TIME);
 	/* toggle power state */
 	result = st->set_power_state(st, false);

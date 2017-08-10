@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2015~2017 Fuzhou Rockchip Electronics Co., Ltd
+ *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
  * licensing only applies to this file, and not this project as a
@@ -39,71 +41,36 @@
  */
 
 #include <dt-bindings/pwm/pwm.h>
+#include <dt-bindings/input/input.h>
 #include "rk3288.dtsi"
 
 / {
-	memory {
-		device_type = "memory";
-		reg = <0x0 0x80000000>;
+	chosen {
+		bootargs = "earlycon=uart8250,mmio32,0xff690000 swiotlb=1";
 	};
 
-	backlight: backlight {
-		compatible = "pwm-backlight";
-		brightness-levels = <
-			  0   1   2   3   4   5   6   7
-			  8   9  10  11  12  13  14  15
-			 16  17  18  19  20  21  22  23
-			 24  25  26  27  28  29  30  31
-			 32  33  34  35  36  37  38  39
-			 40  41  42  43  44  45  46  47
-			 48  49  50  51  52  53  54  55
-			 56  57  58  59  60  61  62  63
-			 64  65  66  67  68  69  70  71
-			 72  73  74  75  76  77  78  79
-			 80  81  82  83  84  85  86  87
-			 88  89  90  91  92  93  94  95
-			 96  97  98  99 100 101 102 103
-			104 105 106 107 108 109 110 111
-			112 113 114 115 116 117 118 119
-			120 121 122 123 124 125 126 127
-			128 129 130 131 132 133 134 135
-			136 137 138 139 140 141 142 143
-			144 145 146 147 148 149 150 151
-			152 153 154 155 156 157 158 159
-			160 161 162 163 164 165 166 167
-			168 169 170 171 172 173 174 175
-			176 177 178 179 180 181 182 183
-			184 185 186 187 188 189 190 191
-			192 193 194 195 196 197 198 199
-			200 201 202 203 204 205 206 207
-			208 209 210 211 212 213 214 215
-			216 217 218 219 220 221 222 223
-			224 225 226 227 228 229 230 231
-			232 233 234 235 236 237 238 239
-			240 241 242 243 244 245 246 247
-			248 249 250 251 252 253 254 255>;
-		default-brightness-level = <128>;
-		enable-gpios = <&gpio7 2 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&bl_en>;
-		pwms = <&pwm0 0 1000000 PWM_POLARITY_INVERTED>;
-	};
+	edp_panel: edp-panel {
+		status = "disabled";
 
-	panel: panel {
-		compatible ="lg,lp079qx1-sp0v", "simple-panel";
-		backlight = <&backlight>;
-		enable-gpios = <&gpio7 4 GPIO_ACTIVE_HIGH>;
-		pinctrl-0 = <&lcd_cs>;
 		ports {
-			panel_in: port {
-				panel_in_edp: endpoint {
-					remote-endpoint = <&edp_out_panel>;
-				};
+			panel_in_edp: endpoint {
+				remote-endpoint = <&edp_out_panel>;
 			};
 		};
 	};
 
-	sound {
+	lvds_panel: lvds-panel {
+		status = "disabled";
+		pinctrl-0 = <&lcd_cs>;
+		ports {
+			panel_in_lvds: endpoint {
+				remote-endpoint = <&lvds_out_panel>;
+			};
+		};
+	};
+
+	sound: sound {
+		status = "disabled";
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,name = "rockchip,rt5640-codec";
@@ -141,14 +108,6 @@
 		};
 	};
 
-	lvds_panel: lvds_panel {
-		compatible ="auo,b101ew05","simple-panel";
-		backlight = <&backlight>;
-		enable-gpios = <&gpio7 4 GPIO_ACTIVE_HIGH>;
-		pinctrl-0 = <&lcd_cs>;
-		status = "disabled";
-	};
-
 	ext_gmac: external-gmac-clock {
 		compatible = "fixed-clock";
 		clock-frequency = <125000000>;
@@ -156,23 +115,13 @@
 		#clock-cells = <0>;
 	};
 
-	gpio-keys {
-		compatible = "gpio-keys";
-		#address-cells = <1>;
-		#size-cells = <0>;
-		autorepeat;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&pwrbtn>;
-
-		button@0 {
-			gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;
-			linux,code = <116>;
-			label = "GPIO Key Power";
-			linux,input-type = <1>;
-			gpio-key,wakeup = <1>;
-			debounce-interval = <100>;
-		};
+	vccadc_ref: vccadc-ref {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc1v8_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
 	};
 
 	/* This turns on USB vbus for both host0 (ehci) and host1 (dwc2) */
@@ -226,7 +175,6 @@
 	 */
 	vcc_sd: sdmmc-regulator {
 		compatible = "regulator-fixed";
-		gpio = <&gpio7 11 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&sdmmc_pwr>;
 		regulator-name = "vcc_sd";
@@ -234,13 +182,6 @@
 		regulator-max-microvolt = <3300000>;
 		startup-delay-us = <100000>;
 		vin-supply = <&vcc_io>;
-	};
-
-	io-domains {
-		compatible = "rockchip,rk3288-io-voltage-domain";
-		rockchip,grf = <&grf>;
-		sdcard-supply = <&vccio_sd>;
-		wifi-supply = <&vcc_18>;
 	};
 
 	wireless-bluetooth {
@@ -295,6 +236,26 @@
 	num-slots = <1>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&emmc_clk &emmc_cmd &emmc_pwr &emmc_bus8>;
+	max-frequency = <100000000>;
+	mmc-hs200-1_8v;
+	mmc-ddr-1_8v;
+	status = "okay";
+};
+
+&gmac {
+	phy-supply = <&vcc_phy>;
+	phy-mode = "rgmii";
+	clock_in_out = "input";
+	snps,reset-gpio = <&gpio4 7 0>;
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 10000 50000>;
+	assigned-clocks = <&cru SCLK_MAC>;
+	assigned-clock-parents = <&ext_gmac>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&rgmii_pins>;
+	tx_delay = <0x30>;
+	rx_delay = <0x10>;
+	max-speed = <100>;
 	status = "okay";
 };
 
@@ -302,7 +263,11 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	#sound-dai-cells = <0>;
-	ddc-i2c-bus = <&i2c5>;
+	status = "okay";
+};
+
+&saradc {
+	vref-supply = <&vccadc_ref>;
 	status = "okay";
 };
 
@@ -323,31 +288,12 @@
 	status = "okay";
 	vmmc-supply = <&vcc_sd>;
 	vqmmc-supply = <&vccio_sd>;
-};
-
-&gmac {
-	phy-supply = <&vcc_phy>;
-	phy-mode = "rgmii";
-	clock_in_out = "input";
-	snps,reset-gpio = <&gpio4 7 0>;
-	snps,reset-active-low;
-	snps,reset-delays-us = <0 10000 1000000>;
-	assigned-clocks = <&cru SCLK_MAC>;
-	assigned-clock-parents = <&ext_gmac>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&rgmii_pins>;
-	tx_delay = <0x30>;
-	rx_delay = <0x10>;
-	status = "ok";
-};
-
-&edp_phy {
-	status = "okay";
+	supports-sd;
 };
 
 &edp {
 	force-hpd;
-	status = "okay";
+	status = "disabled";
 
 	ports {
 		edp_out: port@1 {
@@ -384,8 +330,23 @@
 	};
 };
 
-&i2c5 {
+&i2c3 {
 	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+	clock-frequency = <400000>;
+
+	gsl3673@40 {
+		compatible = "GSL,GSL3673";
+		reg = <0x40>;
+		screen_max_x = <1536>;
+		screen_max_y = <2048>;
+		irq_gpio_number = <&gpio7 6 IRQ_TYPE_LEVEL_LOW>;
+		rst_gpio_number = <&gpio7 5 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
 };
 
 &i2s {
@@ -393,11 +354,30 @@
 	status = "okay";
 };
 
+&io_domains {
+	status = "okay";
+
+	sdcard-supply = <&vccio_sd>;
+	wifi-supply = <&vcc_18>;
+};
+
 &wdt {
 	status = "okay";
 };
 
 &pwm0 {
+	status = "okay";
+};
+
+&isp {
+	status = "okay";
+};
+
+&isp_mmu {
+	status = "okay";
+};
+
+&rga {
 	status = "okay";
 };
 
@@ -427,20 +407,8 @@
 	status = "okay";
 };
 
-&uart1 {
-	status = "okay";
-};
-
 &uart2 {
-	status = "okay";
-};
-
-&uart3 {
-	status = "okay";
-};
-
-&uart4 {
-	status = "okay";
+	status = "disabled";
 };
 
 &vpu_service {
@@ -450,6 +418,55 @@
 &tsadc {
 	rockchip,hw-tshut-mode = <0>; /* tshut mode 0:CRU 1:GPIO */
 	rockchip,hw-tshut-polarity = <0>; /* tshut polarity 0:LOW 1:HIGH */
+	status = "okay";
+};
+
+&usbphy {
+	status = "okay";
+};
+
+&usb_host0_ehci {
+	rockchip-relinquish-port;
+	status = "okay";
+};
+
+&usb_host1 {
+	status = "okay";
+};
+
+&usb_otg {
+	status = "okay";
+};
+
+&lvds {
+	status = "disabled";
+	ports {
+		lvds_out: port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			lvds_out_panel: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&panel_in_lvds>;
+			};
+		};
+	};
+};
+
+&vopb {
+	status = "okay";
+};
+
+&vopb_mmu {
+	status = "okay";
+};
+
+&vopl {
+	status = "okay";
+};
+
+&vopl_mmu {
 	status = "okay";
 };
 
@@ -501,18 +518,6 @@
 	pcfg_pull_up_drv_8ma: pcfg-pull-up-drv-8ma {
 		bias-pull-up;
 		drive-strength = <8>;
-	};
-
-	backlight {
-		bl_en: bl-en {
-			rockchip,pins = <7 2 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
-
-	buttons {
-		pwrbtn: pwrbtn {
-			rockchip,pins = <0 5 RK_FUNC_GPIO &pcfg_pull_up>;
-		};
 	};
 
 	pmic {

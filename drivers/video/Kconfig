@@ -26,8 +26,7 @@ source "drivers/gpu/drm/Kconfig"
 
 source "drivers/gpu/rogue_m/Kconfig"
 
-source "drivers/gpu/arm/midgard/Kconfig"
-source "drivers/gpu/arm/mali400/mali/Kconfig"
+source "drivers/gpu/arm/Kconfig"
 
 menu "Frame buffer Devices"
 source "drivers/video/fbdev/Kconfig"
@@ -49,6 +48,9 @@ config VIDEOMODE_HELPERS
 	bool
 
 config HDMI
+	bool
+
+config HDMI_NOTIFIERS
 	bool
 
 if VT

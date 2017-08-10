@@ -47,7 +47,7 @@ struct uart_8250_dma {
 	unsigned char		rx_running;
 
 	size_t			rx_index;
-	struct timer_list 	dma_rx_timer;
+	struct timer_list	dma_rx_timer;
 };
 
 struct old_serial_port {

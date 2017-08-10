@@ -136,8 +136,44 @@
 		1) support rk3399.
 *v0.0x21.3:
 		1) some modifications.
+*v0.0x21.4:
+		1) modify for rk3399.
+*v0.0x21.5:
+		1) modify for mipiphy hsfreqrange.
+*v0.0x21.6:
+		1) support drm iommu.
+*v0.0x21.7:
+*       1) remove memset function wrong called code.
+*v0.0x21.8:
+*       1) flash module exist risk, fix up it.
+*v0.0x21.9:
+	1) fix drm iommu crash.
+	if process cameraserver was died during streaming, iommu resource
+	was not released correctly. when cameraserver was recovered and
+	streaming again, iommu resource may be conflicted.
+*v0.0x21.0xa:
+	1) clock clk_vio0_noc would cause mipi lcdc no display on 3368h, remove it.
+*v0.0x21.0xb:
+	1) some log is boring, so set print level more high.
+*v0.0x21.0xc:
+	1) support rk3288.
+*v0.0x21.0xd:
+	1) modify mipiphy_hsfreqrange for 3368.
+*v0.0x21.0xe
+	1) correct mipiphy_hsfreqrange of 3368.
+	2) add csi-phy timing setting for 3368.
+*v0.0x21.0xf:
+	1) add reference count for marvin.
+*v0.0x22.0:
+	1) delete node in irqpool list when thread disconnect.
+*v0.0x22.1:
+	1) gpio0_D is unavailable on rk3288 with current pinctrl driver.
+*v0.0x22.2:
+	1) modify the condition of DRM iommu, which makes code  more readable
+	by using of_parse_phandle to check whether the "iommus" phandle exists
+	in the isp device node.
 */
-#define CAMSYS_DRIVER_VERSION                   KERNEL_VERSION(0, 0x21, 3)
+#define CAMSYS_DRIVER_VERSION                   KERNEL_VERSION(0, 0x22, 2)
 
 #define CAMSYS_PLATFORM_DRV_NAME                "RockChip-CamSys"
 #define CAMSYS_PLATFORM_MARVIN_NAME             "Platform_MarvinDev"
@@ -156,6 +192,7 @@
 #define CAMSYS_NAMELEN_MIN(a)                   \
 	((strlen(a) > (CAMSYS_NAME_LEN-1))?(CAMSYS_NAME_LEN-1):strlen(a))
 #define CAMSYS_IRQPOOL_NUM                      128
+#define CAMSYS_DMA_BUF_MAX_NUM                  32
 
 extern unsigned int camsys_debug;
 
@@ -266,6 +303,14 @@ typedef struct camsys_exdevs_s {
 	struct list_head      active;
 } camsys_exdevs_t;
 
+typedef struct camsys_dma_buf_s {
+	struct dma_buf *dma_buf;
+	struct dma_buf_attachment *attach;
+	struct sg_table *sgt;
+	dma_addr_t dma_addr;
+	int fd;
+} camsys_dma_buf_t;
+
 typedef struct camsys_dev_s {
 	unsigned int          dev_id;
 	camsys_irq_t          irq;
@@ -288,6 +333,10 @@ typedef struct camsys_dev_s {
 	unsigned long         rk_grf_base;
 	unsigned long         rk_cru_base;
 	unsigned long         rk_isp_base;
+	atomic_t              refcount;
+	struct iommu_domain *domain;
+	camsys_dma_buf_t dma_buf[CAMSYS_DMA_BUF_MAX_NUM];
+	int dma_buf_cnt;
 
 	int (*clkin_cb)(void *ptr, unsigned int on);
 	int (*clkout_cb)(void *ptr, unsigned int on, unsigned int clk);
@@ -390,7 +439,7 @@ camsys_extdev_t *extdev, camsys_sysctrl_t *devctl, camsys_dev_t *camsys_dev)
 					devctl->ops, gpio->io, !gpio->active);
 			}
 		} else {
-			camsys_err("Sysctl %d failed, because gpio is NULL!",
+			camsys_trace(1, "Sysctl %d not do, because gpio is NULL",
 				devctl->ops);
 			err = -EINVAL;
 			goto end;

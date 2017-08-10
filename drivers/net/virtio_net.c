@@ -1415,6 +1415,7 @@ static const struct net_device_ops virtnet_netdev = {
 #ifdef CONFIG_NET_RX_BUSY_POLL
 	.ndo_busy_poll		= virtnet_busy_poll,
 #endif
+	.ndo_features_check	= passthru_features_check,
 };
 
 static void virtnet_config_changed_work(struct work_struct *work)
@@ -1464,6 +1465,11 @@ static void virtnet_free_queues(struct virtnet_info *vi)
 		napi_hash_del(&vi->rq[i].napi);
 		netif_napi_del(&vi->rq[i].napi);
 	}
+
+	/* We called napi_hash_del() before netif_napi_del(),
+	 * we need to respect an RCU grace period before freeing vi->rq
+	 */
+	synchronize_net();
 
 	kfree(vi->rq);
 	kfree(vi->sq);

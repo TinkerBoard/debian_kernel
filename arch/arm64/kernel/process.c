@@ -49,6 +49,7 @@
 #include <asm/alternative.h>
 #include <asm/compat.h>
 #include <asm/cacheflush.h>
+#include <asm/exec.h>
 #include <asm/fpsimd.h>
 #include <asm/mmu_context.h>
 #include <asm/processor.h>
@@ -144,6 +145,8 @@ void machine_restart(char *cmd)
 	/* Disable interrupts first */
 	local_irq_disable();
 	smp_send_stop();
+
+	do_kernel_i2c_restart(cmd);
 
 	/*
 	 * UpdateCapsule() depends on the system being reset via
@@ -379,7 +382,7 @@ static void tls_thread_switch(struct task_struct *next)
 }
 
 /* Restore the UAO state depending on next's addr_limit */
-static void uao_thread_switch(struct task_struct *next)
+void uao_thread_switch(struct task_struct *next)
 {
 	if (IS_ENABLED(CONFIG_ARM64_UAO)) {
 		if (task_thread_info(next)->addr_limit == KERNEL_DS)

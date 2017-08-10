@@ -103,6 +103,8 @@
 		dma-names = "tx", "rx";
 		clock-names = "i2s_hclk", "i2s_clk";
 		clocks = <&cru HCLK_I2S0>, <&cru SCLK_I2S0>;
+		rockchip,playback-channels = <8>;
+		rockchip,capture-channels = <2>;
 		status = "disabled";
 	};
 
@@ -118,6 +120,8 @@
 		dma-names = "tx", "rx";
 		clock-names = "i2s_hclk", "i2s_clk";
 		clocks = <&cru HCLK_I2S1>, <&cru SCLK_I2S1>;
+		rockchip,playback-channels = <2>;
+		rockchip,capture-channels = <2>;
 		status = "disabled";
 	};
 
@@ -133,6 +137,8 @@
 		dma-names = "tx", "rx";
 		clock-names = "i2s_hclk", "i2s_clk";
 		clocks = <&cru HCLK_I2S2>, <&cru SCLK_I2S2>;
+		rockchip,playback-channels = <2>;
+		rockchip,capture-channels = <2>;
 		status = "disabled";
 	};
 
@@ -176,14 +182,14 @@
 		#size-cells = <0>;
 		status = "disabled";
 
-		usbphy0: usb-phy0 {
+		usbphy0: usb-phy@17c {
 			#phy-cells = <0>;
 			reg = <0x17c>;
 			clocks = <&cru SCLK_OTGPHY0>;
 			clock-names = "phyclk";
 		};
 
-		usbphy1: usb-phy1 {
+		usbphy1: usb-phy@188 {
 			#phy-cells = <0>;
 			reg = <0x188>;
 			clocks = <&cru SCLK_OTGPHY1>;

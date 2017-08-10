@@ -170,6 +170,9 @@ static struct drm_conn_prop_enum_list drm_connector_enum_list[] = {
 	{ DRM_MODE_CONNECTOR_DSI, "DSI" },
 };
 
+DRM_ENUM_NAME_FN(drm_get_connector_name, drm_connector_enum_list)
+EXPORT_SYMBOL(drm_get_connector_name);
+
 static const struct drm_prop_enum_list drm_encoder_enum_list[] = {
 	{ DRM_MODE_ENCODER_NONE, "None" },
 	{ DRM_MODE_ENCODER_DAC, "DAC" },
@@ -649,6 +652,31 @@ EXPORT_SYMBOL(drm_framebuffer_remove);
 
 DEFINE_WW_CLASS(crtc_ww_class);
 
+static int drm_crtc_register_all(struct drm_device *dev)
+{
+	struct drm_crtc *crtc;
+	int ret = 0;
+
+	drm_for_each_crtc(crtc, dev) {
+		if (crtc->funcs->late_register)
+			ret = crtc->funcs->late_register(crtc);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static void drm_crtc_unregister_all(struct drm_device *dev)
+{
+	struct drm_crtc *crtc;
+
+	drm_for_each_crtc(crtc, dev) {
+		if (crtc->funcs->early_unregister)
+			crtc->funcs->early_unregister(crtc);
+	}
+}
+
 /**
  * drm_crtc_init_with_planes - Initialise a new CRTC object with
  *    specified primary and cursor planes.
@@ -1030,11 +1058,22 @@ int drm_connector_register(struct drm_connector *connector)
 
 	ret = drm_debugfs_connector_add(connector);
 	if (ret) {
-		drm_sysfs_connector_remove(connector);
-		return ret;
+		goto err_sysfs;
+	}
+
+	if (connector->funcs->late_register) {
+		ret = connector->funcs->late_register(connector);
+		if (ret)
+			goto err_debugfs;
 	}
 
 	return 0;
+
+err_debugfs:
+	drm_debugfs_connector_remove(connector);
+err_sysfs:
+	drm_sysfs_connector_remove(connector);
+	return ret;
 }
 EXPORT_SYMBOL(drm_connector_register);
 
@@ -1046,30 +1085,96 @@ EXPORT_SYMBOL(drm_connector_register);
  */
 void drm_connector_unregister(struct drm_connector *connector)
 {
+	if (connector->funcs->early_unregister)
+		connector->funcs->early_unregister(connector);
+
 	drm_sysfs_connector_remove(connector);
 	drm_debugfs_connector_remove(connector);
 }
 EXPORT_SYMBOL(drm_connector_unregister);
 
-
 /**
- * drm_connector_unplug_all - unregister connector userspace interfaces
+ * drm_connector_register_all - register all connectors
  * @dev: drm device
  *
- * This function unregisters all connector userspace interfaces in sysfs. Should
- * be call when the device is disconnected, e.g. from an usb driver's
- * ->disconnect callback.
+ * This function registers all connectors in sysfs and other places so that
+ * userspace can start to access them. drm_connector_register_all() is called
+ * automatically from drm_dev_register() to complete the device registration,
+ * if they don't call drm_connector_register() on each connector individually.
+ *
+ * When a device is unplugged and should be removed from userspace access,
+ * call drm_connector_unregister_all(), which is the inverse of this
+ * function.
+ *
+ * Returns:
+ * Zero on success, error code on failure.
  */
-void drm_connector_unplug_all(struct drm_device *dev)
+int drm_connector_register_all(struct drm_device *dev)
+{
+	struct drm_connector *connector;
+	int ret;
+
+	/* FIXME: taking the mode config mutex ends up in a clash with
+	 * fbcon/backlight registration */
+	list_for_each_entry(connector, &dev->mode_config.connector_list, head) {
+		ret = drm_connector_register(connector);
+		if (ret)
+			goto err;
+	}
+
+	return 0;
+
+err:
+	mutex_unlock(&dev->mode_config.mutex);
+	drm_connector_unregister_all(dev);
+	return ret;
+}
+EXPORT_SYMBOL(drm_connector_register_all);
+
+/**
+ * drm_connector_unregister_all - unregister connector userspace interfaces
+ * @dev: drm device
+ *
+ * This functions unregisters all connectors from sysfs and other places so
+ * that userspace can no longer access them. Drivers should call this as the
+ * first step tearing down the device instace, or when the underlying
+ * physical device disappeared (e.g. USB unplug), right before calling
+ * drm_dev_unregister().
+ */
+void drm_connector_unregister_all(struct drm_device *dev)
 {
 	struct drm_connector *connector;
 
 	/* FIXME: taking the mode config mutex ends up in a clash with sysfs */
-	list_for_each_entry(connector, &dev->mode_config.connector_list, head)
+	drm_for_each_connector(connector, dev)
 		drm_connector_unregister(connector);
-
 }
-EXPORT_SYMBOL(drm_connector_unplug_all);
+EXPORT_SYMBOL(drm_connector_unregister_all);
+
+static int drm_encoder_register_all(struct drm_device *dev)
+{
+	struct drm_encoder *encoder;
+	int ret = 0;
+
+	drm_for_each_encoder(encoder, dev) {
+		if (encoder->funcs->late_register)
+			ret = encoder->funcs->late_register(encoder);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static void drm_encoder_unregister_all(struct drm_device *dev)
+{
+	struct drm_encoder *encoder;
+
+	drm_for_each_encoder(encoder, dev) {
+		if (encoder->funcs->early_unregister)
+			encoder->funcs->early_unregister(encoder);
+	}
+}
 
 /**
  * drm_encoder_init - Init a preallocated encoder
@@ -1217,6 +1322,31 @@ int drm_universal_plane_init(struct drm_device *dev, struct drm_plane *plane,
 	return 0;
 }
 EXPORT_SYMBOL(drm_universal_plane_init);
+
+static int drm_plane_register_all(struct drm_device *dev)
+{
+	struct drm_plane *plane;
+	int ret = 0;
+
+	drm_for_each_plane(plane, dev) {
+		if (plane->funcs->late_register)
+			ret = plane->funcs->late_register(plane);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static void drm_plane_unregister_all(struct drm_device *dev)
+{
+	struct drm_plane *plane;
+
+	drm_for_each_plane(plane, dev) {
+		if (plane->funcs->early_unregister)
+			plane->funcs->early_unregister(plane);
+	}
+}
 
 /**
  * drm_plane_init - Initialize a legacy plane
@@ -1453,6 +1583,46 @@ void drm_plane_force_disable(struct drm_plane *plane)
 }
 EXPORT_SYMBOL(drm_plane_force_disable);
 
+int drm_modeset_register_all(struct drm_device *dev)
+{
+	int ret;
+
+	ret = drm_plane_register_all(dev);
+	if (ret)
+		goto err_plane;
+
+	ret = drm_crtc_register_all(dev);
+	if  (ret)
+		goto err_crtc;
+
+	ret = drm_encoder_register_all(dev);
+	if (ret)
+		goto err_encoder;
+
+	ret = drm_connector_register_all(dev);
+	if (ret)
+		goto err_connector;
+
+	return 0;
+
+err_connector:
+	drm_encoder_unregister_all(dev);
+err_encoder:
+	drm_crtc_unregister_all(dev);
+err_crtc:
+	drm_plane_unregister_all(dev);
+err_plane:
+	return ret;
+}
+
+void drm_modeset_unregister_all(struct drm_device *dev)
+{
+	drm_connector_unregister_all(dev);
+	drm_encoder_unregister_all(dev);
+	drm_crtc_unregister_all(dev);
+	drm_plane_unregister_all(dev);
+}
+
 static int drm_mode_create_standard_properties(struct drm_device *dev)
 {
 	struct drm_property *prop;
@@ -1581,6 +1751,41 @@ static int drm_mode_create_standard_properties(struct drm_device *dev)
 	if (!prop)
 		return -ENOMEM;
 	dev->mode_config.prop_mode_id = prop;
+
+	prop = drm_property_create(dev,
+			DRM_MODE_PROP_BLOB,
+			"DEGAMMA_LUT", 0);
+	if (!prop)
+		return -ENOMEM;
+	dev->mode_config.degamma_lut_property = prop;
+
+	prop = drm_property_create_range(dev,
+			DRM_MODE_PROP_IMMUTABLE,
+			"DEGAMMA_LUT_SIZE", 0, UINT_MAX);
+	if (!prop)
+		return -ENOMEM;
+	dev->mode_config.degamma_lut_size_property = prop;
+
+	prop = drm_property_create(dev,
+			DRM_MODE_PROP_BLOB,
+			"CTM", 0);
+	if (!prop)
+		return -ENOMEM;
+	dev->mode_config.ctm_property = prop;
+
+	prop = drm_property_create(dev,
+			DRM_MODE_PROP_BLOB,
+			"GAMMA_LUT", 0);
+	if (!prop)
+		return -ENOMEM;
+	dev->mode_config.gamma_lut_property = prop;
+
+	prop = drm_property_create_range(dev,
+			DRM_MODE_PROP_IMMUTABLE,
+			"GAMMA_LUT_SIZE", 0, UINT_MAX);
+	if (!prop)
+		return -ENOMEM;
+	dev->mode_config.gamma_lut_size_property = prop;
 
 	return 0;
 }

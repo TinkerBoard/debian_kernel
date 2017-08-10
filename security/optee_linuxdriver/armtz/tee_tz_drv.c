@@ -32,12 +32,18 @@
 #include <arm_common/teesmc.h>
 #include <arm_common/teesmc_st.h>
 
+#include <linux/cpumask.h>
+
 #include "tee_mem.h"
 #include "tee_tz_op.h"
 #include "tee_tz_priv.h"
 #include "handle.h"
 
-#define SWITCH_CPU0_DEBUG
+#ifdef CONFIG_OUTER_CACHE
+#undef CONFIG_OUTER_CACHE
+#endif
+
+/* #define SWITCH_CPU0_DEBUG */
 
 #define _TEE_TZ_NAME "armtz"
 #define DEV (ptee->tee->dev)
@@ -67,40 +73,51 @@ static struct handle_db shm_handle_db = HANDLE_DB_INITIALIZER;
 /*******************************************************************
  * Calling TEE
  *******************************************************************/
+#ifdef SWITCH_CPU0_DEBUG
 #ifdef CONFIG_SMP
-static void switch_cpumask_to_cpu0(cpumask_t *saved_cpu_mask)
+static long switch_cpumask_to_cpu0(cpumask_t *saved_cpu_mask)
 {
 	long ret;
+
 	cpumask_t local_cpu_mask = CPU_MASK_NONE;
-	pr_info("switch_cpumask_to_cpu cpu0\n");
-	cpu_set(0, local_cpu_mask);
+	cpumask_set_cpu(0, &local_cpu_mask);
 	cpumask_copy(saved_cpu_mask, tsk_cpus_allowed(current));
 	ret = sched_setaffinity(0, &local_cpu_mask);
 	if (ret)
-		pr_err("sched_setaffinity #1 -> 0x%lX", ret);
+		pr_err("%s:->%ld,cpu:%d\n", __func__, ret, smp_processor_id());
+	return ret;
 }
 
-static void restore_cpumask(cpumask_t *saved_cpu_mask)
+static long restore_cpumask(cpumask_t *saved_cpu_mask)
 {
 	long ret;
-	pr_info("restore_cpumask cpu0\n");
+
 	ret = sched_setaffinity(0, saved_cpu_mask);
 	if (ret)
-		pr_err("sched_setaffinity #2 -> 0x%lX", ret);
+		pr_err("%s:->%ld,cpu:%d\n", __func__, ret, smp_processor_id());
+	return ret;
 }
 #else
-static inline void switch_cpumask_to_cpu0(void) {};
-static inline void restore_cpumask(void) {};
+static inline long switch_cpumask_to_cpu0(cpumask_t *saved_cpu_mask)
+{ return 0; }
+static inline long restore_cpumask(cpumask_t *saved_cpu_mask)
+{ return 0; }
 #endif
-static int tee_smc_call_switchcpu0(struct smc_param *param)
+static long tee_smc_call_switchcpu0(struct smc_param *param)
 {
+	long ret;
 	cpumask_t saved_cpu_mask;
 
-	switch_cpumask_to_cpu0(&saved_cpu_mask);
+	ret = switch_cpumask_to_cpu0(&saved_cpu_mask);
+	if (ret)
+		return ret;
 	tee_smc_call(param);
-	restore_cpumask(&saved_cpu_mask);
-	return 0;
+	ret = restore_cpumask(&saved_cpu_mask);
+	if (ret)
+		return ret;
+	return ret;
 }
+#endif /* SWITCH_CPU0_DEBUG */
 
 static void e_lock_teez(struct tee_tz *ptee)
 {
@@ -445,15 +462,16 @@ static void call_tee(struct tee_tz *ptee,
 		param.a0 = funcid;
 
 #ifdef SWITCH_CPU0_DEBUG
-		tee_smc_call_switchcpu0(&param);
+		if (tee_smc_call_switchcpu0(&param))
+			break;
 #else
 		tee_smc_call(&param);
 #endif
 		ret = param.a0;
 
-		if (ret == TEESMC_RETURN_EBUSY) {
+		if (ret == TEESMC_RETURN_ETHREAD_LIMIT) {
 			/*
-			 * Since secure world returned busy, release the
+			 * Since secure world is out of threads, release the
 			 * lock we had when entering this function and wait
 			 * for "something to happen" (something else to
 			 * exit from secure world and needed resources may
@@ -896,8 +914,8 @@ static struct tee_shm *tz_alloc(struct tee *tee, size_t size, uint32_t flags)
 	}
 	shm->kaddr = tee_shm_pool_p2v(tee->dev, ptee->shm_pool, shm->paddr);
 	if (!shm->kaddr) {
-		dev_err(tee->dev, "%s: p2v(%p)=0\n", __func__,
-			(void *)shm->paddr);
+		dev_err(tee->dev, "%s: p2v(%pad)=0\n", __func__,
+			&shm->paddr);
 		tee_shm_pool_free(tee->dev, ptee->shm_pool, shm->paddr, NULL);
 		devm_kfree(tee->dev, shm);
 		return ERR_PTR(-EFAULT);
@@ -906,8 +924,8 @@ static struct tee_shm *tz_alloc(struct tee *tee, size_t size, uint32_t flags)
 	if (ptee->shm_cached)
 		shm->flags |= TEE_SHM_CACHED;
 
-	dev_dbg(tee->dev, "%s: kaddr=%p, paddr=%p, shm=%p, size %x:%x\n",
-		__func__, shm->kaddr, (void *)shm->paddr, shm,
+	dev_dbg(tee->dev, "%s: kaddr=%p, paddr=%pad, shm=%p, size %x:%x\n",
+		__func__, shm->kaddr, &shm->paddr, shm,
 		(unsigned int)shm->size_req, (unsigned int)shm->size_alloc);
 
 	return shm;
@@ -1030,7 +1048,9 @@ static int register_outercache_mutex(struct tee_tz *ptee, bool reg)
 	param.a0 = TEESMC32_ST_FASTCALL_L2CC_MUTEX;
 	param.a1 = TEESMC_ST_L2CC_MUTEX_GET_ADDR;
 #ifdef SWITCH_CPU0_DEBUG
-	tee_smc_call_switchcpu0(&param);
+	ret = tee_smc_call_switchcpu0(&param);
+	if (ret)
+		goto out;
 #else
 	tee_smc_call(&param);
 #endif
@@ -1059,7 +1079,9 @@ static int register_outercache_mutex(struct tee_tz *ptee, bool reg)
 	param.a0 = TEESMC32_ST_FASTCALL_L2CC_MUTEX;
 	param.a1 = TEESMC_ST_L2CC_MUTEX_ENABLE;
 #ifdef SWITCH_CPU0_DEBUG
-	tee_smc_call_switchcpu0(&param);
+	ret = tee_smc_call_switchcpu0(&param);
+	if (ret)
+		goto out;
 #else
 	tee_smc_call(&param);
 #endif
@@ -1077,7 +1099,11 @@ out:
 		param.a0 = TEESMC32_ST_FASTCALL_L2CC_MUTEX;
 		param.a1 = TEESMC_ST_L2CC_MUTEX_DISABLE;
 #ifdef SWITCH_CPU0_DEBUG
-		tee_smc_call_switchcpu0(&param);
+		ret = tee_smc_call_switchcpu0(&param);
+		if (ret) {
+			mutex_unlock(&ptee->mutex);
+			return ret;
+		}
 #else
 		tee_smc_call(&param);
 #endif
@@ -1107,7 +1133,11 @@ static int configure_shm(struct tee_tz *ptee)
 	mutex_lock(&ptee->mutex);
 	param.a0 = TEESMC32_ST_FASTCALL_GET_SHM_CONFIG;
 #ifdef SWITCH_CPU0_DEBUG
-	tee_smc_call_switchcpu0(&param);
+	ret = tee_smc_call_switchcpu0(&param);
+	if (ret) {
+		mutex_unlock(&ptee->mutex);
+		goto out;
+	}
 #else
 	tee_smc_call(&param);
 #endif

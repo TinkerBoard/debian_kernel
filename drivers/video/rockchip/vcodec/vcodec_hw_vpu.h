@@ -177,6 +177,7 @@ static struct vpu_task_info task_vpu[TASK_TYPE_BUTT] = {
 	},
 	{
 		.name = "vpu_dec_pp",
+		.reg_rlc = 12,
 		.reg_en = VPU_REG_EN_DEC,
 		.reg_irq = VPU_DEC_INTERRUPT_REGISTER,
 		.reg_len = 12,
@@ -254,7 +255,7 @@ static struct vpu_hw_info hw_vpu_9190 = {
  * file handle translate information
  */
 DEF_FMT_TRANS_TBL(vpu_jpegd,
-		  12, 40, 66, 67
+		  12, 13, 14, 40, 66, 67
 );
 
 DEF_FMT_TRANS_TBL(vpu_h264d,
@@ -276,6 +277,10 @@ DEF_FMT_TRANS_TBL(vpu_vc1d,
 		  12, 13, 14, 15, 16, 17, 27, 41
 );
 
+DEF_FMT_TRANS_TBL(vpu_avsd,
+		  12, 13, 14, 15, 16, 17, 40, 41, 45
+);
+
 DEF_FMT_TRANS_TBL(vpu_defaultd,
 		  12, 13, 14, 15, 16, 17, 40, 41
 );
@@ -292,29 +297,29 @@ DEF_FMT_TRANS_TBL(vpu_defaulte,
 		  5, 6, 7, 8, 9, 10, 11, 12, 13, 51
 );
 
-const struct vpu_trans_info trans_vpu[FMT_TYPE_BUTT] = {
-	SETUP_FMT_TBL(FMT_JPEGD , vpu_jpegd),
-	SETUP_FMT_TBL(FMT_H263D , vpu_defaultd),
-	SETUP_FMT_TBL(FMT_H264D , vpu_h264d),
+static const struct vpu_trans_info trans_vpu[FMT_TYPE_BUTT] = {
+	SETUP_FMT_TBL(FMT_JPEGD, vpu_jpegd),
+	SETUP_FMT_TBL(FMT_H263D, vpu_defaultd),
+	SETUP_FMT_TBL(FMT_H264D, vpu_h264d),
 	EMPTY_FMT_TBL(FMT_H265D),
 
 	SETUP_FMT_TBL(FMT_MPEG1D, vpu_defaultd),
 	SETUP_FMT_TBL(FMT_MPEG2D, vpu_defaultd),
 	SETUP_FMT_TBL(FMT_MPEG4D, vpu_defaultd),
 
-	SETUP_FMT_TBL(FMT_VP6D  , vpu_vp6d),
-	SETUP_FMT_TBL(FMT_VP7D  , vpu_defaultd),
-	SETUP_FMT_TBL(FMT_VP8D  , vpu_vp8d),
+	SETUP_FMT_TBL(FMT_VP6D, vpu_vp6d),
+	SETUP_FMT_TBL(FMT_VP7D, vpu_defaultd),
+	SETUP_FMT_TBL(FMT_VP8D, vpu_vp8d),
 	EMPTY_FMT_TBL(FMT_VP9D),
 
-	SETUP_FMT_TBL(FMT_VC1D  , vpu_vc1d),
-	SETUP_FMT_TBL(FMT_AVSD  , vpu_defaultd),
+	SETUP_FMT_TBL(FMT_VC1D, vpu_vc1d),
+	SETUP_FMT_TBL(FMT_AVSD, vpu_avsd),
 
-	SETUP_FMT_TBL(FMT_PP    , vpu_default_pp),
+	SETUP_FMT_TBL(FMT_PP, vpu_default_pp),
 
-	SETUP_FMT_TBL(FMT_JPEGE , vpu_defaulte),
-	SETUP_FMT_TBL(FMT_H264E , vpu_defaulte),
-	SETUP_FMT_TBL(FMT_VP8E  , vpu_vp8e),
+	SETUP_FMT_TBL(FMT_JPEGE, vpu_defaulte),
+	SETUP_FMT_TBL(FMT_H264E, vpu_defaulte),
+	SETUP_FMT_TBL(FMT_VP8E, vpu_vp8e),
 };
 
 #endif

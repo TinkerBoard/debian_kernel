@@ -44,6 +44,7 @@
 /*#define SW_LT*/
 
 #define RK3368_GRF_SOC_CON4	0x410
+#define RK3399_GRF_SOC_CON20	0x6250
 
 static struct rk32_edp *rk32_edp;
 
@@ -136,6 +137,16 @@ static int rk32_edp_init_edp(struct rk32_edp *edp)
 		else
 			val = EDP_SEL_VOP_LIT << 16;
 		writel_relaxed(val, RK_GRF_VIRT + RK3288_GRF_SOC_CON6);
+	}
+
+	if (edp->soctype == SOC_RK3399) {
+		if (screen->lcdc_id == 1)  /*select lcdc*/
+			val = EDP_SEL_VOP_LIT | (EDP_SEL_VOP_LIT << 16);
+		else
+			val = EDP_SEL_VOP_LIT << 16;
+		clk_prepare_enable(edp->grf_clk);
+		regmap_write(edp->grf, RK3399_GRF_SOC_CON20, val);
+		clk_disable_unprepare(edp->grf_clk);
 	}
 
 	rk32_edp_reset(edp);
@@ -1231,12 +1242,12 @@ static int  rk32_edp_disable(void)
 	struct rk32_edp *edp = rk32_edp;
 
 	if (edp->edp_en) {
-		pm_runtime_put(edp->dev);
+		edp->edp_en = false;
 		disable_irq(edp->irq);
 		rk32_edp_reset(edp);
 		rk32_edp_analog_power_ctr(edp, 0);
 		rk32_edp_clk_disable(edp);
-		edp->edp_en = false;
+		pm_runtime_put_sync(edp->dev);
 	}
 
 	return 0;
@@ -1769,6 +1780,14 @@ static int rk32_edp_probe(struct platform_device *pdev)
 		return PTR_ERR(edp->grf);
 	}
 
+	if (edp->soctype == SOC_RK3399) {
+		edp->grf_clk = devm_clk_get(&pdev->dev, "clk_grf");
+		if (IS_ERR(edp->grf_clk)) {
+			dev_err(&pdev->dev, "cannot get grf clk\n");
+			return PTR_ERR(edp->grf_clk);
+		}
+	}
+
 	edp->pd = devm_clk_get(&pdev->dev, "pd_edp");
 	if (IS_ERR(edp->pd)) {
 		dev_err(&pdev->dev, "cannot get pd\n");
@@ -1829,6 +1848,10 @@ static int rk32_edp_probe(struct platform_device *pdev)
 		rk32_edp_clk_disable(edp);
 
 	pm_runtime_enable(&pdev->dev);
+	if (support_uboot_display()) {
+		edp->edp_en = true;
+		pm_runtime_get_sync(&pdev->dev);
+	}
 
 	rk32_edp = edp;
 	rk_fb_trsm_ops_register(&trsm_edp_ops, SCREEN_EDP);

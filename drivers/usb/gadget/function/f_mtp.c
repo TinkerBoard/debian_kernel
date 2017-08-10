@@ -43,6 +43,7 @@
 #define MTP_BULK_BUFFER_SIZE       16384
 #define INTR_BUFFER_SIZE           28
 #define MAX_INST_NAME_LEN          40
+#define MTP_MAX_FILE_SIZE          0xFFFFFFFFL
 
 /* String IDs */
 #define INTERFACE_STRING_INDEX	0
@@ -361,6 +362,7 @@ static inline struct mtp_dev *func_to_mtp(struct usb_function *f)
 static struct usb_request *mtp_request_new(struct usb_ep *ep, int buffer_size)
 {
 	struct usb_request *req = usb_ep_alloc_request(ep, GFP_KERNEL);
+
 	if (!req)
 		return NULL;
 
@@ -539,11 +541,9 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 	ssize_t r = count;
 	unsigned xfer;
 	int ret = 0;
+	size_t len = 0;
 
 	DBG(cdev, "mtp_read(%zu)\n", count);
-
-	if (count > MTP_BULK_BUFFER_SIZE)
-		return -EINVAL;
 
 	/* we will block until we're online */
 	DBG(cdev, "mtp_read: waiting for online state\n");
@@ -554,6 +554,14 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 		goto done;
 	}
 	spin_lock_irq(&dev->lock);
+	if (dev->ep_out->desc) {
+		len = usb_ep_align_maybe(cdev->gadget, dev->ep_out, count);
+		if (len > MTP_BULK_BUFFER_SIZE) {
+			spin_unlock_irq(&dev->lock);
+			return -EINVAL;
+		}
+	}
+
 	if (dev->state == STATE_CANCELED) {
 		/* report cancelation to userspace */
 		dev->state = STATE_READY;
@@ -566,7 +574,7 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 requeue_req:
 	/* queue a request */
 	req = dev->rx_req[0];
-	req->length = count;
+	req->length = len;
 	dev->rx_done = 0;
 	ret = usb_ep_queue(dev->ep_out, req, GFP_KERNEL);
 	if (ret < 0) {
@@ -763,7 +771,12 @@ static void send_file_work(struct work_struct *data)
 		if (hdr_size) {
 			/* prepend MTP data header */
 			header = (struct mtp_data_header *)req->buf;
-			header->length = __cpu_to_le32(count);
+			/*
+                         * set file size with header according to
+                         * MTP Specification v1.0
+                         */
+			header->length = (count > MTP_MAX_FILE_SIZE) ?
+				MTP_MAX_FILE_SIZE : __cpu_to_le32(count);
 			header->type = __cpu_to_le16(2); /* data packet */
 			header->command = __cpu_to_le16(dev->xfer_command);
 			header->transaction_id =
@@ -862,6 +875,10 @@ static void receive_file_work(struct work_struct *data)
 				r = -ECANCELED;
 				if (!dev->rx_done)
 					usb_ep_dequeue(dev->ep_out, read_req);
+				break;
+			}
+			if (read_req->status) {
+				r = read_req->status;
 				break;
 			}
 			/* if xfer_file_length is 0xFFFFFFFF, then we read until
@@ -1143,6 +1160,7 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 		} else if (ctrl->bRequest == MTP_REQ_GET_DEVICE_STATUS
 				&& w_index == 0 && w_value == 0) {
 			struct mtp_device_status *status = cdev->req->buf;
+
 			status->wLength =
 				__constant_cpu_to_le16(sizeof(*status));
 
@@ -1165,6 +1183,7 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 	/* respond with data transfer or status phase? */
 	if (value >= 0) {
 		int rc;
+
 		cdev->req->zero = value < w_length;
 		cdev->req->length = value;
 		rc = usb_ep_queue(cdev->gadget->ep0, cdev->req, GFP_ATOMIC);
@@ -1400,6 +1419,7 @@ static struct mtp_instance *to_mtp_instance(struct config_item *item)
 static void mtp_attr_release(struct config_item *item)
 {
 	struct mtp_instance *fi_mtp = to_mtp_instance(item);
+
 	usb_put_function_instance(&fi_mtp->func_inst);
 }
 
@@ -1520,7 +1540,7 @@ struct usb_function *function_alloc_mtp_ptp(struct usb_function_instance *fi,
 		pr_err("\t2: Create MTP function\n");
 		pr_err("\t3: Create and symlink PTP function"
 				" with a gadget configuration\n");
-		return NULL;
+		return ERR_PTR(-EINVAL); /* Invalid Configuration */
 	}
 
 	dev = fi_mtp->dev;

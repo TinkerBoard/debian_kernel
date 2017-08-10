@@ -425,11 +425,6 @@ static int config_usb_cfg_link(
 	}
 
 	f = usb_get_function(fi);
-	if (f == NULL) {
-		/* Are we trying to symlink PTP without MTP function? */
-		ret = -EINVAL; /* Invalid Configuration */
-		goto out;
-	}
 	if (IS_ERR(f)) {
 		ret = PTR_ERR(f);
 		goto out;
@@ -1737,7 +1732,9 @@ void unregister_gadget_item(struct config_item *item)
 {
 	struct gadget_info *gi = to_gadget_info(item);
 
+	mutex_lock(&gi->lock);
 	unregister_gadget(gi);
+	mutex_unlock(&gi->lock);
 }
 EXPORT_SYMBOL_GPL(unregister_gadget_item);
 

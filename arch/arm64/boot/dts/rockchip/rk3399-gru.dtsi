@@ -464,23 +464,6 @@
 
 	/* END REGULATORS */
 
-	io-domains {
-		compatible = "rockchip,rk3399-io-voltage-domain";
-		rockchip,grf = <&grf>;
-
-		bt656-supply = <&pp1800_ap_io>;		/* APIO2_VDD;  2a 2b */
-		audio-supply = <&pp1800_audio>;		/* APIO5_VDD;  3d 4a */
-		sdmmc-supply = <&ppvar_sd_card_io>;	/* SDMMC0_VDD; 4b    */
-		gpio1830-supply = <&pp3000_ap>;		/* APIO4_VDD;  4c 4d */
-	};
-
-	pmu-io-domains {
-		compatible = "rockchip,rk3399-pmu-io-voltage-domain";
-		rockchip,grf = <&pmugrf>;
-
-		pmu1830-supply = <&pp1800_pmu>;		/* PMUIO2_VDD */
-	};
-
 	sound {
 		compatible = "rockchip,rockchip-audio-da7219";
 		rockchip,model = "audio-da7219";
@@ -647,6 +630,15 @@ ap_i2c_audio: &i2c8 {
 	status = "okay";
 };
 
+&io_domains {
+	status = "okay";
+
+	bt656-supply = <&pp1800_ap_io>;		/* APIO2_VDD;  2a 2b */
+	audio-supply = <&pp1800_audio>;		/* APIO5_VDD;  3d 4a */
+	sdmmc-supply = <&ppvar_sd_card_io>;	/* SDMMC0_VDD; 4b    */
+	gpio1830-supply = <&pp3000_ap>;		/* APIO4_VDD;  4c 4d */
+};
+
 &pwm0 {
 	status = "okay";
 };
@@ -664,9 +656,6 @@ ap_i2c_audio: &i2c8 {
 };
 
 &emmc_phy {
-	freq-sel = <200000000>;
-	dr-sel = <50>;
-	opdelay = <4>;
 	status = "okay";
 };
 
@@ -937,6 +926,19 @@ ap_i2c_audio: &i2c8 {
 
 &pwm3 {
 	status = "disabled";
+};
+
+&pvtm {
+	status = "okay";
+};
+
+&pmu_pvtm {
+	status = "okay";
+};
+
+&pmu_io_domains {
+	status = "okay";
+	pmu1830-supply = <&pp1800_pmu>;		/* PMUIO2_VDD */
 };
 
 /* PINCTRL: always below everything else */

@@ -340,23 +340,24 @@ int inv_get_silicon_rev_mpu6500(struct inv_mpu_iio_s *st)
 	int result;
 	u8 whoami, sw_rev;
 
-	result = inv_plat_read(st, REG_WHOAMI, 1, &whoami);
-	if (result)
-		return result;
-	if (whoami != MPU6500_ID && whoami != MPU9250_ID &&
-			whoami != MPU6515_ID)
-		return -EINVAL;
+	if (!st->use_hid) {
+		result = inv_plat_read(st, REG_WHOAMI, 1, &whoami);
+		if (result)
+			return result;
+		if (whoami != MPU6500_ID && whoami != MPU9250_ID &&
+				whoami != MPU6515_ID && whoami != MPU6880_ID)
+			return -EINVAL;
 
-	/*memory read need more time after power up */
-	msleep(POWER_UP_TIME);
-	result = mpu_memory_read(st, st->i2c_addr,
-			MPU6500_MEM_REV_ADDR, 1, &sw_rev);
-	sw_rev &= INV_MPU_REV_MASK;
-	if (result)
-		return result;
-	if (sw_rev != 0)
-		return -EINVAL;
-
+		/*memory read need more time after power up */
+		msleep(POWER_UP_TIME);
+		result = mpu_memory_read(st, st->i2c_addr,
+				MPU6500_MEM_REV_ADDR, 1, &sw_rev);
+		sw_rev &= INV_MPU_REV_MASK;
+		if (result)
+			return result;
+		if (sw_rev != 0)
+			return -EINVAL;
+	}
 	/* these values are place holders and not real values */
 	chip_info->product_id = MPU6500_PRODUCT_REVISION;
 	chip_info->product_revision = MPU6500_PRODUCT_REVISION;
@@ -965,6 +966,27 @@ void inv_recover_setting(struct inv_mpu_iio_s *st)
 	st->switch_gyro_engine(st, false);
 	st->switch_accl_engine(st, false);
 	st->set_power_state(st, false);
+}
+
+/*
+ *  inv_resume_recover_setting() recover the old settings after from hw powerdown
+ */
+void inv_resume_recover_setting(struct inv_mpu_iio_s *st)
+{
+	struct inv_reg_map_s *reg;
+	int data;
+
+	reg = &st->reg;
+	inv_plat_single_write(st, reg->gyro_config,
+				st->chip_config.fsr << GYRO_CONFIG_FSR_SHIFT);
+	inv_plat_single_write(st, reg->lpf, st->chip_config.lpf);
+	data = ONE_K_HZ / st->chip_config.new_fifo_rate - 1;
+	inv_plat_single_write(st, reg->sample_rate_div, data);
+	if (INV_ITG3500 != st->chip_type) {
+		inv_plat_single_write(st, reg->accl_config,
+					(st->chip_config.accl_fs <<
+					ACCL_CONFIG_FSR_SHIFT));
+	}
 }
 
 static int inv_check_compass_self_test(struct inv_mpu_iio_s *st)

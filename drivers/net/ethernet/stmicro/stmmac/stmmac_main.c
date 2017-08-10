@@ -1661,7 +1661,10 @@ static void stmmac_check_ether_addr(struct stmmac_priv *priv)
 {
 	if (!is_valid_ether_addr(priv->dev->dev_addr)) {
 	/*	priv->hw->mac->get_umac_addr(priv->hw,
-					     priv->dev->dev_addr, 0);*/
+					     priv->dev->dev_addr, 0);
+                if (likely(priv->plat->get_eth_addr))
+                        priv->plat->get_eth_addr(priv->plat->bsp_priv,
+                                priv->dev->dev_addr);*/
 		eth_mac_eeprom(priv->dev->dev_addr);
 		if (!is_valid_ether_addr(priv->dev->dev_addr))
 			eth_hw_addr_random(priv->dev);
@@ -2983,12 +2986,6 @@ int stmmac_dvr_probe(struct device *device,
 	spin_lock_init(&priv->lock);
 	spin_lock_init(&priv->tx_lock);
 
-	ret = register_netdev(ndev);
-	if (ret) {
-		pr_err("%s: ERROR %i registering the device\n", __func__, ret);
-		goto error_netdev_register;
-	}
-
 	/* If a specific clk_csr value is passed from the platform
 	 * this means that the CSR Clock Range selection cannot be
 	 * changed at run-time and it is fixed. Viceversa the driver'll try to
@@ -3013,11 +3010,21 @@ int stmmac_dvr_probe(struct device *device,
 		}
 	}
 
-	return 0;
+	ret = register_netdev(ndev);
+	if (ret) {
+		netdev_err(priv->dev, "%s: ERROR %i registering the device\n",
+			   __func__, ret);
+		goto error_netdev_register;
+	}
 
-error_mdio_register:
-	unregister_netdev(ndev);
+	return ret;
+
 error_netdev_register:
+	if (priv->pcs != STMMAC_PCS_RGMII &&
+	    priv->pcs != STMMAC_PCS_TBI &&
+	    priv->pcs != STMMAC_PCS_RTBI)
+		stmmac_mdio_unregister(ndev);
+error_mdio_register:
 	netif_napi_del(&priv->napi);
 error_hw_init:
 	clk_disable_unprepare(priv->pclk);
@@ -3145,8 +3152,6 @@ int stmmac_resume(struct net_device *ndev)
 			stmmac_mdio_reset(priv->mii);
 	}
 
-	netif_device_attach(ndev);
-
 	spin_lock_irqsave(&priv->lock, flags);
 
 	priv->cur_rx = 0;
@@ -3162,6 +3167,8 @@ int stmmac_resume(struct net_device *ndev)
 	napi_enable(&priv->napi);
 
 	netif_start_queue(ndev);
+
+	netif_device_attach(ndev);
 
 	spin_unlock_irqrestore(&priv->lock, flags);
 

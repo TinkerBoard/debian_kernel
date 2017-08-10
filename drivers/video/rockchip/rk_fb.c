@@ -90,6 +90,12 @@ module_param(rk_fb_iommu_debug, int, S_IRUGO | S_IWUSR);
 static int rk_fb_config_debug(struct rk_lcdc_driver *dev_drv,
 			      struct rk_fb_win_cfg_data *win_data,
 			      struct rk_fb_reg_data *regs, u32 cmd);
+static int car_reversing;
+
+static int is_car_camcap(void) {
+	return car_reversing && strcmp("camcap", current->comm);
+}
+
 int support_uboot_display(void)
 {
 	return uboot_logo_on;
@@ -333,6 +339,8 @@ int rk_disp_pwr_ctr_parse_dt(struct rk_lcdc_driver *dev_drv)
 	for_each_child_of_node(root, child) {
 		pwr_ctr = kmalloc(sizeof(struct rk_disp_pwr_ctr_list),
 				  GFP_KERNEL);
+		if (!pwr_ctr)
+			return -ENOMEM;
 		strcpy(pwr_ctr->pwr_ctr.name, child->name);
 		if (!of_property_read_u32(child, "rockchip,power_type", &val)) {
 			if (val == GPIO) {
@@ -494,6 +502,7 @@ int rk_fb_video_mode_from_timing(const struct display_timing *dt,
 	screen->mode.yres = dt->vactive.typ;
 	screen->mode.vsync_len = dt->vsync_len.typ;
 	screen->type = dt->screen_type;
+	screen->refresh_mode = dt->refresh_mode;
 	screen->lvds_format = dt->lvds_format;
 	screen->face = dt->face;
 	screen->color_mode = dt->color_mode;
@@ -642,6 +651,35 @@ char *get_format_string(enum data_format format, char *fmt)
 	}
 
 	return fmt;
+}
+
+int rk_fb_set_vop_pwm(void)
+{
+	int i = 0;
+	struct rk_fb *inf = NULL;
+	struct rk_lcdc_driver *dev_drv = NULL;
+
+	if (likely(fb_pdev))
+		inf = platform_get_drvdata(fb_pdev);
+	else
+		return -1;
+
+	for (i = 0; i < inf->num_lcdc; i++) {
+		if (inf->lcdc_dev_drv[i]->cabc_mode == 1) {
+			dev_drv = inf->lcdc_dev_drv[i];
+			break;
+		}
+	}
+
+	if (!dev_drv)
+		return -1;
+
+	mutex_lock(&dev_drv->win_config);
+	if (dev_drv->ops->extern_func)
+		dev_drv->ops->extern_func(dev_drv, UPDATE_CABC_PWM);
+	mutex_unlock(&dev_drv->win_config);
+
+	return 0;
 }
 
 /*
@@ -1346,7 +1384,7 @@ static int rk_fb_pan_display(struct fb_var_screeninfo *var,
 	u16 uv_x_off, uv_y_off, uv_y_act;
 	u8 is_pic_yuv = 0;
 
-	if (dev_drv->suspend_flag)
+	if (dev_drv->suspend_flag || is_car_camcap())
 		return 0;
 	win_id = dev_drv->ops->fb_get_win_id(dev_drv, info->fix.id);
 	if (win_id < 0)
@@ -1655,6 +1693,8 @@ static void rk_fb_update_win(struct rk_lcdc_driver *dev_drv,
 			if (reg_win_data->reg_area_data[i].smem_start > 0) {
 				win->area[i].format =
 					reg_win_data->reg_area_data[i].data_format;
+				win->area[i].data_space =
+					reg_win_data->reg_area_data[i].data_space;
 				win->area[i].ion_hdl =
 					reg_win_data->reg_area_data[i].ion_handle;
 				win->area[i].smem_start =
@@ -1791,8 +1831,18 @@ static int rk_fb_reg_effect(struct rk_lcdc_driver *dev_drv,
 				if (dev_drv->ops->get_win_state) {
 					win_status =
 					dev_drv->ops->get_win_state(dev_drv, i, j);
-					if (win_status)
+					if (win_status) {
 						wait_for_vsync = true;
+						dev_info(dev_drv->dev,
+							 "win[%d]area[%d]: "
+							 "state: %d, "
+							 "cur state: %d,"
+							 "count: %d\n",
+							 i, j,
+							 dev_drv->win[i]->area[j].state,
+							 win_status,
+							 101 - count);
+					}
 				}
 			} else {
 				pr_err("!!!win[%d]state:%d,error!!!\n",
@@ -1899,16 +1949,15 @@ static void rk_fb_update_reg(struct rk_lcdc_driver *dev_drv,
 		}
 	}
 
+	mutex_lock(&dev_drv->win_config);
 	for (i = 0; i < dev_drv->lcdc_win_num; i++) {
 		win = dev_drv->win[i];
 		win_data = rk_fb_get_win_data(regs, i);
 		if (win_data) {
-			mutex_lock(&dev_drv->win_config);
 			rk_fb_update_win(dev_drv, win, win_data);
 			win->state = 1;
 			dev_drv->ops->set_par(dev_drv, i);
 			dev_drv->ops->pan_display(dev_drv, i);
-			mutex_unlock(&dev_drv->win_config);
 		} else {
 			win->z_order = -1;
 			win->state = 0;
@@ -1940,13 +1989,15 @@ static void rk_fb_update_reg(struct rk_lcdc_driver *dev_drv,
 		dev_drv->ops->cfg_done(dev_drv);
 	else
 		sw_sync_timeline_inc(dev_drv->timeline, 1);
+	mutex_unlock(&dev_drv->win_config);
 
 	do {
 		timestamp = dev_drv->vsync_info.timestamp;
 		timeout = wait_event_interruptible_timeout(dev_drv->vsync_info.wait,
 				ktime_compare(dev_drv->vsync_info.timestamp, timestamp) > 0,
 				msecs_to_jiffies(50));
-
+		if (timeout <= 0)
+			dev_info(dev_drv->dev, "timeout: %ld\n", timeout);
 		wait_for_vsync = rk_fb_reg_effect(dev_drv, regs, count);
 	} while (wait_for_vsync && count--);
 #ifdef H_USE_FENCE
@@ -2071,6 +2122,8 @@ static int rk_fb_config_debug(struct rk_lcdc_driver *dev_drv,
 			rk_fb_dbg(cmd, "	   xact=%d,yact=%d,xvir=%d,yvir=%d\n",
 				  area_par->xact, area_par->yact,
 				  area_par->xvir, area_par->yvir);
+			rk_fb_dbg(cmd, "	   data_space%d\n",
+				  area_par->data_space);
 		}
 	}
 
@@ -2298,6 +2351,8 @@ static int rk_fb_set_win_buffer(struct fb_info *info,
 		data_format &= ~CSC_MASK;
 		fb_data_fmt = rk_fb_data_fmt(data_format, 0);
 		reg_win_data->reg_area_data[i].data_format = fb_data_fmt;
+		reg_win_data->reg_area_data[i].data_space =
+					win_par->area_par[i].data_space;
 		if (IS_FBDC_FMT(fb_data_fmt)) {
 			reg_win_data->reg_area_data[i].fbdc_en = 1;
 			reg_win_data->reg_area_data[i].fbdc_cor_en = 1;
@@ -2359,7 +2414,7 @@ static int rk_fb_set_win_buffer(struct fb_info *info,
 		 * reg_win_data->reg_area_data[i].y_offset =
 		 *		yoffset*stride+xoffset*pixel_width/8;
 		 */
-		if ((screen->y_mirror == 1) || (reg_win_data->mirror_en)) {
+		if (screen->y_mirror || reg_win_data->mirror_en) {
 			if (screen->interlace == 1) {
 				reg_win_data->reg_area_data[i].y_offset =
 				    yoffset * stride * 2 +
@@ -2383,7 +2438,8 @@ static int rk_fb_set_win_buffer(struct fb_info *info,
 			}
 		}
 		if (IS_RGB_FMT(fb_data_fmt) && dev_drv->iommu_enabled) {
-			buff_len = reg_win_data->reg_area_data[i].y_offset +
+			buff_len = yoffset * stride +
+				xoffset * pixel_width / 8 +
 				reg_win_data->reg_area_data[i].xvir *
 				reg_win_data->reg_area_data[i].yact *
 				pixel_width / 8 -
@@ -2469,7 +2525,7 @@ static int rk_fb_set_win_buffer(struct fb_info *info,
 			}
 		}
 		buff_len = reg_win_data->reg_area_data[0].cbr_start +
-			reg_win_data->reg_area_data[0].c_offset +
+			uv_y_off * uv_stride + uv_x_off * pixel_width / 8 +
 			reg_win_data->reg_area_data[0].xvir *
 			reg_win_data->reg_area_data[0].yact *
 			pixel_width / 16 -
@@ -2879,9 +2935,11 @@ static int rk_fb_ioctl(struct fb_info *info, unsigned int cmd,
 	case RK_FBIOSET_VSYNC_ENABLE:
 		if (copy_from_user(&enable, argp, sizeof(enable)))
 			return -EFAULT;
-		dev_drv->vsync_info.active = enable;
+		if (enable)
+			dev_drv->vsync_info.active++;
+		else
+			dev_drv->vsync_info.active--;
 		break;
-
 	case RK_FBIOGET_DSP_ADDR:
 		dev_drv->ops->get_dsp_addr(dev_drv, dsp_addr);
 		if (copy_to_user(argp, &dsp_addr, sizeof(dsp_addr)))
@@ -2951,6 +3009,15 @@ static int rk_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			if (cfgdone_index >= 10)
 				cfgdone_index = 0;
 		}
+		if (is_car_camcap()) {
+			int i = 0;
+
+			for (i = 0; i < RK_MAX_BUF_NUM; i++)
+				win_data.rel_fence_fd[i] = -1;
+
+			win_data.ret_fence_fd = -1;
+			goto cam_exit;
+		}
 		if (copy_from_user(&win_data,
 				   (struct rk_fb_win_cfg_data __user *)argp,
 				   sizeof(win_data))) {
@@ -2961,6 +3028,7 @@ static int rk_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		dev_drv->wait_fs = win_data.wait_fs;
 		ret = rk_fb_set_win_config(info, &win_data);
 
+cam_exit:
 		if (copy_to_user((struct rk_fb_win_cfg_data __user *)arg,
 				 &win_data, sizeof(win_data))) {
 			ret = -EFAULT;
@@ -2990,13 +3058,15 @@ static int rk_fb_blank(int blank_mode, struct fb_info *info)
 	struct rk_fb *rk_fb = dev_get_drvdata(info->device);
 #endif
 
+	if (is_car_camcap())
+		return 0;
 	win_id = dev_drv->ops->fb_get_win_id(dev_drv, fix->id);
 	if (win_id < 0)
 		return -ENODEV;
 	mutex_lock(&dev_drv->switch_screen);
 #if defined(CONFIG_RK_HDMI)
 	if ((rk_fb->disp_mode == ONE_DUAL) &&
-	    (hdmi_get_hotplug() == HDMI_HPD_ACTIVED)) {
+	    (hdmi_get_hotplug() == HDMI_HPD_ACTIVATED)) {
 		pr_info("hdmi is connect , not blank lcdc\n");
 	} else
 #endif
@@ -3201,7 +3271,7 @@ static int rk_fb_set_par(struct fb_info *info)
 	u16 uv_x_off, uv_y_off, uv_y_act;
 	u8 is_pic_yuv = 0;
 	/*var->pixclock = dev_drv->pixclock;*/
-	if (dev_drv->suspend_flag)
+	if (dev_drv->suspend_flag || is_car_camcap())
 		return 0;
 	win_id = dev_drv->ops->fb_get_win_id(dev_drv, info->fix.id);
 	if (win_id < 0)
@@ -3213,6 +3283,8 @@ static int rk_fb_set_par(struct fb_info *info)
 	if (var->grayscale >> 8) {
 		xsize = (var->grayscale >> 8) & 0xfff;
 		ysize = (var->grayscale >> 20) & 0xfff;
+		xsize |= (var->reserved[0] << 12);
+		var->reserved[0] = 0;
 		if (xsize > screen->mode.xres)
 			xsize = screen->mode.xres;
 		if (ysize > screen->mode.yres)
@@ -3421,7 +3493,7 @@ static int rk_fb_wait_for_vsync_thread(void *data)
 		ktime_t timestamp = dev_drv->vsync_info.timestamp;
 		int ret = wait_event_interruptible(dev_drv->vsync_info.wait,
 				!ktime_equal(timestamp, dev_drv->vsync_info.timestamp) &&
-				(dev_drv->vsync_info.active || dev_drv->vsync_info.irq_stop));
+				(dev_drv->vsync_info.active > 0 || dev_drv->vsync_info.irq_stop));
 
 		if (!ret)
 			sysfs_notify(&fbi->dev->kobj, NULL, "vsync");
@@ -3538,10 +3610,13 @@ int rk_fb_switch_screen(struct rk_screen *screen, int enable, int lcdc_id)
 			dev_drv->id);
 	if (enable == 2 /*&& dev_drv->enable*/)
 		return 0;
-	pr_info("switch:en=%d,lcdc_id=%d,screen type=%d,cur type=%d\n",
+	pr_info("switch:en=%d,lcdc_id=%d,screen type=%d,cur type=%d",
 		enable, lcdc_id, screen->type, dev_drv->cur_screen->type);
+	pr_info("data space: %d, color mode: %d\n",
+		screen->data_space, screen->color_mode);
 
 	mutex_lock(&dev_drv->switch_screen);
+	dev_drv->hot_plug_state = enable;
 	hdmi_switch_state = 0;
 	dev_drv->hdmi_switch = 1;
 	if (!dev_drv->uboot_logo) {
@@ -3601,8 +3676,9 @@ int rk_fb_switch_screen(struct rk_screen *screen, int enable, int lcdc_id)
 			info = rk_fb->fb[dev_drv->fb_index_base];
 			info->var.grayscale &= 0xff;
 			info->var.grayscale |=
-				(dev_drv->cur_screen->mode.xres << 8) +
+				((dev_drv->cur_screen->mode.xres & 0xfff) << 8) +
 				(dev_drv->cur_screen->mode.yres << 20);
+			info->var.reserved[0] |= (dev_drv->cur_screen->mode.xres >> 12);
 			mutex_lock(&dev_drv->win_config);
 			info->var.xoffset = 0;
 			info->var.yoffset = 0;
@@ -3652,21 +3728,16 @@ int rk_fb_switch_screen(struct rk_screen *screen, int enable, int lcdc_id)
 					dev_drv->ops->win_direct_en(dev_drv, i, 0);
 			}
 		}
-		if (dev_drv->uboot_logo) {
-			if (dev_drv->cur_screen->mode.xres !=
-				screen->mode.xres ||
-			    dev_drv->cur_screen->mode.yres !=
-				screen->mode.yres)
-				load_screen = 1;
-		}
 		if (dev_drv->screen1)
 			dev_drv->cur_screen = dev_drv->screen1;
 
 		memcpy(dev_drv->cur_screen, screen, sizeof(struct rk_screen));
 		dev_drv->cur_screen->xsize = dev_drv->cur_screen->mode.xres;
 		dev_drv->cur_screen->ysize = dev_drv->cur_screen->mode.yres;
-		dev_drv->cur_screen->x_mirror = dev_drv->rotate_mode & X_MIRROR;
-		dev_drv->cur_screen->y_mirror = dev_drv->rotate_mode & Y_MIRROR;
+		dev_drv->cur_screen->x_mirror =
+					!!(dev_drv->rotate_mode & X_MIRROR);
+		dev_drv->cur_screen->y_mirror =
+					!!(dev_drv->rotate_mode & Y_MIRROR);
 	}
 
 	if (!dev_drv->uboot_logo || load_screen ||
@@ -3681,8 +3752,9 @@ int rk_fb_switch_screen(struct rk_screen *screen, int enable, int lcdc_id)
 			if (rk_fb->disp_mode == ONE_DUAL) {
 				info->var.grayscale &= 0xff;
 				info->var.grayscale |=
-					(dev_drv->cur_screen->xsize << 8) +
+					((dev_drv->cur_screen->mode.xres & 0xfff) << 8) +
 					(dev_drv->cur_screen->ysize << 20);
+				info->var.reserved[0] |= (dev_drv->cur_screen->mode.xres >> 12);
 			}
 			if (dev_drv->uboot_logo && win->state) {
 				if (win->area[0].xpos ||
@@ -3708,6 +3780,15 @@ int rk_fb_switch_screen(struct rk_screen *screen, int enable, int lcdc_id)
 		dev_drv->ops->load_screen(dev_drv, 0);
 	}
 	kobject_uevent_env(&dev_drv->dev->kobj, KOBJ_CHANGE, envp);
+
+	if (dev_drv->cur_screen->width && dev_drv->cur_screen->height) {
+		/* for vr auto dp support */
+		info = rk_fb->fb[dev_drv->fb_index_base];
+		info->var.width = dev_drv->cur_screen->width;
+		info->var.height = dev_drv->cur_screen->height;
+		pr_info("%s:info->var.width=%d, info->var.height=%d\n",
+			__func__, info->var.width, info->var.height);
+	}
 
 	hdmi_switch_state = 1;
 	load_screen = true;
@@ -3926,7 +4007,7 @@ static int rk_fb_alloc_buffer(struct fb_info *fbi)
 						       fb_par->ion_hdl);
 				dev_drv->win[win_id]->area[0].ion_hdl =
 					fb_par->ion_hdl;
-				if (dev_drv->iommu_enabled && dev_drv->mmu_dev)
+				if (dev_drv->mmu_dev)
 					ret = ion_map_iommu(dev_drv->dev,
 							    rk_fb->ion_client,
 							    fb_par->ion_hdl,
@@ -4035,8 +4116,8 @@ static int init_lcdc_device_driver(struct rk_fb *rk_fb,
 	screen->overscan.right = 100;
 	screen->overscan.bottom = 100;
 
-	screen->x_mirror = dev_drv->rotate_mode & X_MIRROR;
-	screen->y_mirror = dev_drv->rotate_mode & Y_MIRROR;
+	screen->x_mirror = !!(dev_drv->rotate_mode & X_MIRROR);
+	screen->y_mirror = !!(dev_drv->rotate_mode & Y_MIRROR);
 
 	dev_drv->screen0 = screen;
 	dev_drv->cur_screen = screen;
@@ -4158,6 +4239,7 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 	int i = 0, ret = 0, index = 0;
 	unsigned long flags;
 	char time_line_name[16];
+	int mirror = 0;
 
 	if (rk_fb->num_lcdc == RK30_MAX_LCDC_SUPPORT)
 		return -ENXIO;
@@ -4178,7 +4260,7 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 		fbi = framebuffer_alloc(0, &fb_pdev->dev);
 		if (!fbi) {
 			dev_err(&fb_pdev->dev, "fb framebuffer_alloc fail!");
-			ret = -ENOMEM;
+			return -ENOMEM;
 		}
 		fb_par = devm_kzalloc(&fb_pdev->dev, sizeof(struct rk_fb_par),
 				      GFP_KERNEL);
@@ -4194,10 +4276,17 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 		fbi->fix = def_fix;
 		sprintf(fbi->fix.id, "fb%d", rk_fb->num_fb);
 		fb_videomode_to_var(&fbi->var, &dev_drv->cur_screen->mode);
+		if (dev_drv->dsp_mode == ONE_VOP_DUAL_MIPI_VER_SCAN) {
+			fbi->var.xres /= 2;
+			fbi->var.yres *= 2;
+			fbi->var.xres_virtual /= 2;
+			fbi->var.yres_virtual *= 2;
+		}
 		fbi->var.width = dev_drv->cur_screen->width;
 		fbi->var.height = dev_drv->cur_screen->height;
 		fbi->var.grayscale |=
-		    (fbi->var.xres << 8) + (fbi->var.yres << 20);
+		    ((fbi->var.xres & 0xfff) << 8) + (fbi->var.yres << 20);
+		fbi->var.reserved[0] |= (fbi->var.xres >> 12);
 #if defined(CONFIG_LOGO_LINUX_BMP)
 		fbi->var.bits_per_pixel = 32;
 #else
@@ -4205,8 +4294,6 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 #endif
 		fbi->fix.line_length =
 		    (fbi->var.xres_virtual) * (fbi->var.bits_per_pixel >> 3);
-		fbi->var.width = dev_drv->cur_screen->width;
-		fbi->var.height = dev_drv->cur_screen->height;
 		if (dev_drv->iommu_enabled)
 			fb_ops.fb_mmap = rk_fb_mmap;
 		fbi->fbops = &fb_ops;
@@ -4298,14 +4385,17 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 			int ymirror = 0;
 			struct page **pages;
 			char *vaddr;
-			int i = 0;
+			int logo_len, i = 0;
 
 			if (dev_drv->ops->get_dspbuf_info)
 				dev_drv->ops->get_dspbuf_info(dev_drv, &xact,
 					&yact, &format,	&dsp_addr, &ymirror);
+			logo_len = rk_fb_pixel_width(format) * xact * yact >> 3;
 			nr_pages = size >> PAGE_SHIFT;
 			pages = kzalloc(sizeof(struct page) * nr_pages,
 					GFP_KERNEL);
+			if (!pages)
+				return -ENOMEM;
 			while (i < nr_pages) {
 				pages[i] = phys_to_page(start);
 				start += PAGE_SIZE;
@@ -4316,6 +4406,7 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 				pr_err("failed to vmap phy addr 0x%lx\n",
 				       (long)(uboot_logo_base +
 				       uboot_logo_offset));
+				kfree(pages);
 				return -1;
 			}
 
@@ -4327,8 +4418,7 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 			}
 			kfree(pages);
 			vunmap(vaddr);
-			if (dev_drv->uboot_logo &&
-			    (width != xact || height != yact)) {
+			if (width != xact || height != yact) {
 				pr_err("can't support uboot kernel logo use different size [%dx%d] != [%dx%d]\n",
 				       xact, yact, width, height);
 				return 0;
@@ -4338,9 +4428,11 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 			local_irq_save(flags);
 			if (dev_drv->ops->wait_frame_start)
 				dev_drv->ops->wait_frame_start(dev_drv, 0);
+			mirror = ymirror || dev_drv->cur_screen->y_mirror;
 			if (dev_drv->ops->post_dspbuf) {
 				dev_drv->ops->post_dspbuf(dev_drv,
-					main_fbi->fix.smem_start,
+					main_fbi->fix.smem_start +
+					(mirror ? logo_len : 0),
 					rk_fb_data_fmt(0, bits),
 					width, height, xvir,
 					ymirror);
@@ -4380,6 +4472,8 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 			nr_pages = PAGE_ALIGN(logo_len + align) >> PAGE_SHIFT;
 			pages = kzalloc(sizeof(struct page) * nr_pages,
 					GFP_KERNEL);
+			if (!pages)
+				return -ENOMEM;
 			while (i < nr_pages) {
 				pages[i] = phys_to_page(start);
 				start += PAGE_SIZE;
@@ -4389,6 +4483,7 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 			if (!vaddr) {
 				pr_err("failed to vmap phy addr 0x%x\n",
 				       start);
+				kfree(pages);
 				return -1;
 			}
 
@@ -4401,9 +4496,10 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 			local_irq_save(flags);
 			if (dev_drv->ops->wait_frame_start)
 				dev_drv->ops->wait_frame_start(dev_drv, 0);
+			mirror = y_mirror || dev_drv->cur_screen->y_mirror;
 			dev_drv->ops->post_dspbuf(dev_drv,
 					main_fbi->fix.smem_start +
-					(y_mirror ? logo_len : 0),
+					(mirror ? logo_len : 0),
 					format,	xact, yact,
 					xvir,
 					y_mirror);
@@ -4479,6 +4575,29 @@ int rk_fb_unregister(struct rk_lcdc_driver *dev_drv)
 	}
 	fb_inf->lcdc_dev_drv[dev_drv->id] = NULL;
 	fb_inf->num_lcdc--;
+
+	return 0;
+}
+
+int rk_fb_set_car_reverse_status(struct rk_lcdc_driver *dev_drv,
+				 int status)
+{
+	char *envp[3] = {"Request", "FORCE UPDATE", NULL};
+
+	if (status) {
+		car_reversing = 1;
+		flush_kthread_worker(&dev_drv->update_regs_worker);
+		dev_drv->timeline_max++;
+#ifdef H_USE_FENCE
+		sw_sync_timeline_inc(dev_drv->timeline, 1);
+#endif
+		pr_debug("%s: camcap reverse start...\n", __func__);
+	} else {
+		car_reversing = 0;
+		kobject_uevent_env(&dev_drv->dev->kobj,
+				   KOBJ_CHANGE, envp);
+		pr_debug("%s: camcap reverse finish...\n", __func__);
+	}
 
 	return 0;
 }

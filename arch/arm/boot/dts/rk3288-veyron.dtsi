@@ -49,7 +49,7 @@
 / {
 	memory {
 		device_type = "memory";
-		reg = <0x0 0x80000000>;
+		reg = <0x0 0x0 0x0 0x80000000>;
 	};
 
 	gpio_keys: gpio-keys {
@@ -81,19 +81,6 @@
 		pinctrl-0 = <&emmc_reset>;
 		pinctrl-names = "default";
 		reset-gpios = <&gpio2 9 GPIO_ACTIVE_HIGH>;
-	};
-
-	io_domains: io-domains {
-		compatible = "rockchip,rk3288-io-voltage-domain";
-		rockchip,grf = <&grf>;
-
-		bb-supply = <&vcc33_io>;
-		dvp-supply = <&vcc_18>;
-		flash0-supply = <&vcc18_flashio>;
-		gpio1830-supply = <&vcc33_io>;
-		gpio30-supply = <&vcc33_io>;
-		lcdc-supply = <&vcc33_lcd>;
-		wifi-supply = <&vcc18_wl>;
 	};
 
 	sdio_pwrseq: sdio-pwrseq {
@@ -159,7 +146,6 @@
 };
 
 &hdmi {
-	ddc-i2c-bus = <&i2c5>;
 	status = "okay";
 };
 
@@ -331,12 +317,16 @@
 	i2c-scl-rising-time-ns = <300>;		/* 225ns measured */
 };
 
-&i2c5 {
+&io_domains {
 	status = "okay";
 
-	clock-frequency = <100000>;
-	i2c-scl-falling-time-ns = <300>;
-	i2c-scl-rising-time-ns = <1000>;
+	bb-supply = <&vcc33_io>;
+	dvp-supply = <&vcc_18>;
+	flash0-supply = <&vcc18_flashio>;
+	gpio1830-supply = <&vcc33_io>;
+	gpio30-supply = <&vcc33_io>;
+	lcdc-supply = <&vcc33_lcd>;
+	wifi-supply = <&vcc18_wl>;
 };
 
 &pwm1 {
