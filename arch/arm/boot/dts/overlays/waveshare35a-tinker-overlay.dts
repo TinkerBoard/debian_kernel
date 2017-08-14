@@ -1,0 +1,86 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
+
+	fragment@0 {
+		target = <&spi2>;
+
+		__overlay__ {
+			status = "okay";
+
+			spidev@0 {
+				status = "disabled";
+			};
+
+			spidev@1 {
+				status = "disabled";
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio5>;
+
+		__overlay__ {
+			waveshare35a_pins: waveshare35a_pins {
+				rockchip,pins = <5 19 0 &pcfg_pull_none>,
+                                <5 11 0 &pcfg_pull_none>,
+                                <5 12 0 &pcfg_pull_none>;
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&spi2>;
+
+		__overlay__ {
+			#address-cells = <0x1>;
+			#size-cells = <0x0>;
+
+			waveshare35a@0 {
+					compatible = "ilitek,ili9486";
+					reg = <0>;
+					pinctrl-names = "default";
+					pinctrl-0 = <&waveshare35a_pins>;
+					spi-max-frequency = <15000000>;
+					txbuflen = <32768>;
+					rotate = <270>;
+					bgr = <0>;
+					fps = <30>;
+					buswidth = <8>;
+					regwidth = <16>;
+					reset-gpios = <&gpio5 19 0>;
+					dc-gpios = <&gpio5 11 0>;
+					debug = <0>;
+					init = <0x10000b0 0x00
+							0x1000011
+						0x20000ff
+						0x100003a 0x55
+						0x1000036 0x28
+						0x10000c2 0x44
+						0x10000c5 0x00 0x00 0x00 0x00
+						0x10000e0 0x0f 0x1f 0x1c 0x0c 0x0f 0x08 0x48 0x98 0x37 0x0a 0x13 0x04 0x11 0x0d 0x00
+						0x10000e1 0x0f 0x32 0x2e 0x0b 0x0d 0x05 0x47 0x75 0x37 0x06 0x10 0x03 0x24 0x20 0x00
+						0x10000e2 0x0f 0x32 0x2e 0x0b 0x0d 0x05 0x47 0x75 0x37 0x06 0x10 0x03 0x24 0x20 0x00
+						/* piscreen -> waveshare35a */
+						0x1000036 0x28
+						0x1000011
+						0x1000029>;
+				};
+	
+				waveshare35a-ts@1 {
+					compatible = "ti,ads7846";
+					reg = <1>;
+					spi-max-frequency = <2000000>;
+					interrupts = <12 2>;
+					interrupt-parent = <&gpio5>;
+					pendown-gpio = <&gpio5 12 0>;
+					ti,x-plate-ohms = /bits/ 16 <60>;/*[00 3c];*/
+					ti,pressure-max = /bits/ 16 <255>;/*[00 ff];*/
+					ti,swap-xy = <0>;
+				};
+		};
+	};
+};
