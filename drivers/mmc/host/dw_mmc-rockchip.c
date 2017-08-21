@@ -289,17 +289,6 @@ static int dw_mci_rockchip_probe(struct platform_device *pdev)
 
 static void dw_mci_rockchip_platfm_shutdown(struct platform_device *pdev)
 {
-	struct dw_mci *host = platform_get_drvdata(pdev);
-	struct mmc_host *mmc = host->cur_slot->mmc;
-	int ret;
-
-	mdelay(20);
-
-	if (!IS_ERR(mmc->supply.vmmc))
-		ret = regulator_enable(mmc->supply.vmmc);
-
-	if (!IS_ERR(mmc->supply.vqmmc))
-		regulator_set_voltage(mmc->supply.vqmmc, 3000000, 3300000);
 }
 
 #ifdef CONFIG_PM_SLEEP
