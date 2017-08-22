@@ -407,6 +407,12 @@ static int snd_usb_audio_create(struct usb_interface *intf,
 	}
 	strim(card->shortname);
 
+	/* OnBoard ALC4040 Audio Codec */
+	if (USB_ID_VENDOR(chip->usb_id) == 0x0bda &&
+	    USB_ID_PRODUCT(chip->usb_id) == 0x481a) {
+		strlcat(card->shortname, " OnBoard", sizeof(card->shortname));
+	}
+
 	/* retrieve the vendor and device strings as longname */
 	if (quirk && quirk->vendor_name && *quirk->vendor_name) {
 		len = strlcpy(card->longname, quirk->vendor_name, sizeof(card->longname));
