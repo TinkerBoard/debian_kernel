@@ -80,6 +80,31 @@ void snd_soc_jack_report(struct snd_soc_jack *jack, int status, int mask)
 	unsigned int sync = 0;
 	int enable;
 
+	int ret;
+	char *envp[] = {
+		"HOME=/",
+		"TERM=linux",
+		"PATH=/sbin:/usr/sbin:/bin:/usr/bin",
+		NULL,
+	};
+
+	char *argv[] = {
+		"/etc/pulse/movesinks.sh",
+		"alsa_output.OnBoard_D2",
+		NULL,
+	};
+
+	dev_info(jack->card->dev, "snd_soc_jack_report status=%d\n", status);
+
+	if (status) {
+		ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
+		if (ret != 0)
+			dev_err(jack->card->dev, "call_usermodehelper fail, ret=%d\n", ret);
+		else
+			dev_info(jack->card->dev, "audio jack plug in, auto switch to headphone\n");
+	}
+
+
 	trace_snd_soc_jack_report(jack, mask, status);
 
 	if (!jack)
