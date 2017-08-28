@@ -50,6 +50,9 @@ static int option_attach(struct usb_serial *serial);
 static void option_release(struct usb_serial *serial);
 static void option_instat_callback(struct urb *urb);
 
+#define ASKEY_VENDOR_ID                         0x1690
+#define ASKEY_PRODUCT_WWL60B0_RNDIS             0x1601
+
 /* Vendor and product IDs */
 #define OPTION_VENDOR_ID			0x0AF0
 #define OPTION_PRODUCT_COLT			0x5000
@@ -572,6 +575,8 @@ static void option_instat_callback(struct urb *urb);
 
 static const struct usb_device_id option_ids[] = {
 	{ USB_DEVICE(0x1286, 0x4e3c) },
+	{ USB_DEVICE(ASKEY_VENDOR_ID, ASKEY_PRODUCT_WWL60B0_RNDIS),
+	  .driver_info = RSVD(1) | RSVD(2) | RSVD(3) | RSVD(5) },
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_COLT) },
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA) },
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA_LIGHT) },
