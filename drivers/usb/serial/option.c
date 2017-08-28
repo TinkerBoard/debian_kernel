@@ -50,6 +50,9 @@ static int option_attach(struct usb_serial *serial);
 static void option_release(struct usb_serial *serial);
 static void option_instat_callback(struct urb *urb);
 
+#define ASKEY_VENDOR_ID                         0x1690
+#define ASKEY_PRODUCT_WWL60B0_RNDIS             0x1601
+
 /* Vendor and product IDs */
 #define OPTION_VENDOR_ID			0x0AF0
 #define OPTION_PRODUCT_COLT			0x5000
@@ -674,8 +677,19 @@ static const struct option_blacklist_info telit_le922_blacklist_usbcfg3 = {
 static const struct option_blacklist_info cinterion_rmnet2_blacklist = {
 	.reserved = BIT(4) | BIT(5),
 };
+/*
+00: RNDIS
+02: Diag
+03: ADB
+04: AT
+*/
+static const struct option_blacklist_info askey_wwl60b0_rndis_blacklist = {
+	.reserved = BIT(1) | BIT(2) | BIT(3) | BIT(5),
+};
 
 static const struct usb_device_id option_ids[] = {
+	{ USB_DEVICE(ASKEY_VENDOR_ID, ASKEY_PRODUCT_WWL60B0_RNDIS),
+	  .driver_info = (kernel_ulong_t)& askey_wwl60b0_rndis_blacklist },
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_COLT) },
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA) },
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA_LIGHT) },
