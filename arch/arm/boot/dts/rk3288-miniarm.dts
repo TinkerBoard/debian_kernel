@@ -518,6 +518,12 @@
 		clocks = <&cru SCLK_VIP_OUT>;
 		clock-names = "clk_cif_out";
 
+		pinctrl-names = "rockchip,camera_default",
+			"rockchip,camera_sleep";
+		pinctrl-0 = <&cam0_default_pins>;
+		pinctrl-1 = <&cam0_sleep_pins>;
+
+		rockchip,pd-gpio = <&gpio2 0 GPIO_ACTIVE_LOW>;
 		rockchip,camera-module-mclk-name = "clk_cif_out";
 		rockchip,camera-module-regulator-names = "vcc33_mipi";
 		rockchip,camera-module-regulator-voltages = <3300000>;
