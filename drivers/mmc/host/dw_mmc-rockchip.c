@@ -290,7 +290,7 @@ static int dw_mci_rockchip_probe(struct platform_device *pdev)
 static void dw_mci_rockchip_platfm_shutdown(struct platform_device *pdev)
 {
 	struct dw_mci *host = platform_get_drvdata(pdev);
-	struct mmc_host *mmc = host->cur_slot->mmc;
+	struct mmc_host *mmc = host->slot[0]->mmc;
 	int ret;
 
 	mdelay(20);
