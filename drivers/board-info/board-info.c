@@ -162,7 +162,7 @@ static void read_pcb_id(void)
 static int board_info_proc_read(struct seq_file *buf, void *v)
 {
 	/* Board info display */
-	seq_printf(buf, "%s\n%s\n%s\n", board_type, ram_size, pcb);
+	seq_printf(buf, "%s\n", board_type);
 	printk("[board_info] %s board_type=\'%s\' ram_size=\'%s' pcb=\'%s\'\n",
 		__func__, board_type, ram_size, pcb);
 	return 0;
