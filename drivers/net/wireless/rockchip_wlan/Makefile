@@ -8,4 +8,5 @@ obj-$(CONFIG_RTL8822BE)	+= rtl8822be/
 obj-$(CONFIG_WL_ROCKCHIP)	+= wifi_sys/rkwifi_sys_iface.o
 obj-$(CONFIG_RTL8723BS)	+= rtl8723bs/
 obj-$(CONFIG_WL_ROCKCHIP)	+= rkwifi/rk_wifi_config.o
+obj-$(CONFIG_RTL8812AU)	+= rtl8812AU_8821AU_linux/
 obj-$(CONFIG_RTL8814AU)	+= rtl8814au/
