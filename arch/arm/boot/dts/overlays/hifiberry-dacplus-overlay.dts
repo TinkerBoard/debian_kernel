@@ -1,0 +1,47 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3288";
+
+	fragment@0 {
+		target-path ="/sound-simple-card";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@1 {
+		target = <&i2s>;
+		__overlay__ {
+			rockchip,xfer-mode = <1>;
+		};
+	};
+
+	fragment@2 {
+		target = <&i2c1>;
+		__overlay__ {
+			pcm5122@4d {
+				#sound-dai-cells = <0>;
+				compatible = "ti,pcm5122";
+				reg = <0x4d>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/sound-ext-card";
+		hifiberry_dacplus: __overlay__ {
+			compatible = "hifiberry,hifiberry-dacplus";
+			i2s-controller = <&i2s>;
+			status = "okay";
+		};
+	};
+
+	__overrides__ {
+		24db_digital_gain =
+			<&hifiberry_dacplus>,"hifiberry,24db_digital_gain?";
+		slave = <&hifiberry_dacplus>,"hifiberry-dacplus,slave?";
+	};
+};

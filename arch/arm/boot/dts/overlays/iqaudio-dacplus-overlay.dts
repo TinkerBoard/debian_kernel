@@ -1,0 +1,49 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3288";
+
+	fragment@0 {
+		target-path ="/sound-simple-card";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@1 {
+		target = <&i2s>;
+		__overlay__ {
+			rockchip,xfer-mode = <1>;
+		};
+	};
+
+	fragment@2 {
+		target = <&i2c1>;
+		__overlay__ {
+			pcm5122@4c {
+				#sound-dai-cells = <0>;
+				compatible = "ti,pcm5122";
+				reg = <0x4c>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/sound-ext-card";
+		iqaudio_dac: __overlay__ {
+			compatible = "iqaudio,iqaudio-dac";
+			i2s-controller = <&i2s>;
+			mute-gpios = <&gpio5 15 0>;
+			iqaudio-dac,auto-mute-amp;
+			status = "okay";
+		};
+	};
+
+	__overrides__ {
+		24db_digital_gain = <&iqaudio_dac>,"iqaudio,24db_digital_gain?";
+		auto_mute_amp = <&iqaudio_dac>,"iqaudio-dac,auto-mute-amp?";
+		unmute_amp = <&iqaudio_dac>,"iqaudio-dac,unmute-amp?";
+	};
+};

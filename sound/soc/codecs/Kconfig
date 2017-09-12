@@ -89,6 +89,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_PCM1681 if I2C
 	select SND_SOC_PCM1792A if SPI_MASTER
 	select SND_SOC_PCM3008
+	select SND_SOC_PCM5102A
 	select SND_SOC_PCM512x_I2C if I2C
 	select SND_SOC_PCM512x_SPI if SPI_MASTER
 	select SND_SOC_RK3328
@@ -117,6 +118,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_STI_SAS
 	select SND_SOC_TAS2552 if I2C
 	select SND_SOC_TAS5086 if I2C
+	select SND_SOC_TAS5713 if I2C
 	select SND_SOC_TAS571X if I2C
 	select SND_SOC_TFA9879 if I2C
 	select SND_SOC_TLV320AIC23_I2C if I2C
@@ -534,6 +536,9 @@ config SND_SOC_PCM1792A
 config SND_SOC_PCM3008
        tristate
 
+config SND_SOC_PCM5102A
+	tristate
+
 config SND_SOC_PCM512x
 	tristate
 
@@ -689,6 +694,9 @@ config SND_SOC_TAS2552
 config SND_SOC_TAS5086
 	tristate "Texas Instruments TAS5086 speaker amplifier"
 	depends on I2C
+
+config SND_SOC_TAS5713
+	tristate
 
 config SND_SOC_TAS571X
 	tristate "Texas Instruments TAS5711/TAS5717/TAS5719 power amplifiers"

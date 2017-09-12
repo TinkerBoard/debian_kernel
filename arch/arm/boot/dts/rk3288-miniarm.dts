@@ -189,6 +189,10 @@
 		};
 	};
 
+	sound-ext-card {
+		status = "disabled";
+	};
+
 	vcc_sys: vsys-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc_sys";
@@ -589,13 +593,6 @@
 
 &i2c1 {
 	status = "okay";
-
-	pcm5122: pcm5122@4c {
-		#sound-dai-cells = <0>;
-		compatible = "ti,pcm5122";
-		reg = <0x4c>;
-		status = "disabled";
-	};
 };
 
 &i2c3 {
