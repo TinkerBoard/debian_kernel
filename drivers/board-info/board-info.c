@@ -67,6 +67,9 @@ static void read_project_id(void)
 		gpio_direction_input(GPIO2_A3);
 		project_id_2 = gpio_get_value(GPIO2_A3);
 	}
+	gpio_free(GPIO2_A1);
+	gpio_free(GPIO2_A2);
+	gpio_free(GPIO2_A3);
 
 	printk("project_id_2:0x%x, project_id_1:0x%x, project_id_0:0x%x \n",
 		project_id_2, project_id_1, project_id_0);
@@ -105,6 +108,9 @@ static void read_ram_id(void)
 		gpio_direction_input(GPIO2_B6);
 		ram_id_2 = gpio_get_value(GPIO2_B6);
 	}
+	gpio_free(GPIO2_B4);
+	gpio_free(GPIO2_B5);
+	gpio_free(GPIO2_B6);
 
 	printk("ram_id_2:0x%x, ram_id_1:0x%x, ram_id_0:0x%x \n",
 		ram_id_2, ram_id_1, ram_id_0);
@@ -145,6 +151,9 @@ static void read_pcb_id(void)
 		gpio_direction_input(GPIO2_B2);
 		pcb_id_2 = gpio_get_value(GPIO2_B2);
 	}
+	gpio_free(GPIO2_B0);
+	gpio_free(GPIO2_B1);
+	gpio_free(GPIO2_B2);
 
 	printk("pcb_id_2:0x%x, pcb_id_1:0x%x, pcb_id_0:0x%x \n",
 		pcb_id_2, pcb_id_1, pcb_id_0);
