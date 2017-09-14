@@ -35,6 +35,7 @@
 		hifiberry_dacplus: __overlay__ {
 			compatible = "hifiberry,hifiberry-dacplus";
 			i2s-controller = <&i2s>;
+			hifiberry-dacplus,slave;
 			status = "okay";
 		};
 	};
