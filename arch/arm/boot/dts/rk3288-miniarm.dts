@@ -44,6 +44,9 @@
 
 / {
 	compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
+        model = "Tinker Board";
+        copyright = "ASUS";
+        system-id = "                                "; /*For ASUS PPID*/
 
 	ion {
 		compatible = "rockchip,ion";
