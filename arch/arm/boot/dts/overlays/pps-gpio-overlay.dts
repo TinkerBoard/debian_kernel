@@ -1,0 +1,28 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
+    fragment@0 {
+        target-path = "/";
+        __overlay__ {
+        pps: pps {
+            compatible = "pps-gpio";
+            pinctrl-names = "default";
+            pinctrl-0 = <&pps_pins>;
+            gpios = <&gpio5 19 0>;
+            status = "okay";
+        };
+        };
+    };
+
+    fragment@1 {
+        target = <&gpio5>;
+        __overlay__ {
+        pps_pins: pps_pins {
+            rockchip,pins = <5 19 0 &pcfg_pull_none>;
+        };
+        };
+    };
+};
+
