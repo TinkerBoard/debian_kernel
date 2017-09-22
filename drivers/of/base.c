@@ -54,13 +54,14 @@ DEFINE_MUTEX(of_mutex);
  */
 DEFINE_RAW_SPINLOCK(devtree_lock);
 
-/*------------------ For ASUS write system-id---------------------*/
-static ssize_t asus_write_systemid(struct file *filp, struct kobject *kobj,
+/*-------------------- For ASUS write hwinfo----------------------*/
+static ssize_t asus_write_hwinfo(struct file *filp, struct kobject *kobj,
                             struct bin_attribute *bin_attr, char *buf,
                             loff_t offset, size_t count)
 {
         struct property *pp = container_of(bin_attr, struct property, attr);
-        sscanf(buf, "%s", (char *)pp->value);
+        memset((char *)pp->value, '\0', pp->length);
+        memcpy((char *)pp->value, buf, strlen(buf));
         return count;
 }
 /*----------------------------------------------------------------*/
@@ -162,11 +163,11 @@ int __of_add_property_sysfs(struct device_node *np, struct property *pp)
 
 	sysfs_bin_attr_init(&pp->attr);
 	pp->attr.attr.name = safe_name(&np->kobj, pp->name);
-        //For ASUS PPID (system-id)
-        if (!(strcmp(pp->attr.attr.name, "system-id"))) {
+        //For ASUS hwinfo
+        if (!(strcmp(pp->attr.attr.name, "system-id") && strcmp(pp->attr.attr.name, "model"))) {
             pp->attr.attr.mode = S_IRUGO|S_IWUSR;
             pp->attr.read = of_node_property_read;
-            pp->attr.write = asus_write_systemid;
+            pp->attr.write = asus_write_hwinfo;
         } else {
 	pp->attr.attr.mode = secure ? S_IRUSR : S_IRUGO;
 	pp->attr.size = secure ? 0 : pp->length;
