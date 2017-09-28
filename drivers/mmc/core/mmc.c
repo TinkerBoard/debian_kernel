@@ -605,6 +605,18 @@ static int mmc_decode_ext_csd(struct mmc_card *card, u8 *ext_csd)
 		card->ext_csd.device_life_time_est_typ_b =
 			ext_csd[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_B];
 	}
+
+        /* eMMC v5.0 or later */
+	if (card->ext_csd.rev > 6) {
+		card->ext_csd.health[0] = ext_csd[EXT_CSD_HEALTH + 0];
+		card->ext_csd.health[1] = ext_csd[EXT_CSD_HEALTH + 1];
+		card->ext_csd.health[2] = ext_csd[EXT_CSD_HEALTH + 2];
+	}else{
+		card->ext_csd.health[0] = 0xff;
+		card->ext_csd.health[1] = 0xff;
+		card->ext_csd.health[2] = 0xff;
+	}
+
 out:
 	return err;
 }
@@ -720,6 +732,19 @@ static int mmc_compare_ext_csds(struct mmc_card *card, unsigned bus_width)
 	return err;
 }
 
+int emmc_total_size(struct mmc_card *card)
+{
+	int i;
+	i = fls(card->ext_csd.sectors);
+	if (i > 21) {
+		/* 4GB or above */
+		return (int)(card->ext_csd.sectors >> (i - 1)) << (i - 21);
+	} else {
+		pr_err("mmc0: wrong sector count\n");
+		return 0;
+	}
+}
+
 MMC_DEV_ATTR(cid, "%08x%08x%08x%08x\n", card->raw_cid[0], card->raw_cid[1],
 	card->raw_cid[2], card->raw_cid[3]);
 MMC_DEV_ATTR(csd, "%08x%08x%08x%08x\n", card->raw_csd[0], card->raw_csd[1],
@@ -745,6 +770,9 @@ MMC_DEV_ATTR(enhanced_area_size, "%u\n", card->ext_csd.enhanced_area_size);
 MMC_DEV_ATTR(raw_rpmb_size_mult, "%#x\n", card->ext_csd.raw_rpmb_size_mult);
 MMC_DEV_ATTR(rel_sectors, "%#x\n", card->ext_csd.rel_sectors);
 MMC_DEV_ATTR(ocr, "%08x\n", card->ocr);
+MMC_DEV_ATTR(total_size, "%d\n", card->ext_csd.sectors / 2);
+MMC_DEV_ATTR(emmc_total_size, "%d\n", emmc_total_size(card));
+MMC_DEV_ATTR(health,"0x%x 0x%x 0x%x\n",card->ext_csd.health[0],card->ext_csd.health[1],card->ext_csd.health[2]);
 
 static ssize_t mmc_fwrev_show(struct device *dev,
 			      struct device_attribute *attr,
@@ -801,6 +829,9 @@ static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_rel_sectors.attr,
 	&dev_attr_ocr.attr,
 	&dev_attr_dsr.attr,
+        &dev_attr_total_size.attr,
+	&dev_attr_emmc_total_size.attr,
+	&dev_attr_health.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(mmc_std);
