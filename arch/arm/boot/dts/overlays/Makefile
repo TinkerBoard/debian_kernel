@@ -8,6 +8,7 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	waveshare35a-tinker.dtbo \
 	waveshare32b-tinker.dtbo \
 	pps-gpio.dtbo \
+	w1-gpio.dtbo \
 
 targets += dtbs dtbs_install
 targets += $(dtbo-y)
