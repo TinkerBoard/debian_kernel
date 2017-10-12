@@ -1,5 +1,5 @@
 #
-# Broadcom char driver config
+# Rockchip char driver config
 #
 
 menuconfig RK_CHAR_DRIVERS
