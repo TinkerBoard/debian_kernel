@@ -1,0 +1,16 @@
+#
+# Broadcom char driver config
+#
+
+menuconfig RK_CHAR_DRIVERS
+	bool "Rockchip Char Drivers"
+	help
+	  Rockchip's char drivers
+
+config RK3288_DEVGPIOMEM
+	tristate "/dev/gpiomem rootless GPIO access via mmap() on the RK3288"
+	default y
+	help
+		Provides users with root-free access to the GPIO registers
+		on the 3288. Calling mmap(/dev/gpiomem) will map the GPIO
+		register page to the user's pointer.

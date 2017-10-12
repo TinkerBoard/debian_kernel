@@ -236,6 +236,11 @@
 		regulator-max-microvolt = <1000000>;
 		regulator-name = "vdd_logic";
 	};
+	rk3288-gpiomem {
+		compatible = "rockchip,rk3288-gpiomem";
+		reg = <0x0 0xff750000 0x0 0x1000>;
+		status = "okay";
+	};
 /*	
 	vcc_cam: vcc-cam {
 		compatible = "regulator-fixed";

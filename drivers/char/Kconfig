@@ -4,6 +4,7 @@
 
 menu "Character devices"
 
+source "drivers/char/rockchip/Kconfig"
 source "drivers/tty/Kconfig"
 
 config DEVMEM
