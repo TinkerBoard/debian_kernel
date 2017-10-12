@@ -22,6 +22,14 @@
 
 #include "../w1.h"
 #include "../w1_int.h"
+static int w1_gpio_pullup_pin = -1;
+static int w1_gpio_pullup_pin_orig = -1;
+module_param_named(extpullup, w1_gpio_pullup_pin, int, 0);
+MODULE_PARM_DESC(extpullup, "GPIO external pullup pin number");
+static int w1_gpio_pin = -1;
+static int w1_gpio_pin_orig = -1;
+module_param_named(gpiopin, w1_gpio_pin, int, 0);
+MODULE_PARM_DESC(gpiopin, "GPIO pin number");
 
 static u8 w1_gpio_set_pullup(void *data, int delay)
 {
@@ -103,7 +111,7 @@ static int w1_gpio_probe_dt(struct platform_device *pdev)
 	if (gpio == -EPROBE_DEFER)
 		return gpio;
 	/* ignore other errors as the pullup gpio is optional */
-	pdata->ext_pullup_enable_pin = gpio;
+	pdata->ext_pullup_enable_pin = (gpio >= 0) ? gpio : -1;
 
 	pdev->dev.platform_data = pdata;
 
@@ -113,13 +121,15 @@ static int w1_gpio_probe_dt(struct platform_device *pdev)
 static int w1_gpio_probe(struct platform_device *pdev)
 {
 	struct w1_bus_master *master;
-	struct w1_gpio_platform_data *pdata;
+	struct w1_gpio_platform_data *pdata = pdev->dev.platform_data;
 	int err;
 
-	if (of_have_populated_dt()) {
-		err = w1_gpio_probe_dt(pdev);
-		if (err < 0)
-			return err;
+	if(pdata == NULL) {
+		if (of_have_populated_dt()) {
+			err = w1_gpio_probe_dt(pdev);
+			if (err < 0)
+				return err;
+		}
 	}
 
 	pdata = dev_get_platdata(&pdev->dev);
@@ -135,6 +145,19 @@ static int w1_gpio_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Out of memory\n");
 		return -ENOMEM;
 	}
+
+	w1_gpio_pin_orig = pdata->pin;
+	w1_gpio_pullup_pin_orig = pdata->ext_pullup_enable_pin;
+
+	if(gpio_is_valid(w1_gpio_pin)) {
+		pdata->pin = w1_gpio_pin;
+		pdata->ext_pullup_enable_pin = -1;
+	}
+	if(gpio_is_valid(w1_gpio_pullup_pin)) {
+		pdata->ext_pullup_enable_pin = w1_gpio_pullup_pin;
+	}
+
+	dev_info(&pdev->dev, "gpio pin %d, external pullup pin %d\n", pdata->pin, pdata->ext_pullup_enable_pin);
 
 	err = devm_gpio_request(&pdev->dev, pdata->pin, "w1");
 	if (err) {
@@ -194,6 +217,9 @@ static int w1_gpio_remove(struct platform_device *pdev)
 		gpio_set_value(pdata->ext_pullup_enable_pin, 0);
 
 	w1_remove_master_device(master);
+
+	pdata->pin = w1_gpio_pin_orig;
+	pdata->ext_pullup_enable_pin = w1_gpio_pullup_pin_orig;
 
 	return 0;
 }
