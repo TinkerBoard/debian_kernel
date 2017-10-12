@@ -30,6 +30,13 @@ config DRM_DW_HDMI_I2S_AUDIO
 	  Support the I2S Audio interface which is part of the Synopsis
 	  Designware HDMI block.
 
+config DRM_DW_HDMI_CEC
+	tristate "Synopsis Designware CEC interface"
+	depends on DRM_DW_HDMI && MEDIA_CEC_SUPPORT
+	help
+	  Support the CE interface which is part of the Synopsis
+	  Designware HDMI block.
+
 config DRM_NXP_PTN3460
 	tristate "NXP PTN3460 DP/LVDS bridge"
 	depends on OF

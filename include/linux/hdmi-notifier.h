@@ -2,6 +2,8 @@
 #define LINUX_HDMI_NOTIFIER_H
 
 #include <linux/types.h>
+#include <linux/notifier.h>
+#include <linux/kref.h>
 
 enum {
 	HDMI_CONNECTED,
@@ -10,35 +12,32 @@ enum {
 	HDMI_NEW_ELD,
 };
 
-struct hdmi_event_base {
-	struct device *source;
-};
+struct device;
 
-struct hdmi_event_new_edid {
-	struct hdmi_event_base base;
-	const void *edid;
-	size_t size;
-};
+struct hdmi_notifier {
+	struct mutex lock;
+	struct list_head head;
+	struct kref kref;
+	struct blocking_notifier_head notifiers;
+	struct device *dev;
 
-struct hdmi_event_new_eld {
-	struct hdmi_event_base base;
+	/* Current state */
+	bool connected;
+	bool has_eld;
 	unsigned char eld[128];
+	void *edid;
+	size_t edid_size;
+	size_t edid_allocated_size;
 };
 
-union hdmi_event {
-	struct hdmi_event_base base;
-	struct hdmi_event_new_edid edid;
-	struct hdmi_event_new_eld eld;
-};
+struct hdmi_notifier *hdmi_notifier_get(struct device *dev);
+void hdmi_notifier_put(struct hdmi_notifier *n);
+int hdmi_notifier_register(struct hdmi_notifier *n, struct notifier_block *nb);
+int hdmi_notifier_unregister(struct hdmi_notifier *n, struct notifier_block *nb);
 
-struct notifier_block;
-
-int hdmi_register_notifier(struct notifier_block *nb);
-int hdmi_unregister_notifier(struct notifier_block *nb);
-
-void hdmi_event_connect(struct device *dev);
-void hdmi_event_disconnect(struct device *dev);
-void hdmi_event_new_edid(struct device *dev, const void *edid, size_t size);
-void hdmi_event_new_eld(struct device *dev, const void *eld);
+void hdmi_event_connect(struct hdmi_notifier *n);
+void hdmi_event_disconnect(struct hdmi_notifier *n);
+int hdmi_event_new_edid(struct hdmi_notifier *n, const void *edid, size_t size);
+void hdmi_event_new_eld(struct hdmi_notifier *n, const u8 eld[128]);
 
 #endif

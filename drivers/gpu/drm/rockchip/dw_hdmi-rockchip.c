@@ -16,6 +16,7 @@
 #include <linux/regmap.h>
 #include <linux/pm_runtime.h>
 #include <linux/phy/phy.h>
+#include <dt-bindings/pinctrl/rockchip.h>
 
 #include <drm/drm_of.h>
 #include <drm/drmP.h>
@@ -38,6 +39,8 @@
 #define RK3366_HDMI_LCDC_SEL		BIT(1)
 #define RK3399_GRF_SOC_CON20		0x6250
 #define RK3399_HDMI_LCDC_SEL		BIT(6)
+#define RK3288_GRF_SOC_CON8		0x0264
+#define RK3288_HDMI_CEC_MUX_SEL	BIT(12)
 
 #define RK3328_GRF_SOC_CON2		0x0408
 #define RK3328_DDC_MASK_EN		((3 << 10) | (3 << (10 + 16)))
@@ -376,6 +379,37 @@ static int rockchip_hdmi_parse_dt(struct rockchip_hdmi *hdmi)
 		kfree(phy_config);
 	} else {
 		dev_dbg(hdmi->dev, "use default hdmi phy table\n");
+	}
+
+	switch (hdmi->dev_type) {
+	case RK3288_HDMI: {
+		int i;
+		int pins_size;
+		const __be32 *pins_list;
+
+		/* check if CEC on gpio7c0 is enabled and set CEC mux */
+		pins_list = of_get_property(np, "pinctrl-0", &pins_size);
+		pins_size /= sizeof(*pins_list);
+		for (i=0; i<pins_size; i++, pins_list++) {
+			int pin_size;
+			const __be32 *pin_list;
+			struct device_node *np_pin;
+			np_pin = of_find_node_by_phandle(be32_to_cpup(pins_list));
+			pin_list = of_get_property(np_pin, "rockchip,pins", &pin_size);
+			pin_size /= sizeof(*pin_list);
+			if ((pin_size == 4) && (be32_to_cpu(*pin_list) == RK_GPIO7) &&
+			    (be32_to_cpu(*(pin_list+1)) == RK_PC0) &&
+			    (be32_to_cpu(*(pin_list+2)) == RK_FUNC_2)) {
+				regmap_write(hdmi->regmap, RK3288_GRF_SOC_CON8,
+				    HIWORD_UPDATE(RK3288_HDMI_CEC_MUX_SEL, RK3288_HDMI_CEC_MUX_SEL));
+				dev_dbg(hdmi->dev, "set grf_hdmi_cec_mux_sel\n");
+				break;
+			}
+		}
+		break;
+	}
+	default:
+		break;
 	}
 
 	return 0;

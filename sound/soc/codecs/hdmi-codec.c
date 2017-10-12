@@ -38,6 +38,7 @@ struct hdmi_codec_priv {
 	struct mutex eld_lock;
 	uint8_t eld[MAX_ELD_BYTES];
 	struct device *dev;
+	struct hdmi_notifier *n;
 	struct notifier_block nb;
 	unsigned int jack_status;
 	unsigned int mode;
@@ -430,9 +431,9 @@ static int hdmi_codec_notify(struct notifier_block *nb, unsigned long event,
 {
 	struct hdmi_codec_priv *hcp = container_of(nb, struct hdmi_codec_priv,
 						   nb);
-	union hdmi_event *event_block = data;
+	struct hdmi_notifier *n = data;
 
-	if (hcp->dev->parent != event_block->base.source)
+	if (hcp->dev->parent != n->dev->parent)
 		return NOTIFY_OK;
 
 	if (!hcp->jack)
@@ -448,7 +449,7 @@ static int hdmi_codec_notify(struct notifier_block *nb, unsigned long event,
 	case HDMI_NEW_ELD:
 		hdmi_codec_jack_report(hcp, SND_JACK_LINEOUT);
 		mutex_lock(&hcp->eld_lock);
-		memcpy(hcp->eld, event_block->eld.eld, sizeof(hcp->eld));
+		memcpy(hcp->eld, n->eld, sizeof(hcp->eld));
 		mutex_unlock(&hcp->eld_lock);
 		break;
 	}
@@ -463,8 +464,11 @@ int hdmi_codec_set_jack_detect(struct snd_soc_codec *codec,
 
 	hcp->jack = jack;
 	hcp->nb.notifier_call = hdmi_codec_notify;
+	hcp->n = hdmi_notifier_get(hcp->dev->parent);
+	if (!hcp->n)
+		return -ENOMEM;
 
-	hdmi_register_notifier(&hcp->nb);
+	hdmi_notifier_register(hcp->n, &hcp->nb);
 
 	return 0;
 }
@@ -534,7 +538,8 @@ static int hdmi_codec_remove(struct platform_device *pdev)
 {
 	struct hdmi_codec_priv *hcp = platform_get_drvdata(pdev);
 
-	hdmi_unregister_notifier(&hcp->nb);
+	hdmi_notifier_unregister(hcp->n, &hcp->nb);
+	hdmi_notifier_put(hcp->n);
 	snd_soc_unregister_codec(&pdev->dev);
 	return 0;
 }
