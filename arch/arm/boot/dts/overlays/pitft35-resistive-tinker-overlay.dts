@@ -1,0 +1,86 @@
+/*
+ * Device Tree overlay for Adafruit PiTFT 3.5" resistive touch screen
+ *
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
+
+	fragment@0 {
+		target = <&spi2>;
+
+		__overlay__ {
+			status = "okay";
+
+			spidev@0 {
+				status = "disabled";
+			};
+
+			spidev@1 {
+				status = "disabled";
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio5>;
+		__overlay__ {
+			pitft_pins: pitft_pins {
+				rockchip,pins = <5 11 0 &pcfg_pull_up>,
+				                <5 19 1 &pcfg_pull_none>;
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&spi2>;
+		__overlay__ {
+			/* needed to avoid dtc warning */
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			pitft: pitft@0{
+				compatible = "himax,hx8357d";
+				reg = <0>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&pitft_pins>;
+
+				spi-max-frequency = <16000000>;
+				rotate = <0>;
+				fps = <20>;
+				bgr;
+				buswidth = <8>;
+				dc-gpios = <&gpio5 19 0>;
+				debug = <0>;
+			};
+
+			pitft_ts@1 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				compatible = "st,stmpe610";
+				reg = <1>;
+
+				spi-max-frequency = <500000>;
+				interrupts = <11 2>; /* high-to-low edge triggered */
+				interrupt-parent = <&gpio5>;
+				interrupt-controller;
+
+				stmpe_touchscreen {
+					compatible = "st,stmpe-ts";
+					st,sample-time = <4>;
+					st,mod-12b = <1>;
+					st,ref-sel = <0>;
+					st,adc-freq = <2>;
+					st,ave-ctrl = <3>;
+					st,touch-det-delay = <4>;
+					st,settling = <2>;
+					st,fraction-z = <7>;
+					st,i-drive = <0>;
+				};
+			};
+		};
+	};
+};
