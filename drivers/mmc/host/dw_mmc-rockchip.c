@@ -20,6 +20,12 @@
 #include "dw_mmc.h"
 #include "dw_mmc-pltfm.h"
 
+#include <dt-bindings/gpio/gpio.h>
+#ifdef CONFIG_OF
+#include <linux/of_gpio.h>
+#endif
+
+
 #define RK3288_CLKGEN_DIV       2
 
 struct dw_mci_rockchip_priv_data {
@@ -232,12 +238,26 @@ static int dw_mci_rk3288_parse_dt(struct dw_mci *host)
 
 static int dw_mci_rockchip_init(struct dw_mci *host)
 {
+	struct device_node *np = host->dev->of_node;
+	int gpio;
+	enum of_gpio_flags flags;
+
 	/* It is slot 8 on Rockchip SoCs */
 	host->sdio_id0 = 8;
 
 	/* It needs this quirk on all Rockchip SoCs */
 	host->pdata->quirks |= DW_MCI_QUIRK_BROKEN_DTO;
 
+	gpio = of_get_named_gpio_flags(np, "maskrom_gpio", 0, &flags);
+
+	if (gpio_is_valid(gpio)) {
+		if(!gpio_request(gpio, "maskrom_gpio")) {
+			gpio_direction_output(gpio, (flags==GPIO_ACTIVE_HIGH)?1:0);
+			gpio_free(gpio);
+			mdelay(10);
+			dev_info(host->dev, "set maskrom gpio to enable emmc\n");
+		}
+	}
 	return 0;
 }
 
