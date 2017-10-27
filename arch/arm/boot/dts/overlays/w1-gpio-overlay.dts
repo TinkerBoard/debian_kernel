@@ -10,19 +10,18 @@
                 compatible = "w1-gpio";
                 pinctrl-names = "default";
                 pinctrl-0 = <&w1_pins>;
-                gpios = <&gpio5 19 0>;
+                gpios = <&gpio0 17 0>;
                 status = "okay";
             };
         };
     };
 
     fragment@1 {
-        target = <&gpio5>;
+        target = <&gpio0>;
         __overlay__ {
             w1_pins: w1_pins@0 {
-                rockchip,pins = <5 19 0 &pcfg_pull_up>;
+                rockchip,pins = <0 17 0 &pcfg_pull_up>;
             };
         };
     };
 };
-
