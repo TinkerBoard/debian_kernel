@@ -109,7 +109,7 @@ static int init_cmd_check(struct tinker_mcu_data *mcu_data)
 		goto error;
 
 	LOG_INFO("recv_cmds: 0x%X\n", recv_buf[0]);
-	if (recv_buf[0] != 0xC3) {
+	if (recv_buf[0] != 0xDE && recv_buf[0] != 0xC3) {
 		LOG_ERR("read wrong info\n");
 		ret = -EINVAL;
 		goto error;
