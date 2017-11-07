@@ -10,6 +10,7 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	pps-gpio.dtbo \
 	w1-gpio.dtbo \
 	pitft35-resistive-tinker.dtbo \
+	ds1307.dtbo \
 
 targets += dtbs dtbs_install
 targets += $(dtbo-y)
