@@ -1699,7 +1699,10 @@ static int cec_receive_notify(struct cec_adapter *adap, struct cec_msg *msg,
 		    !(adap->log_addrs.flags & CEC_LOG_ADDRS_FL_ALLOW_RC_PASSTHRU))
 			break;
 
-#if IS_REACHABLE(CONFIG_RC_CORE)
+/*  Disable this since the original setting without define CONFIG_RC_CORE
+ *  However, if add the define above, it still lacks some part of cec.
+*/
+#if 0 //IS_REACHABLE(CONFIG_RC_CORE)
 		switch (msg->msg[2]) {
 		/*
 		 * Play function, this message can have variable length
@@ -1736,7 +1739,7 @@ static int cec_receive_notify(struct cec_adapter *adap, struct cec_msg *msg,
 		if (!(adap->capabilities & CEC_CAP_RC) ||
 		    !(adap->log_addrs.flags & CEC_LOG_ADDRS_FL_ALLOW_RC_PASSTHRU))
 			break;
-#if IS_REACHABLE(CONFIG_RC_CORE)
+#if 0 //IS_REACHABLE(CONFIG_RC_CORE)
 		rc_keyup(adap->rc);
 #endif
 		break;

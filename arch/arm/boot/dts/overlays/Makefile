@@ -11,6 +11,7 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	w1-gpio.dtbo \
 	pitft35-resistive-tinker.dtbo \
 	ds1307.dtbo \
+	lirc-rpi.dtbo \
 
 targets += dtbs dtbs_install
 targets += $(dtbo-y)

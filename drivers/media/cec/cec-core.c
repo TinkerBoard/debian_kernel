@@ -237,9 +237,12 @@ struct cec_adapter *cec_allocate_adapter(const struct cec_adap_ops *ops,
 	if (!(caps & CEC_CAP_RC))
 		return adap;
 
-#if IS_REACHABLE(CONFIG_RC_CORE)
+/*  Disable this since the original setting without define CONFIG_RC_CORE
+ *  However, if add the define above, it still lacks some part of cec.
+*/
+#if 0 //IS_REACHABLE(CONFIG_RC_CORE) 	// disable this since the original setting without define CONFIG_RC_CORE
 	/* Prepare the RC input device */
-	adap->rc = rc_allocate_device(RC_DRIVER_SCANCODE);
+	adap->rc = rc_allocate_device();
 	if (!adap->rc) {
 		pr_err("cec-%s: failed to allocate memory for rc_dev\n",
 		       name);

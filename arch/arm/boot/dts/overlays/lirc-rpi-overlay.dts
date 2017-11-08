@@ -1,0 +1,45 @@
+// Definitions for lirc-rpi module
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
+
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			lirc_rpi: lirc_rpi {
+				compatible = "rpi,lirc-rpi";
+				pinctrl-names = "default";
+				pinctrl-0 = <&lirc_pins>;
+				status = "okay";
+
+				// Override autodetection of IR receiver circuit
+				// (0 = active high, 1 = active low, -1 = no override )
+				rpi,sense = <0xffffffff>;
+
+				// Software carrier
+				// (0 = off, 1 = on)
+				rpi,softcarrier = <1>;
+
+				// Invert output
+				// (0 = off, 1 = on)
+				rpi,invert = <0>;
+
+				// Enable debugging messages
+				// (0 = off, 1 = on)
+				rpi,debug = <0>;
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio5>;
+		__overlay__ {
+			lirc_pins: lirc_pins {
+				rockchip,pins = <5 12 0 &pcfg_pull_none>,
+				<5 14 1 &pcfg_pull_up>;
+			};
+		};
+	};
+};
