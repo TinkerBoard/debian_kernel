@@ -237,10 +237,7 @@ struct cec_adapter *cec_allocate_adapter(const struct cec_adap_ops *ops,
 	if (!(caps & CEC_CAP_RC))
 		return adap;
 
-/*  Disable this since the original setting without define CONFIG_RC_CORE
- *  However, if add the define above, it still lacks some part of cec.
-*/
-#if 0 //IS_REACHABLE(CONFIG_RC_CORE) 	// disable this since the original setting without define CONFIG_RC_CORE
+#if IS_REACHABLE(CONFIG_RC_CORE)
 	/* Prepare the RC input device */
 	adap->rc = rc_allocate_device();
 	if (!adap->rc) {
@@ -288,7 +285,7 @@ int cec_register_adapter(struct cec_adapter *adap,
 	adap->owner = parent->driver->owner;
 	adap->devnode.dev.parent = parent;
 
-#if 0//IS_REACHABLE(CONFIG_RC_CORE)
+#if IS_REACHABLE(CONFIG_RC_CORE)
 	adap->rc->dev.parent = parent;
 	if (adap->capabilities & CEC_CAP_RC) {
 		res = rc_register_device(adap->rc);
@@ -305,7 +302,7 @@ int cec_register_adapter(struct cec_adapter *adap,
 
 	res = cec_devnode_register(&adap->devnode, adap->owner);
 	if (res) {
-#if 0// IS_REACHABLE(CONFIG_RC_CORE)
+#if IS_REACHABLE(CONFIG_RC_CORE)
 		/* Note: rc_unregister also calls rc_free */
 		rc_unregister_device(adap->rc);
 		adap->rc = NULL;
@@ -340,7 +337,7 @@ void cec_unregister_adapter(struct cec_adapter *adap)
 	if (IS_ERR_OR_NULL(adap))
 		return;
 
-#if 0 //IS_REACHABLE(CONFIG_RC_CORE)
+#if IS_REACHABLE(CONFIG_RC_CORE)
 	/* Note: rc_unregister also calls rc_free */
 	rc_unregister_device(adap->rc);
 	adap->rc = NULL;
@@ -360,7 +357,7 @@ void cec_delete_adapter(struct cec_adapter *adap)
 	kthread_stop(adap->kthread);
 	if (adap->kthread_config)
 		kthread_stop(adap->kthread_config);
-#if 0 //IS_REACHABLE(CONFIG_RC_CORE)
+#if IS_REACHABLE(CONFIG_RC_CORE)
 	rc_free_device(adap->rc);
 #endif
 	kfree(adap);
