@@ -12,6 +12,7 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	pitft35-resistive-tinker.dtbo \
 	ds1307.dtbo \
 	lirc-rpi.dtbo \
+	lirc-toshiba.dtbo \
 
 targets += dtbs dtbs_install
 targets += $(dtbo-y)
