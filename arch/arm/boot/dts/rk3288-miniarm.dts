@@ -603,6 +603,17 @@
 
 &i2c3 {
 	status = "okay";
+
+	tinker_ft5406: tinker_ft5406@38 {
+    		compatible = "tinker_ft5406";
+    		reg = <0x38>;
+	};
+
+	tinker_mcu: tinker_mcu@45 {
+    		compatible = "tinker_mcu";
+    		reg = <0x45>;
+	};
+
 };
 
 &i2c4 {
