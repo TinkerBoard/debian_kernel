@@ -131,6 +131,24 @@ static struct rockchip_pll_rate_table rk3288_pll_rates[] = {
 	{ /* sentinel */ },
 };
 
+static struct rockchip_pll_rate_table rk3288_npll_rates[] = {
+	RK3066_PLL_RATE_NB(594000000, 1, 99, 4, 32),
+	RK3066_PLL_RATE_NB(585000000, 6, 585, 4, 32),
+	RK3066_PLL_RATE_NB(432000000, 3, 216, 4, 32),
+	RK3066_PLL_RATE_NB(426000000, 3, 213, 4, 32),
+	RK3066_PLL_RATE_NB(400000000, 1, 100, 6, 32),
+	RK3066_PLL_RATE_NB(342000000, 3, 171, 4, 32),
+	RK3066_PLL_RATE_NB(297000000, 2, 198, 8, 16),
+	RK3066_PLL_RATE_NB(270000000, 1, 135, 12, 32),
+	RK3066_PLL_RATE_NB(260000000, 1, 130, 12, 32),
+	RK3066_PLL_RATE_NB(148500000, 1, 99, 16, 32),
+	RK3066_PLL_RATE_NB(146250000, 6, 585, 16, 32),
+	RK3066_PLL_RATE_NB(108000000, 1, 54, 12, 32),
+	RK3066_PLL_RATE_NB(106500000, 4, 213, 12, 32),
+	RK3066_PLL_RATE_NB(85500000, 4, 171, 12, 32),
+	RK3066_PLL_RATE_NB(74250000, 4, 198, 16, 32),
+};
+
 #define RK3288_DIV_ACLK_CORE_M0_MASK	0xf
 #define RK3288_DIV_ACLK_CORE_M0_SHIFT	0
 #define RK3288_DIV_ACLK_CORE_MP_MASK	0xf
@@ -241,7 +259,7 @@ static struct rockchip_pll_clock rk3288_pll_clks[] __initdata = {
 	[gpll] = PLL(pll_rk3066, PLL_GPLL, "gpll", mux_pll_p, 0, RK3288_PLL_CON(12),
 		     RK3288_MODE_CON, 12, 8, 0, rk3288_pll_rates),
 	[npll] = PLL(pll_rk3066, PLL_NPLL, "npll",  mux_pll_p, 0, RK3288_PLL_CON(16),
-		     RK3288_MODE_CON, 14, 9, 0, rk3288_pll_rates),
+		     RK3288_MODE_CON, 14, 9, 0, rk3288_npll_rates),
 };
 
 static struct clk_div_table div_hclk_cpu_t[] = {
