@@ -1,0 +1,3 @@
+To use this card has to replace(overwrit) the original simple-audio-card first, since there will be a conflict if both exist.
+So I left the modified dts in the folder, you can reference to the file and add the audio card manually.
+
