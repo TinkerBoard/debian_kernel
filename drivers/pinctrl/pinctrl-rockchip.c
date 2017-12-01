@@ -2071,11 +2071,12 @@ static int _rockchip_pmx_gpio_set_direction(struct gpio_chip *chip,
 	u32 data;
 
 	bank = gc_to_pin_bank(chip);
-
 	ret = rockchip_set_mux(bank, pin, RK_FUNC_GPIO);
 	if (ret < 0)
 		return ret;
-
+	/* For pin 185 and 186 are shorted. */
+	if (bank->pin_base + pin == 186)
+		input = true;
 	//clk_enable(bank->clk);
 	raw_spin_lock_irqsave(&bank->slock, flags);
 
@@ -2085,8 +2086,9 @@ static int _rockchip_pmx_gpio_set_direction(struct gpio_chip *chip,
 		data |= BIT(pin);
 	else
 		data &= ~BIT(pin);
+	if (bank->pin_base + pin == 185) 
+		data &= ~BIT(2);
 	writel_relaxed(data, bank->reg_base + GPIO_SWPORT_DDR);
-
 	raw_spin_unlock_irqrestore(&bank->slock, flags);
 	//clk_disable(bank->clk);
 
