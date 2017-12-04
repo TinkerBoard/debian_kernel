@@ -42,7 +42,8 @@ config FRAME_POINTER
 	  faster. However, if neither FRAME_POINTER nor ARM_UNWIND are enabled,
 	  when a problem occurs with the kernel, the information that is
 	  reported is severely limited.
-
+config I2S_SHORT
+	bool "Pin 185 and 186(I2S) is shorted in TinkerBoard."
 config ARM_UNWIND
 	bool "Enable stack unwinding support (EXPERIMENTAL)"
 	depends on AEABI
