@@ -1078,9 +1078,26 @@ static int rockchip_set_mux(struct rockchip_pin_bank *bank, int pin, int mux)
 				return ret;
 		}
 	}
+	#ifdef CONFIG_I2S_SHORT
+	if(bank->bank_num == 6 && (pin == 1 || pin == 2))
+	{
+		mask = 0xf;
+		bit = 1 * 2;
+		data = (mask << (bit + 16));
+		rmask = data | (data >> 16);
+		data |= (((mux << 2) | mux) & mask) << bit;
+	}
+	else
+	{
+		data = (mask << (bit + 16));
+		rmask = data | (data >> 16);
+		data |= (mux & mask) << bit;
+	}
+	#else
 	data = (mask << (bit + 16));
 	rmask = data | (data >> 16);
 	data |= (mux & mask) << bit;
+	#endif
 	ret = regmap_update_bits(regmap, reg, rmask, data);
 
 	return ret;
