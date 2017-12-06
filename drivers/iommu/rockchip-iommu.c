@@ -76,6 +76,8 @@
 
 #define IOMMU_REG_POLL_COUNT_FAST 1000
 
+static LIST_HEAD(iommu_dev_list);
+
 struct rk_iommu_domain {
 	struct list_head iommus;
 	struct platform_device *pdev;
@@ -94,10 +96,12 @@ struct rk_iommu {
 	int *irq;
 	int num_irq;
 	bool reset_disabled; /* isp iommu reset operation would failed */
+	bool skip_read;	     /* rk3126/rk3128 can't read vop iommu registers */
 	struct list_head node; /* entry in rk_iommu_domain.iommus */
 	struct iommu_domain *domain; /* domain to which iommu is attached */
 	struct clk *aclk; /* aclock belong to master */
 	struct clk *hclk; /* hclock belong to master */
+	struct list_head dev_node;
 };
 
 static inline void rk_table_flush(struct rk_iommu_domain *dom, dma_addr_t dma,
@@ -268,14 +272,12 @@ static void rk_iommu_power_on(struct rk_iommu *iommu)
 		clk_enable(iommu->hclk);
 	}
 
-	pm_runtime_enable(iommu->dev);
 	pm_runtime_get_sync(iommu->dev);
 }
 
 static void rk_iommu_power_off(struct rk_iommu *iommu)
 {
 	pm_runtime_put_sync(iommu->dev);
-	pm_runtime_disable(iommu->dev);
 
 	if (iommu->aclk && iommu->hclk) {
 		clk_disable(iommu->aclk);
@@ -370,6 +372,9 @@ static int rk_iommu_enable_stall(struct rk_iommu *iommu)
 {
 	int ret, i;
 
+	if (iommu->skip_read)
+		goto read_wa;
+
 	if (rk_iommu_is_stall_active(iommu))
 		return 0;
 
@@ -377,7 +382,10 @@ static int rk_iommu_enable_stall(struct rk_iommu *iommu)
 	if (!rk_iommu_is_paging_enabled(iommu))
 		return 0;
 
+read_wa:
 	rk_iommu_command(iommu, RK_MMU_CMD_ENABLE_STALL);
+	if (iommu->skip_read)
+		return 0;
 
 	ret = rk_wait_for(rk_iommu_is_stall_active(iommu), 1);
 	if (ret)
@@ -392,10 +400,16 @@ static int rk_iommu_disable_stall(struct rk_iommu *iommu)
 {
 	int ret, i;
 
+	if (iommu->skip_read)
+		goto read_wa;
+
 	if (!rk_iommu_is_stall_active(iommu))
 		return 0;
 
+read_wa:
 	rk_iommu_command(iommu, RK_MMU_CMD_DISABLE_STALL);
+	if (iommu->skip_read)
+		return 0;
 
 	ret = rk_wait_for(!rk_iommu_is_stall_active(iommu), 1);
 	if (ret)
@@ -410,10 +424,16 @@ static int rk_iommu_enable_paging(struct rk_iommu *iommu)
 {
 	int ret, i;
 
+	if (iommu->skip_read)
+		goto read_wa;
+
 	if (rk_iommu_is_paging_enabled(iommu))
 		return 0;
 
+read_wa:
 	rk_iommu_command(iommu, RK_MMU_CMD_ENABLE_PAGING);
+	if (iommu->skip_read)
+		return 0;
 
 	ret = rk_wait_for(rk_iommu_is_paging_enabled(iommu), 1);
 	if (ret)
@@ -428,10 +448,16 @@ static int rk_iommu_disable_paging(struct rk_iommu *iommu)
 {
 	int ret, i;
 
+	if (iommu->skip_read)
+		goto read_wa;
+
 	if (!rk_iommu_is_paging_enabled(iommu))
 		return 0;
 
+read_wa:
 	rk_iommu_command(iommu, RK_MMU_CMD_DISABLE_PAGING);
+	if (iommu->skip_read)
+		return 0;
 
 	ret = rk_wait_for(!rk_iommu_is_paging_enabled(iommu), 1);
 	if (ret)
@@ -451,6 +477,8 @@ static int rk_iommu_force_reset(struct rk_iommu *iommu)
 	if (iommu->reset_disabled)
 		return 0;
 
+	if (iommu->skip_read)
+		goto read_wa;
 	/*
 	 * Check if register DTE_ADDR is working by writing DTE_ADDR_DUMMY
 	 * and verifying that upper 5 nybbles are read back.
@@ -465,7 +493,10 @@ static int rk_iommu_force_reset(struct rk_iommu *iommu)
 		}
 	}
 
+read_wa:
 	rk_iommu_command(iommu, RK_MMU_CMD_FORCE_RESET);
+	if (iommu->skip_read)
+		return 0;
 
 	for (i = 0; i < iommu->num_mmu; i++) {
 		ret = rk_wait_for(rk_iommu_read(iommu->bases[i], RK_MMU_DTE_ADDR) == 0x00000000,
@@ -864,6 +895,9 @@ static int rk_iommu_attach_device(struct iommu_domain *domain,
 
 	iommu->domain = domain;
 
+	if (iommu->skip_read)
+		goto skip_request_irq;
+
 	for (i = 0; i < iommu->num_irq; i++) {
 		ret = devm_request_irq(iommu->dev, iommu->irq[i], rk_iommu_irq,
 			       IRQF_SHARED, dev_name(dev), iommu);
@@ -871,6 +905,7 @@ static int rk_iommu_attach_device(struct iommu_domain *domain,
 			return ret;
 	}
 
+skip_request_irq:
 	for (i = 0; i < iommu->num_mmu; i++) {
 		rk_iommu_write(iommu->bases[i], RK_MMU_DTE_ADDR,
 			       rk_domain->dt_dma);
@@ -918,10 +953,14 @@ static void rk_iommu_detach_device(struct iommu_domain *domain,
 	}
 	rk_iommu_disable_stall(iommu);
 
+	if (iommu->skip_read)
+		goto read_wa;
+
 	for (i = 0; i < iommu->num_irq; i++) {
 		devm_free_irq(iommu->dev, iommu->irq[i], iommu);
 	}
 
+read_wa:
 	iommu->domain = NULL;
 
 	rk_iommu_power_off(iommu);
@@ -1209,6 +1248,13 @@ static int rk_iommu_probe(struct platform_device *pdev)
 	iommu->reset_disabled = device_property_read_bool(dev,
 				"rk_iommu,disable_reset_quirk");
 
+	/* Follow upstream */
+	iommu->reset_disabled |= device_property_read_bool(dev,
+					"rockchip,disable-mmu-reset");
+
+	iommu->skip_read = device_property_read_bool(dev,
+				"rockchip,skip-mmu-read");
+
 	iommu->aclk = devm_clk_get(dev, "aclk");
 	if (IS_ERR(iommu->aclk)) {
 		dev_info(dev, "can't get aclk\n");
@@ -1225,6 +1271,7 @@ static int rk_iommu_probe(struct platform_device *pdev)
 		clk_prepare(iommu->aclk);
 		clk_prepare(iommu->hclk);
 	}
+
 
 	iommu->reset_disabled = device_property_read_bool(dev,
 				"rk_iommu,disable_reset_quirk");
@@ -1245,18 +1292,32 @@ static int rk_iommu_probe(struct platform_device *pdev)
 		clk_prepare(iommu->aclk);
 		clk_prepare(iommu->hclk);
 	}
-
-	pm_runtime_enable(dev);
+	pm_runtime_enable(iommu->dev);
+	pm_runtime_get_sync(iommu->dev);
+	list_add(&iommu->dev_node, &iommu_dev_list);
 
 	return 0;
 }
 
 static int rk_iommu_remove(struct platform_device *pdev)
 {
-	pm_runtime_put(&pdev->dev);
+	struct rk_iommu *iommu = platform_get_drvdata(pdev);
+
+	pm_runtime_disable(iommu->dev);
 
 	return 0;
 }
+
+static int __init rk_iommu_runtime_put(void)
+{
+	struct rk_iommu *iommu;
+
+	list_for_each_entry(iommu, &iommu_dev_list, dev_node)
+		pm_runtime_put_sync(iommu->dev);
+
+	return 0;
+}
+late_initcall_sync(rk_iommu_runtime_put);
 
 static const struct of_device_id rk_iommu_dt_ids[] = {
 	{ .compatible = "rockchip,iommu" },

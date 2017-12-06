@@ -1035,13 +1035,13 @@ int wifi_get_mac_addr(unsigned char *buf)
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35)) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 39)) || defined(COMPAT_KERNEL_RELEASE)
-void *wifi_get_country_code(char *ccode)
+void *wifi_get_country_code(char *ccode, u32 flags)
 {
 	DBG_871X("%s\n", __FUNCTION__);
 	if (!ccode)
 		return NULL;
 	if (wifi_control_data && wifi_control_data->get_country_code) {
-		return wifi_control_data->get_country_code(ccode);
+		return wifi_control_data->get_country_code(ccode, flags);
 	}
 	return NULL;
 }

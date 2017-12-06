@@ -64,6 +64,8 @@
 		i2c1 = &i2c1;
 		i2c2 = &i2c2;
 		i2c3 = &i2c3;
+		ethernet0 = &gmac2io;
+		ethernet1 = &gmac2phy;
 	};
 
 	cpus {
@@ -153,6 +155,13 @@
 		compatible = "rockchip,cpuinfo";
 		nvmem-cells = <&efuse_id>, <&efuse_cpu_version>;
 		nvmem-cell-names = "id", "cpu-version";
+	};
+
+	firmware {
+		optee {
+			compatible = "linaro,optee-tz";
+			method = "smc";
+		};
 	};
 
 	psci {
@@ -722,6 +731,7 @@
 		reg = <0x0 0xff330200 0 0x100>;
 		interrupts = <GIC_SPI 96 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "h265e_mmu";
+		power-domains = <&power RK3328_PD_HEVC>;
 		#iommu-cells = <0>;
 	};
 
@@ -752,6 +762,7 @@
 		interrupt-names = "vepu_mmu";
 		clocks = <&cru ACLK_VPU>, <&cru HCLK_VPU>;
 		clock-names = "aclk", "hclk";
+		power-domains = <&power RK3328_PD_HEVC>;
 		#iommu-cells = <0>;
 	};
 
@@ -1023,7 +1034,7 @@
 		};
 	};
 
-	sdmmc: rksdmmc@ff500000 {
+	sdmmc: dwmmc@ff500000 {
 		compatible = "rockchip,rk3328-dw-mshc", "rockchip,rk3288-dw-mshc";
 		reg = <0x0 0xff500000 0x0 0x4000>;
 		clock-freq-min-max = <400000 150000000>;
@@ -1046,7 +1057,7 @@
 		status = "disabled";
 	};
 
-	emmc: rksdmmc@ff520000 {
+	emmc: dwmmc@ff520000 {
 		compatible = "rockchip,rk3328-dw-mshc", "rockchip,rk3288-dw-mshc";
 		reg = <0x0 0xff520000 0x0 0x4000>;
 		clock-freq-min-max = <400000 150000000>;
@@ -1057,7 +1068,7 @@
 		status = "disabled";
 	};
 
-	gmac2io: eth@ff540000 {
+	gmac2io: ethernet@ff540000 {
 		compatible = "rockchip,rk3328-gmac";
 		reg = <0x0 0xff540000 0x0 0x10000>;
 		rockchip,grf = <&grf>;
@@ -1073,6 +1084,29 @@
 			      "pclk_mac";
 		resets = <&cru SRST_GMAC2IO_A>;
 		reset-names = "stmmaceth";
+		status = "disabled";
+	};
+
+	gmac2phy: ethernet@ff550000 {
+		compatible = "rockchip,rk3328-gmac";
+		reg = <0x0 0xff550000 0x0 0x10000>;
+		rockchip,grf = <&grf>;
+		interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "macirq";
+		clocks = <&cru SCLK_MAC2PHY_SRC>, <&cru SCLK_MAC2PHY_RXTX>,
+			 <&cru SCLK_MAC2PHY_RXTX>, <&cru SCLK_MAC2PHY_REF>,
+			 <&cru ACLK_MAC2PHY>, <&cru PCLK_MAC2PHY>,
+			 <&cru SCLK_MAC2PHY_OUT>;
+		clock-names = "stmmaceth", "mac_clk_rx",
+			      "mac_clk_tx", "clk_mac_ref",
+			      "aclk_mac", "pclk_mac",
+			      "clk_macphy";
+		resets = <&cru SRST_GMAC2PHY_A>, <&cru SRST_MACPHY>;
+		reset-names = "stmmaceth", "mac-phy";
+		phy-mode = "rmii";
+		phy-is-integrated;
+		pinctrl-names = "default";
+		pinctrl-0 = <&fephyled_rxm1 &fephyled_linkm1>;
 		status = "disabled";
 	};
 
@@ -1117,7 +1151,7 @@
 		status = "disabled";
 	};
 
-	sdmmc_ext: rksdmmc@ff5f0000 {
+	sdmmc_ext: dwmmc@ff5f0000 {
 		compatible = "rockchip,rk3328-dw-mshc", "rockchip,rk3288-dw-mshc";
 		reg = <0x0 0xff5f0000 0x0 0x4000>;
 		clock-freq-min-max = <400000 150000000>;

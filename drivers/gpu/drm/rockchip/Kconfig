@@ -16,15 +16,6 @@ config DRM_ROCKCHIP
 	  2D or 3D acceleration; acceleration is performed by other
 	  IP found on the SoC.
 
-config ROCKCHIP_DRM_RGA
-	tristate "Rockchip RGA support"
-	depends on DRM_ROCKCHIP
-	help
-	  Choose this option to enable support for Rockchip RGA.
-	  Rockchip RGA is a kind of hardware 2D accelerator, and it support
-	  solid roration, scaling, color format transform, say Y to enable its
-	  driver
-
 config ROCKCHIP_CDN_DP
 	tristate "Rockchip cdn DP"
 	depends on DRM_ROCKCHIP
@@ -89,6 +80,16 @@ config ROCKCHIP_DRM_TVE
 	  Choose this option to enable support for Rockchip TVE controllers.
 	  say Y to enable its driver.
 
+config ROCKCHIP_RGB
+	tristate "Rockchip RGB support"
+	depends on DRM_ROCKCHIP
+	depends on PINCTRL
+	help
+	  Choose this option to enable support for Rockchip RGB output.
+	  Some Rockchip CRTCs, like rv1108, can directly output parallel
+	  and serial RGB format to panel or connect to a conversion chip.
+	  say Y to enable its driver.
+
 config ROCKCHIP_DRM_BACKLIGHT
 	tristate "Rockchip DRM Backlight"
 	depends on DRM_ROCKCHIP
@@ -96,3 +97,12 @@ config ROCKCHIP_DRM_BACKLIGHT
 	  This selects support for Rockchip backlight manager,
 	  Vop cabc function request using vop self pwm devices, needed a
 	  unique backlight devices to manager vop and soc pwm devices.
+
+config ROCKCHIP_RK3066_HDMI
+	tristate "Rockchip specific extensions for RK3066 HDMI"
+	depends on DRM_ROCKCHIP
+	select SND_SOC_HDMI_CODEC
+	help
+	  This selects support for Rockchip SoC specific extensions
+	  for the Innosilicon HDMI driver. If you want to enable
+	  HDMI on RK3066 based SoC, you should select this option.

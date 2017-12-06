@@ -517,18 +517,27 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3066a-bqcurie2.dtb \
 	rk3066a-marsboard.dtb \
 	rk3066a-rayeager.dtb \
+	rk3126-bnd-d708.dtb \
+	rk3126-evb.dtb \
+	rk3128-fireprime.dtb \
 	rk3188-radxarock.dtb \
 	rk3228-evb.dtb \
+	rk3229-at-gva.dtb \
 	rk3229-echo-v10.dtb \
 	rk3229-evb.dtb \
 	rk3229-gva-sdk.dtb \
 	rk3288-evb-act8846.dtb \
+	rk3288-evb-android-act8846-edp.dtb \
 	rk3288-evb-android-rk818-edp.dtb \
 	rk3288-evb-android-rk818-lvds.dtb \
 	rk3288-evb-android-rk818-mipi.dtb \
+	rk3288-evb-android-rk818-mipi-edp.dtb \
+	rk3288-evb-rk1608.dtb \
 	rk3288-evb-rk808.dtb \
 	rk3288-fennec.dtb \
 	rk3288-firefly-beta.dtb \
+	rk3288-firefly-reload.dtb \
+	rk3288-firefly-rk808.dtb \
 	rk3288-firefly.dtb \
 	rk3288-miniarm.dtb \
 	rk3288-miqi.dtb \
@@ -540,7 +549,8 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3288-veyron-jerry.dtb \
 	rk3288-veyron-minnie.dtb \
 	rk3288-veyron-pinky.dtb \
-	rk3288-veyron-speedy.dtb
+	rk3288-veyron-speedy.dtb \
+	rk3288-x7811-rk818-dual-dsi.dtb
 dtb-$(CONFIG_ARCH_S3C24XX) += \
 	s3c2416-smdk2416.dtb
 dtb-$(CONFIG_ARCH_S3C64XX) += \

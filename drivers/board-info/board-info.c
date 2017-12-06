@@ -9,7 +9,7 @@
 #include <linux/init.h>
 #include <linux/module.h>
 
-#include <linux/rockchip/iomap.h>
+//#include <linux/rockchip/iomap.h>
 #include <linux/rockchip/grf.h>
 
 
@@ -200,7 +200,7 @@ static void create_project_id_proc_file(void)
 	}
 
 	/* Pull up GPIO2 A1 A2 A3*/
-	regs = ioremap(RK3288_GRF_PHYS, 64*1024);
+	regs = ioremap(0xff770000, 64*1024);
 	if (regs == NULL) {
 		printk("[board_info] ioremap failed");
 		return ;

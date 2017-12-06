@@ -978,6 +978,10 @@ static u32 rtl8723bs_hal_init(PADAPTER padapter)
 	pwrctrlpriv = adapter_to_pwrctl(padapter);
 	pregistrypriv = &padapter->registrypriv;
 
+/*For AW H64 platform rf interference issue only!*/
+#ifdef CONFIG_SDIO_PAD_DRIVING_CTRL
+        PHY_SetBBReg(padapter, 0x74, BIT7|BIT6|BIT5|BIT4, 0x2);
+#endif
 #ifdef CONFIG_SWLPS_IN_IPS
 	if (adapter_to_pwrctl(padapter)->bips_processing == _TRUE)
 	{

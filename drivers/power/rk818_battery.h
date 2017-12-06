@@ -27,7 +27,7 @@
 #define ADC_CUR_EN		BIT(6)
 #define ADC_TS1_EN		BIT(5)
 #define ADC_TS2_EN		BIT(4)
-#define TS1_CUR_MSK		0xfc
+#define TS1_CUR_MSK		0x03
 
 /* RK818_GGCON */
 #define OCV_SAMP_MIN_MSK	0x0c
@@ -82,6 +82,7 @@
 
 /* RK818_THERMAL_REG */
 #define FB_TEMP_MSK		0x0c
+#define HOTDIE_STS		BIT(1)
 
 /* RK818_INT_STS_MSK_REG1 */
 #define VB_LOW_INT_EN		BIT(1)
@@ -127,7 +128,8 @@ struct battery_platform_data {
 	u32 fb_temp;
 	u32 energy_mode;
 	u32 cccv_hour;
-	u32 ntc_cur;
+	u32 ntc_uA;
+	u32 ntc_factor;
 };
 
 enum work_mode {

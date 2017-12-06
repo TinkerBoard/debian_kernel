@@ -42,6 +42,7 @@
 
 /dts-v1/;
 #include <dt-bindings/pwm/pwm.h>
+#include <dt-bindings/sensor-dev.h>
 #include "rk3368.dtsi"
 #include "rk3368-android.dtsi"
 
@@ -575,6 +576,8 @@
 		clock-names = "mclk";
 		spk-con-gpio = <&gpio0 27 GPIO_ACTIVE_HIGH>;
 		hp-det-gpio = <&gpio0 23 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2s_8ch_mclk>;
 	};
 };
 
@@ -600,8 +603,28 @@
 
 &i2c4 {
 	status = "okay";
+
+	mpu6500_acc: mpu_acc@68 {
+		compatible = "mpu6500_acc";
+		reg = <0x68>;
+		irq-gpio = <&gpio3 14 IRQ_TYPE_LEVEL_LOW>;
+		irq_enable = <0>;
+		poll_delay_ms = <30>;
+		type = <SENSOR_TYPE_ACCEL>;
+		layout = <7>;
+	};
+
+	mpu6500_gyro: mpu_gyro@68 {
+		compatible = "mpu6500_gyro";
+		reg = <0x68>;
+		irq_enable = <0>;
+		poll_delay_ms = <30>;
+		type = <SENSOR_TYPE_GYROSCOPE>;
+		layout = <7>;
+	};
+
 	mpu6500@68 {
-		status = "okay";
+		status = "disabled";
 		compatible = "invensense,mpu6500";
 		pinctrl-names = "default";
 		pinctrl-0 = <&mpu6500_irq_gpio>;
@@ -678,7 +701,7 @@
 &dsi {
 	status = "okay";
 
-	dsi_panel: panel@0 {
+	panel@0 {
 		compatible = "simple-panel-dsi";
 		reg = <0>;
 		backlight = <&backlight>;
@@ -688,8 +711,8 @@
 		dsi,format = <MIPI_DSI_FMT_RGB888>;
 		dsi,lanes = <4>;
 
-		delay,prepare = <120>;
-		delay,enable = <200>;
+		prepare-delay-ms = <120>;
+		enable-delay-ms = <200>;
 
 		display-timings {
 			native-mode = <&timing0>;
@@ -713,7 +736,6 @@
 };
 
 &mipi_dphy {
-	rockchip,dsi-panel = <&dsi_panel>;
 	status = "okay";
 };
 

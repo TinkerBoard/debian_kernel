@@ -47,7 +47,13 @@
 
 / {
 	chosen {
-		bootargs = "earlycon=uart8250,mmio32,0xff690000";
+		bootargs = "earlycon=uart8250,mmio32,0xff690000 vmalloc=496M";
+	};
+
+	cpuinfo {
+		compatible = "rockchip,cpuinfo";
+		nvmem-cells = <&efuse_id>;
+		nvmem-cell-names = "id";
 	};
 
 	/delete-node/ dmc@ff610000;
@@ -80,13 +86,14 @@
 			SYS_STATUS_SUSPEND	192000
 			SYS_STATUS_VIDEO_1080P	300000
 			SYS_STATUS_VIDEO_4K	396000
+			SYS_STATUS_VIDEO_4K_10B	528000
 			SYS_STATUS_PERFORMANCE	528000
 			SYS_STATUS_BOOST	396000
 			SYS_STATUS_DUALVIEW	396000
 			SYS_STATUS_ISP		396000
 		>;
-		auto-min-freq = <400000>;
-		auto-freq-en = <1>;
+		auto-min-freq = <396000>;
+		auto-freq-en = <0>;
 		status = "diasbled";
 	};
 
@@ -195,7 +202,7 @@
 		status = "okay";
 
 		ports = <&vopb_out>, <&vopl_out>;
-		memory-region = <&drm_logo>;
+		logo-memory-region = <&drm_logo>;
 
 		route {
 			route_edp: route-edp {
@@ -204,7 +211,7 @@
 				logo,kernel = "logo_kernel.bmp";
 				logo,mode = "center";
 				charge_logo,mode = "center";
-				connect = <&vopb_out_edp>;
+				connect = <&vopl_out_edp>;
 			};
 
 			route_dsi0: route-dsi0 {
@@ -213,7 +220,7 @@
 				logo,kernel = "logo_kernel.bmp";
 				logo,mode = "center";
 				charge_logo,mode = "center";
-				connect = <&vopb_out_dsi0>;
+				connect = <&vopl_out_dsi0>;
 			};
 
 			route_lvds: route-lvds {
@@ -222,7 +229,7 @@
 				logo,kernel = "logo_kernel.bmp";
 				logo,mode = "center";
 				charge_logo,mode = "center";
-				connect = <&vopb_out_lvds>;
+				connect = <&vopl_out_lvds>;
 			};
 		};
 	};
@@ -328,7 +335,7 @@
 		nandc_id = <0>;
 		clocks = <&cru SCLK_NANDC0>, <&cru HCLK_NANDC0>;
 		clock-names = "clk_nandc", "hclk_nandc";
-		status = "disabled";
+		status = "okay";
 	};
 
 	hdmi_analog_sound: hdmi-analog-sound {
@@ -399,20 +406,23 @@
 	status = "okay";
 };
 
-&dsi0 {
-	ports {
-		dsi0_in: port {
-			dsi0_in_vopl: endpoint@1 {
-				status = "disabled";
-			};
-		};
-	};
+&dsi0_in_vopb {
+	status = "disabled";
+};
+
+&edp_in_vopb {
+	status = "disabled";
+};
+
+&hdmi_in_vopl {
+	status = "disabled";
 };
 
 &rga {
 	compatible = "rockchip,rga2";
 	clocks = <&cru ACLK_RGA>, <&cru HCLK_RGA>, <&cru SCLK_RGA>;
 	clock-names = "aclk_rga", "hclk_rga", "clk_rga";
+	dma-coherent;
 };
 
 &usb_otg {

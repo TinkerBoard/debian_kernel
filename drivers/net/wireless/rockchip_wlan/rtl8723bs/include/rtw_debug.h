@@ -200,12 +200,12 @@ extern void rtl871x_cedbg(const char *fmt, ...);
 #undef DBG_871X_LEVEL
 #define DBG_871X_LEVEL(level, fmt, arg...)     \
 	do {\
-/*		if (level <= GlobalDebugLevel) {\
+		if (level <= GlobalDebugLevel) {\
 			if (level <= _drv_err_ && level > _drv_always_) \
 				_dbgdump(DRIVER_PREFIX"ERROR " fmt, ##arg);\
 			else \
 				_dbgdump(DRIVER_PREFIX fmt, ##arg);\
-		}*/\
+		}\
 	}while(0)
 
 /* without driver-defined prefix */

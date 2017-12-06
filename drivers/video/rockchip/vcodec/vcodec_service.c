@@ -41,12 +41,12 @@
 #include <linux/pm_runtime.h>
 #include <linux/iopoll.h>
 
-#include <linux/rockchip/cru.h>
 #include <linux/rockchip/pmu.h>
 #include <linux/rockchip/grf.h>
 
 #include <linux/dma-buf.h>
 #include <linux/rockchip-iovmm.h>
+#include <video/rk_vpu_service.h>
 
 #include "vcodec_hw_info.h"
 #include "vcodec_hw_vpu.h"
@@ -130,7 +130,6 @@ struct extra_info_elem {
 	u32 index;
 	u32 offset;
 };
-
 
 struct extra_info_for_iommu {
 	u32 magic;
@@ -230,47 +229,32 @@ static const struct vcodec_device_info rkvd_device_info = {
 #define vpu_err(fmt, args...)				\
 		pr_err("%s:%d: " fmt, __func__, __LINE__, ##args)
 
-enum VPU_DEC_FMT {
-	VPU_DEC_FMT_H264,
-	VPU_DEC_FMT_MPEG4,
-	VPU_DEC_FMT_H263,
-	VPU_DEC_FMT_JPEG,
-	VPU_DEC_FMT_VC1,
-	VPU_DEC_FMT_MPEG2,
-	VPU_DEC_FMT_MPEG1,
-	VPU_DEC_FMT_VP6,
-	VPU_DEC_FMT_RESERV0,
-	VPU_DEC_FMT_VP7,
-	VPU_DEC_FMT_VP8,
-	VPU_DEC_FMT_AVS,
-	VPU_DEC_FMT_RES
+struct vpu_device {
+	atomic_t irq_count_codec;
+	atomic_t irq_count_pp;
+	unsigned int iosize;
+	u32 *regs;
 };
 
-/**
- * struct for process session which connect to vpu
- *
- * @author ChenHengming (2011-5-3)
- */
-struct vpu_session {
-	enum VPU_CLIENT_TYPE type;
-	/* a linked list of data so we can access them for debugging */
-	struct list_head list_session;
-	/* a linked list of register data waiting for process */
-	struct list_head waiting;
-	/* a linked list of register data in processing */
-	struct list_head running;
-	/* a linked list of register data processed */
-	struct list_head done;
-	wait_queue_head_t wait;
-	pid_t pid;
-	atomic_t task_running;
+enum VCODEC_RUNNING_MODE {
+	VCODEC_RUNNING_MODE_NONE = -1,
+	VCODEC_RUNNING_MODE_VPU,
+	VCODEC_RUNNING_MODE_HEVC,
+	VCODEC_RUNNING_MODE_RKVDEC
 };
 
-/**
- * struct for process register set
- *
- * @author ChenHengming (2011-5-4)
- */
+struct vcodec_mem_region {
+	struct list_head srv_lnk;
+	struct list_head reg_lnk;
+	struct list_head session_lnk;
+	/* virtual address for iommu */
+	dma_addr_t iova;
+	unsigned long len;
+	u32 reg_idx;
+	int hdl;
+};
+
+/* struct for process register set */
 struct vpu_reg {
 	enum VPU_CLIENT_TYPE type;
 	enum VPU_FREQ freq;
@@ -288,38 +272,6 @@ struct vpu_reg {
 	struct list_head mem_region_list;
 	u32 dec_base;
 	u32 *reg;
-};
-
-struct vpu_device {
-	atomic_t irq_count_codec;
-	atomic_t irq_count_pp;
-	unsigned int iosize;
-	u32 *regs;
-};
-
-enum vcodec_device_id {
-	VCODEC_DEVICE_ID_VPU,
-	VCODEC_DEVICE_ID_HEVC,
-	VCODEC_DEVICE_ID_COMBO,
-	VCODEC_DEVICE_ID_RKVDEC,
-	VCODEC_DEVICE_ID_BUTT
-};
-
-enum VCODEC_RUNNING_MODE {
-	VCODEC_RUNNING_MODE_NONE = -1,
-	VCODEC_RUNNING_MODE_VPU,
-	VCODEC_RUNNING_MODE_HEVC,
-	VCODEC_RUNNING_MODE_RKVDEC
-};
-
-struct vcodec_mem_region {
-	struct list_head srv_lnk;
-	struct list_head reg_lnk;
-	struct list_head session_lnk;
-	unsigned long iova;	/* virtual address for iommu */
-	unsigned long len;
-	u32 reg_idx;
-	int hdl;
 };
 
 enum vpu_ctx_state {
@@ -353,11 +305,6 @@ struct vpu_subdev_data {
 	u32 reg_size;
 	unsigned long state;
 
-#ifdef CONFIG_DEBUG_FS
-	struct dentry *debugfs_dir;
-	struct dentry *debugfs_file_regs;
-#endif
-
 	struct device *mmu_dev;
 	struct vcodec_iommu_info *iommu_info;
 	struct work_struct set_work;
@@ -385,6 +332,13 @@ struct vpu_service_info {
 	atomic_t power_off_cnt;
 	atomic_t service_on;
 	struct mutex shutdown_lock;
+	/*
+	 * FIXME: if someone call iommu translate function during vpu_reset,
+	 * it may cause system core dump without any message. we suggest
+	 * modify iommu driver to avoid this situation. before that,
+	 * this is a temporary solution.
+	 */
+	struct mutex reset_lock;
 	struct vpu_reg *reg_codec;
 	struct vpu_reg *reg_pproc;
 	struct vpu_reg *reg_resev;
@@ -394,6 +348,11 @@ struct vpu_service_info {
 	bool auto_freq;
 	bool bug_dec_addr;
 	atomic_t freq_status;
+
+	bool secure_isr;
+	bool secure_irq_status;
+	atomic_t secure_mode;
+	wait_queue_head_t *wait_secure_isr;
 
 	struct clk *aclk_vcodec;
 	struct clk *hclk_vcodec;
@@ -405,6 +364,8 @@ struct vpu_service_info {
 	struct reset_control *rst_a;
 	struct reset_control *rst_h;
 	struct reset_control *rst_v;
+	struct reset_control *rst_core;
+	struct reset_control *rst_cabac;
 	struct reset_control *rst_niu_a;
 	struct reset_control *rst_niu_h;
 #endif
@@ -426,7 +387,6 @@ struct vpu_service_info {
 	u32 *reg_base;
 	u32 ioaddr;
 	struct regmap *grf;
-	u32 *grf_base;
 
 	char *name;
 
@@ -434,11 +394,6 @@ struct vpu_service_info {
 	struct list_head subdev_list;
 
 	u32 alloc_type;
-};
-
-struct vpu_request {
-	u32 *req;
-	u32 size;
 };
 
 #ifdef CONFIG_COMPAT
@@ -502,7 +457,6 @@ static inline int grf_combo_switch(const struct vpu_subdev_data *data)
 	u32 raw = 0;
 
 	bits = 1 << pservice->mode_bit;
-#ifdef CONFIG_MFD_SYSCON
 	if (pservice->grf) {
 		regmap_read(pservice->grf, pservice->mode_ctrl, &raw);
 
@@ -512,36 +466,11 @@ static inline int grf_combo_switch(const struct vpu_subdev_data *data)
 		else
 			regmap_write(pservice->grf, pservice->mode_ctrl,
 				     (raw & (~bits)) | (bits << 16));
-	} else if (pservice->grf_base) {
-		u32 *grf_base = pservice->grf_base;
-
-		raw = readl_relaxed(grf_base + pservice->mode_ctrl / 4);
-		if (data->mode == VCODEC_RUNNING_MODE_HEVC)
-			writel_relaxed(raw | bits | (bits << 16),
-				       grf_base + pservice->mode_ctrl / 4);
-		else
-			writel_relaxed((raw & (~bits)) | (bits << 16),
-				       grf_base + pservice->mode_ctrl / 4);
 	} else {
 		vpu_err("no grf resource define, switch decoder failed\n");
 		return -EINVAL;
 	}
-#else
-	if (pservice->grf_base) {
-		u32 *grf_base = pservice->grf_base;
 
-		raw = readl_relaxed(grf_base + pservice->mode_ctrl / 4);
-		if (data->mode == VCODEC_RUNNING_MODE_HEVC)
-			writel_relaxed(raw | bits | (bits << 16),
-				       grf_base + pservice->mode_ctrl / 4);
-		else
-			writel_relaxed((raw & (~bits)) | (bits << 16),
-				       grf_base + pservice->mode_ctrl / 4);
-	} else {
-		vpu_err("no grf resource define, switch decoder failed\n");
-		return -EINVAL;
-	}
-#endif
 	return 0;
 }
 
@@ -550,6 +479,10 @@ static void vcodec_enter_mode(struct vpu_subdev_data *data)
 	struct vpu_service_info *pservice = data->pservice;
 	struct vpu_subdev_data *subdata, *n;
 
+	/*
+	 * For the RK3228H, it is not necessary to write a register to
+	 * switch vpu combo mode, it is unsafe to write the grf.
+	 */
 	if (pservice->subcnt < 2 || pservice->mode_ctrl == 0) {
 		if (data->mmu_dev && !test_bit(MMU_ACTIVATED, &data->state)) {
 			set_bit(MMU_ACTIVATED, &data->state);
@@ -570,7 +503,7 @@ static void vcodec_enter_mode(struct vpu_subdev_data *data)
 	if (pservice->curr_mode == data->mode)
 		return;
 
-	vpu_debug(DEBUG_IOMMU, "vcodec enter mode %d\n", data->mode);
+	vpu_debug(DEBUG_REGISTER, "vcodec enter mode %d\n", data->mode);
 	list_for_each_entry_safe(subdata, n,
 				 &pservice->subdev_list, lnk_service) {
 		if (data != subdata && subdata->mmu_dev &&
@@ -580,13 +513,8 @@ static void vcodec_enter_mode(struct vpu_subdev_data *data)
 		}
 	}
 
-	/*
-	 * For the RK3228H, it is not necessary to write a register to
-	 * switch vpu combo mode, it is unsafe to write the grf.
-	 */
-	if (pservice->mode_ctrl)
-		if (grf_combo_switch(data))
-			return;
+	if (grf_combo_switch(data))
+		return;
 
 	if (data->mmu_dev && !test_bit(MMU_ACTIVATED, &data->state)) {
 		set_bit(MMU_ACTIVATED, &data->state);
@@ -699,13 +627,17 @@ static void _vpu_reset(struct vpu_subdev_data *data)
 	try_reset_assert(pservice->rst_v);
 	try_reset_assert(pservice->rst_a);
 	try_reset_assert(pservice->rst_h);
+	try_reset_assert(pservice->rst_core);
+	try_reset_assert(pservice->rst_cabac);
 	udelay(5);
 
-	try_reset_deassert(pservice->rst_h);
-	try_reset_deassert(pservice->rst_a);
-	try_reset_deassert(pservice->rst_v);
 	try_reset_deassert(pservice->rst_niu_h);
 	try_reset_deassert(pservice->rst_niu_a);
+	try_reset_deassert(pservice->rst_v);
+	try_reset_deassert(pservice->rst_h);
+	try_reset_deassert(pservice->rst_a);
+	try_reset_deassert(pservice->rst_core);
+	try_reset_deassert(pservice->rst_cabac);
 
 	rockchip_pmu_idle_request(pservice->dev, false);
 	clk_set_rate(pservice->aclk_vcodec, rate);
@@ -717,7 +649,9 @@ static void vpu_reset(struct vpu_subdev_data *data)
 {
 	struct vpu_service_info *pservice = data->pservice;
 
+	mutex_lock(&pservice->reset_lock);
 	_vpu_reset(data);
+	mutex_unlock(&pservice->reset_lock);
 	if (data->mmu_dev && test_bit(MMU_ACTIVATED, &data->state)) {
 		clear_bit(MMU_ACTIVATED, &data->state);
 		if (atomic_read(&pservice->enabled)) {
@@ -768,11 +702,6 @@ static void vpu_service_clear(struct vpu_subdev_data *data)
 		wake_up(&session->wait);
 }
 
-static void vpu_service_dump(struct vpu_service_info *pservice)
-{
-}
-
-
 static void vpu_service_power_off(struct vpu_service_info *pservice)
 {
 	int total_running;
@@ -788,7 +717,6 @@ static void vpu_service_power_off(struct vpu_service_info *pservice)
 			 total_running);
 		mdelay(50);
 		pr_alert("alert: delay 50 ms for running task\n");
-		vpu_service_dump(pservice);
 	}
 
 	dev_dbg(pservice->dev, "power off...\n");
@@ -862,12 +790,6 @@ static void vpu_service_power_on(struct vpu_subdev_data *data,
 
 	dev_dbg(pservice->dev, "power on\n");
 
-#define BIT_VCODEC_CLK_SEL	(1<<10)
-	if (of_machine_is_compatible("rockchip,rk3126"))
-		writel_relaxed(readl_relaxed(RK_GRF_VIRT + RK312X_GRF_SOC_CON1)
-			| BIT_VCODEC_CLK_SEL | (BIT_VCODEC_CLK_SEL << 16),
-			RK_GRF_VIRT + RK312X_GRF_SOC_CON1);
-
 #if VCODEC_CLOCK_ENABLE
 	if (pservice->aclk_vcodec)
 		clk_prepare_enable(pservice->aclk_vcodec);
@@ -915,10 +837,9 @@ static inline int reg_probe_hevc_y_stride(struct vpu_reg *reg)
 	return y_virstride;
 }
 
-static int vcodec_fd_to_iova(struct vpu_subdev_data *data,
-		struct vpu_session *session,
-		struct vpu_reg *reg,
-		int fd)
+static dma_addr_t vcodec_fd_to_iova(struct vpu_subdev_data *data,
+				    struct vpu_session *session,
+				    struct vpu_reg *reg, int fd)
 {
 	int hdl;
 	int ret = 0;
@@ -939,7 +860,7 @@ static int vcodec_fd_to_iova(struct vpu_subdev_data *data,
 	ret = vcodec_iommu_map_iommu(data->iommu_info, session, mem_region->hdl,
 				     &mem_region->iova, &mem_region->len);
 	if (ret < 0) {
-		vpu_err("fd %d ion map iommu failed\n", fd);
+		vpu_err("fd %d iommu map to device failed\n", fd);
 		kfree(mem_region);
 		vcodec_iommu_free(data->iommu_info, session, hdl);
 
@@ -947,6 +868,7 @@ static int vcodec_fd_to_iova(struct vpu_subdev_data *data,
 	}
 	INIT_LIST_HEAD(&mem_region->reg_lnk);
 	list_add_tail(&mem_region->reg_lnk, &reg->mem_region_list);
+
 	return mem_region->iova;
 }
 
@@ -965,42 +887,64 @@ static int vcodec_fd_to_iova(struct vpu_subdev_data *data,
  * on current decoding task. Then kernel driver can only translate the first
  * address then copy it all pps buffer.
  */
-static int fill_scaling_list_addr_in_pps(
-		struct vpu_subdev_data *data,
-		struct vpu_reg *reg,
-		char *pps,
-		int pps_info_count,
-		int pps_info_size,
-		int scaling_list_addr_offset)
+static int fill_scaling_list_pps(struct vpu_subdev_data *data,
+				 struct vpu_reg *reg, int fd,
+				 int offset, int count,
+				 int pps_info_size,
+				 int sub_addr_offset)
 {
-	int base = scaling_list_addr_offset;
-	int scaling_fd = 0;
+	struct dma_buf *dmabuf = NULL;
+	void *vaddr = NULL;
+	u8 *pps = NULL;
+	u32 base = sub_addr_offset;
+	u32 scaling_fd = 0;
 	u32 scaling_offset;
+	int ret = 0;
 
-	scaling_offset  = (u32)pps[base + 0];
-	scaling_offset += (u32)pps[base + 1] << 8;
-	scaling_offset += (u32)pps[base + 2] << 16;
-	scaling_offset += (u32)pps[base + 3] << 24;
+	dmabuf = dma_buf_get(fd);
+	if (IS_ERR_OR_NULL(dmabuf)) {
+		dev_err(data->dev, "invliad pps buffer\n");
+		return -ENOENT;
+	}
+
+	ret = dma_buf_begin_cpu_access(dmabuf, 0, dmabuf->size,
+				       DMA_FROM_DEVICE);
+	if (ret) {
+		dev_err(data->dev, "can't access the pps buffer\n");
+		return ret;
+	}
+
+	vaddr = dma_buf_vmap(dmabuf);
+	if (!vaddr) {
+		dev_err(data->dev, "can't access the pps buffer\n");
+		return -EIO;
+	}
+	pps = vaddr + offset;
+
+	memcpy(&scaling_offset, pps + base, sizeof(scaling_offset));
+	scaling_offset = le32_to_cpu(scaling_offset);
 
 	scaling_fd = scaling_offset & 0x3ff;
 	scaling_offset = scaling_offset >> 10;
 
 	if (scaling_fd > 0) {
 		int i = 0;
-		u32 tmp = vcodec_fd_to_iova(data, reg->session, reg,
-					    scaling_fd);
+		dma_addr_t tmp = vcodec_fd_to_iova(data, reg->session, reg,
+						   scaling_fd);
 
 		if (IS_ERR_VALUE(tmp))
-			return -1;
+			return tmp;
 		tmp += scaling_offset;
+		tmp = cpu_to_le32(tmp);
 
-		for (i = 0; i < pps_info_count; i++, base += pps_info_size) {
-			pps[base + 0] = (tmp >>  0) & 0xff;
-			pps[base + 1] = (tmp >>  8) & 0xff;
-			pps[base + 2] = (tmp >> 16) & 0xff;
-			pps[base + 3] = (tmp >> 24) & 0xff;
-		}
+		/* Fill the scaling list address in each pps entries */
+		for (i = 0; i < count; i++, base += pps_info_size)
+			memcpy(pps + base, &tmp, sizeof(tmp));
 	}
+
+	dma_buf_vunmap(dmabuf, vaddr);
+	dma_buf_end_cpu_access(dmabuf, 0, dmabuf->size, DMA_FROM_DEVICE);
+	dma_buf_put(dmabuf);
 
 	return 0;
 }
@@ -1014,37 +958,30 @@ static int vcodec_bufid_to_iova(struct vpu_subdev_data *data,
 	struct vpu_service_info *pservice = data->pservice;
 	struct vpu_task_info *task = reg->task;
 	enum FORMAT_TYPE type;
-	int hdl;
-	int ret = 0;
-	struct vcodec_mem_region *mem_region;
-	int i;
 	int offset = 0;
+	int ret = 0;
+	int i;
 
 	if (tbl == NULL || size <= 0) {
 		dev_err(pservice->dev, "input arguments invalidate\n");
 		return -EINVAL;
 	}
 
-	if (task->get_fmt)
+	if (task->get_fmt) {
 		type = task->get_fmt(reg->reg);
-	else {
+	} else {
 		dev_err(pservice->dev, "invalid task with NULL get_fmt\n");
 		return -EINVAL;
 	}
 
 	for (i = 0; i < size; i++) {
 		int usr_fd = reg->reg[tbl[i]] & 0x3FF;
+		dma_addr_t iova = 0;
 
 		/* if userspace do not set the fd at this register, skip */
 		if (usr_fd == 0)
 			continue;
 
-		/*
-		 * for avoiding cache sync issue, we need to map/unmap
-		 * input buffer every time. FIX ME, if it is unnecessary
-		 */
-		if (task->reg_rlc == tbl[i])
-			vcodec_iommu_free_fd(data->iommu_info, session, usr_fd);
 		/*
 		 * special offset scale case
 		 *
@@ -1072,88 +1009,54 @@ static int vcodec_bufid_to_iova(struct vpu_subdev_data *data,
 		vpu_debug(DEBUG_IOMMU, "pos %3d fd %3d offset %10d i %d\n",
 			  tbl[i], usr_fd, offset, i);
 
-		hdl = vcodec_iommu_import(data->iommu_info, session, usr_fd);
-
+		/* Only apply for RKVDEC */
 		if (task->reg_pps > 0 && task->reg_pps == tbl[i]) {
-			int pps_info_offset;
 			int pps_info_count;
 			int pps_info_size;
-			int scaling_list_addr_offset;
+			int scaling_offset;
 
 			switch (type) {
 			case FMT_H264D: {
-				pps_info_offset = offset;
 				pps_info_count = 256;
 				pps_info_size = 32;
-				scaling_list_addr_offset = 23;
+				scaling_offset = 23;
 			} break;
 			case FMT_H265D: {
-				pps_info_offset = 0;
 				pps_info_count = 64;
 				pps_info_size = 80;
-				scaling_list_addr_offset = 74;
+				scaling_offset = 74;
 			} break;
 			default: {
-				pps_info_offset = 0;
 				pps_info_count = 0;
 				pps_info_size = 0;
-				scaling_list_addr_offset = 0;
+				scaling_offset = 0;
 			} break;
 			}
 
 			vpu_debug(DEBUG_PPS_FILL,
 				  "scaling list filling parameter:\n");
 			vpu_debug(DEBUG_PPS_FILL,
-				  "pps_info_offset %d\n", pps_info_offset);
+				  "pps_info_count = %d\n", pps_info_count);
 			vpu_debug(DEBUG_PPS_FILL,
-				  "pps_info_count  %d\n", pps_info_count);
+				  "pps_info_size = %d\n", pps_info_size);
 			vpu_debug(DEBUG_PPS_FILL,
-				  "pps_info_size   %d\n", pps_info_size);
-			vpu_debug(DEBUG_PPS_FILL,
-				  "scaling_list_addr_offset %d\n",
-				  scaling_list_addr_offset);
+				  "scaling_list_addr_offset = %d\n",
+				  scaling_offset);
 
 			if (pps_info_count) {
-				u8 *pps;
-
-				pps = vcodec_iommu_map_kernel
-					(data->iommu_info, session, hdl);
-
-				vpu_debug(DEBUG_PPS_FILL,
-					  "scaling list setting pps %p\n", pps);
-				pps += pps_info_offset;
-
-				fill_scaling_list_addr_in_pps
-					(data, reg, pps, pps_info_count,
-					 pps_info_size,
-					 scaling_list_addr_offset);
-
-				vcodec_iommu_unmap_kernel
-					(data->iommu_info, session, hdl);
+				ret = fill_scaling_list_pps(data, reg, usr_fd,
+							    offset,
+							    pps_info_count,
+							    pps_info_size,
+							    scaling_offset);
+				if (ret)
+					return ret;
 			}
 		}
 
-		mem_region = kzalloc(sizeof(*mem_region), GFP_KERNEL);
-
-		if (!mem_region) {
-			vcodec_iommu_free(data->iommu_info, session, hdl);
-			return -ENOMEM;
-		}
-
-		mem_region->hdl = hdl;
-		mem_region->reg_idx = tbl[i];
-
-		ret = vcodec_iommu_map_iommu(data->iommu_info, session,
-					     mem_region->hdl, &mem_region->iova,
-					     &mem_region->len);
-		if (ret < 0) {
-			dev_err(pservice->dev,
-				"reg %d fd %d ion map iommu failed\n",
-				tbl[i], usr_fd);
-			kfree(mem_region);
-			vcodec_iommu_free(data->iommu_info, session, hdl);
-			return ret;
-		}
+		iova = vcodec_fd_to_iova(data, session, reg, usr_fd);
+		if (IS_ERR_VALUE(iova))
+			return iova;
 
 		/*
 		 * special for vpu dec num 12: record decoded length
@@ -1161,14 +1064,12 @@ static int vcodec_bufid_to_iova(struct vpu_subdev_data *data,
 		 * NOTE: not a perfect fix, the fd is not recorded
 		 */
 		if (task->reg_len > 0 && task->reg_len == tbl[i]) {
-			reg->dec_base = mem_region->iova + offset;
+			reg->dec_base = iova + offset;
 			vpu_debug(DEBUG_REGISTER, "dec_set %08x\n",
 				  reg->dec_base);
 		}
 
-		reg->reg[tbl[i]] = mem_region->iova + offset;
-		INIT_LIST_HEAD(&mem_region->reg_lnk);
-		list_add_tail(&mem_region->reg_lnk, &reg->mem_region_list);
+		reg->reg[tbl[i]] = iova + offset;
 	}
 
 	if (ext_inf != NULL && ext_inf->magic == EXTRA_INFO_MAGIC) {
@@ -1275,9 +1176,11 @@ static struct vpu_reg *reg_init(struct vpu_subdev_data *data,
 		return NULL;
 	}
 
+	mutex_lock(&pservice->reset_lock);
 	if (vcodec_reg_address_translate(data, session, reg, &extra_info) < 0) {
 		int i = 0;
 
+		mutex_unlock(&pservice->reset_lock);
 		vpu_err("error: translate reg address failed, dumping regs\n");
 		for (i = 0; i < size >> 2; i++)
 			dev_err(pservice->dev, "reg[%02d]: %08x\n",
@@ -1286,6 +1189,7 @@ static struct vpu_reg *reg_init(struct vpu_subdev_data *data,
 		kfree(reg);
 		return NULL;
 	}
+	mutex_unlock(&pservice->reset_lock);
 
 	mutex_lock(&pservice->lock);
 	list_add_tail(&reg->status_link, &pservice->waiting);
@@ -1451,22 +1355,22 @@ static void vpu_service_set_freq(struct vpu_service_info *pservice,
 	atomic_set(&pservice->freq_status, reg->freq);
 	switch (reg->freq) {
 	case VPU_FREQ_200M: {
-		clk_set_rate(pservice->aclk_vcodec, 200*MHZ);
+		clk_set_rate(pservice->aclk_vcodec, 200 * MHZ);
 	} break;
 	case VPU_FREQ_266M: {
-		clk_set_rate(pservice->aclk_vcodec, 266*MHZ);
+		clk_set_rate(pservice->aclk_vcodec, 266 * MHZ);
 	} break;
 	case VPU_FREQ_300M: {
-		clk_set_rate(pservice->aclk_vcodec, 300*MHZ);
+		clk_set_rate(pservice->aclk_vcodec, 300 * MHZ);
 	} break;
 	case VPU_FREQ_400M: {
-		clk_set_rate(pservice->aclk_vcodec, 400*MHZ);
+		clk_set_rate(pservice->aclk_vcodec, 400 * MHZ);
 	} break;
 	case VPU_FREQ_500M: {
-		clk_set_rate(pservice->aclk_vcodec, 500*MHZ);
+		clk_set_rate(pservice->aclk_vcodec, 500 * MHZ);
 	} break;
 	case VPU_FREQ_600M: {
-		clk_set_rate(pservice->aclk_vcodec, 600*MHZ);
+		clk_set_rate(pservice->aclk_vcodec, 600 * MHZ);
 	} break;
 	default: {
 		unsigned long rate = 300*MHZ;
@@ -1788,14 +1692,24 @@ static long vpu_service_ioctl(struct file *filp, unsigned int cmd,
 	struct vpu_session *session = (struct vpu_session *)filp->private_data;
 
 	vpu_debug_enter();
+
+	vpu_debug(DEBUG_IOCTL, "cmd %x, VPU_IOC_SET_CLIENT_TYPE %x\n", cmd,
+		  (u32)VPU_IOC_SET_CLIENT_TYPE);
+
 	if (NULL == session)
 		return -EINVAL;
 
 	switch (cmd) {
 	case VPU_IOC_SET_CLIENT_TYPE: {
+		int secure_mode;
+
+		secure_mode = (arg & 0xffff0000) >> 16;
+		session->type = (enum VPU_CLIENT_TYPE)(arg & 0xffff);
+		atomic_set(&pservice->secure_mode, secure_mode);
+
 		session->type = (enum VPU_CLIENT_TYPE)arg;
-		vpu_debug(DEBUG_IOCTL, "pid %d set client type %d\n",
-			  session->pid, session->type);
+		vpu_debug(DEBUG_IOCTL, "pid %d set client type %d, secure mode = %d\n",
+			  session->pid, session->type, secure_mode);
 	} break;
 	case VPU_IOC_GET_HW_FUSE_STATUS: {
 		struct vpu_request req;
@@ -1826,6 +1740,16 @@ static long vpu_service_ioctl(struct file *filp, unsigned int cmd,
 
 		vpu_debug(DEBUG_IOCTL, "pid %d set reg type %d\n",
 			  session->pid, session->type);
+
+		if (atomic_read(&pservice->secure_mode) == 1) {
+			vpu_service_power_on(data, pservice);
+			pservice->wait_secure_isr = &session->wait;
+			if (!pservice->secure_isr &&
+			    !pservice->secure_irq_status)
+				enable_irq(data->irq_dec);
+			break;
+		}
+
 		if (copy_from_user(&req, (void __user *)arg,
 				   sizeof(struct vpu_request))) {
 			vpu_err("error: set reg copy_from_user failed\n");
@@ -1846,6 +1770,19 @@ static long vpu_service_ioctl(struct file *filp, unsigned int cmd,
 
 		vpu_debug(DEBUG_IOCTL, "pid %d get reg type %d\n",
 			  session->pid, session->type);
+
+		if (atomic_read(&pservice->secure_mode) == 1) {
+			ret = wait_event_timeout(session->wait,
+						 pservice->secure_isr,
+						 VPU_TIMEOUT_DELAY);
+			if (ret < 0) {
+				pr_info("warning: secure wait timeout\n");
+				ret = 0;
+			}
+			pservice->secure_isr = false;
+			break;
+		}
+
 		if (copy_from_user(&req, (void __user *)arg,
 				   sizeof(struct vpu_request))) {
 			vpu_err("error: get reg copy_from_user failed\n");
@@ -1877,7 +1814,6 @@ static long vpu_service_ioctl(struct file *filp, unsigned int cmd,
 			int task_running = atomic_read(&session->task_running);
 
 			mutex_lock(&pservice->lock);
-			vpu_service_dump(pservice);
 			if (task_running) {
 				atomic_set(&session->task_running, 0);
 				atomic_sub(task_running,
@@ -1900,6 +1836,7 @@ static long vpu_service_ioctl(struct file *filp, unsigned int cmd,
 		mutex_unlock(&pservice->lock);
 	} break;
 	case VPU_IOC_PROBE_IOMMU_STATUS: {
+		/* It must be 1, keeping backward compatibility */
 		int iommu_enable = 1;
 
 		vpu_debug(DEBUG_IOCTL, "VPU_IOC_PROBE_IOMMU_STATUS\n");
@@ -1912,155 +1849,96 @@ static long vpu_service_ioctl(struct file *filp, unsigned int cmd,
 	} break;
 	default: {
 		vpu_err("error: unknow vpu service ioctl cmd %x\n", cmd);
+		return -ENOIOCTLCMD;
 	} break;
 	}
+
 	vpu_debug_leave();
 	return 0;
 }
 
 #ifdef CONFIG_COMPAT
-static long compat_vpu_service_ioctl(struct file *filp, unsigned int cmd,
+#define VPU_IOC_SET_CLIENT_TYPE32          _IOW(VPU_IOC_MAGIC, 1, u32)
+#define VPU_IOC_GET_HW_FUSE_STATUS32       _IOW(VPU_IOC_MAGIC, 2, \
+						compat_ulong_t)
+#define VPU_IOC_SET_REG32                  _IOW(VPU_IOC_MAGIC, 3, \
+						compat_ulong_t)
+#define VPU_IOC_GET_REG32                  _IOW(VPU_IOC_MAGIC, 4, \
+						compat_ulong_t)
+#define VPU_IOC_PROBE_IOMMU_STATUS32       _IOR(VPU_IOC_MAGIC, 5, u32)
+
+static long native_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	long ret = -ENOIOCTLCMD;
+
+	if (file->f_op->unlocked_ioctl)
+		ret = file->f_op->unlocked_ioctl(file, cmd, arg);
+
+	return ret;
+}
+
+static long compat_vpu_service_ioctl(struct file *file, unsigned int cmd,
 				     unsigned long arg)
 {
-	struct vpu_subdev_data *data =
-		container_of(filp->f_path.dentry->d_inode->i_cdev,
-			     struct vpu_subdev_data, cdev);
-	struct vpu_service_info *pservice = data->pservice;
-	struct vpu_session *session = (struct vpu_session *)filp->private_data;
+	struct vpu_request req;
+	void __user *up = compat_ptr(arg);
+	int compatible_arg = 1;
+	long err = 0;
 
 	vpu_debug_enter();
-	vpu_debug(3, "cmd %x, COMPAT_VPU_IOC_SET_CLIENT_TYPE %x\n", cmd,
-		  (u32)COMPAT_VPU_IOC_SET_CLIENT_TYPE);
-	if (NULL == session)
-		return -EINVAL;
+	vpu_debug(DEBUG_IOCTL, "cmd %x, VPU_IOC_SET_CLIENT_TYPE32 %x\n", cmd,
+		  (u32)VPU_IOC_SET_CLIENT_TYPE32);
+	/* First, convert the command. */
+	switch (cmd) {
+	case VPU_IOC_SET_CLIENT_TYPE32:
+		cmd = VPU_IOC_SET_CLIENT_TYPE;
+		break;
+	case VPU_IOC_GET_HW_FUSE_STATUS32:
+		cmd = VPU_IOC_GET_HW_FUSE_STATUS;
+		break;
+	case VPU_IOC_SET_REG32:
+		cmd = VPU_IOC_SET_REG;
+		break;
+	case VPU_IOC_GET_REG32:
+		cmd = VPU_IOC_GET_REG;
+		break;
+	case VPU_IOC_PROBE_IOMMU_STATUS32:
+		cmd = VPU_IOC_PROBE_IOMMU_STATUS;
+		break;
+	}
 
 	switch (cmd) {
-	case COMPAT_VPU_IOC_SET_CLIENT_TYPE: {
-		session->type = (enum VPU_CLIENT_TYPE)arg;
-		vpu_debug(DEBUG_IOCTL, "compat set client type %d\n",
-			  session->type);
-	} break;
-	case COMPAT_VPU_IOC_GET_HW_FUSE_STATUS: {
-		struct compat_vpu_request req;
+	case VPU_IOC_SET_REG:
+	case VPU_IOC_GET_REG:
+	case VPU_IOC_GET_HW_FUSE_STATUS: {
+		compat_uptr_t req_ptr;
+		struct compat_vpu_request __user *req32 = NULL;
 
-		vpu_debug(DEBUG_IOCTL, "compat get hw status %d\n",
-			  session->type);
-		if (copy_from_user(&req, compat_ptr((compat_uptr_t)arg),
-				   sizeof(struct compat_vpu_request))) {
+		req32 = (struct compat_vpu_request __user *)up;
+		memset(&req, 0, sizeof(req));
+
+		if (get_user(req_ptr, &req32->req) ||
+		    get_user(req.size, &req32->size)) {
 			vpu_err("error: compat get hw status copy_from_user failed\n");
 			return -EFAULT;
-		} else {
-			void *config = (session->type != VPU_ENC) ?
-				       ((void *)&pservice->dec_config) :
-				       ((void *)&pservice->enc_config);
-			size_t size = (session->type != VPU_ENC) ?
-				      (sizeof(struct vpu_dec_config)) :
-				      (sizeof(struct vpu_enc_config));
-
-			if (copy_to_user(compat_ptr((compat_uptr_t)req.req),
-					 config, size)) {
-				vpu_err("error: compat get hw status copy_to_user failed type %d\n",
-					session->type);
-				return -EFAULT;
-			}
 		}
-	} break;
-	case COMPAT_VPU_IOC_SET_REG: {
-		struct compat_vpu_request req;
-		struct vpu_reg *reg;
-
-		vpu_debug(DEBUG_IOCTL, "compat set reg type %d\n",
-			  session->type);
-		if (copy_from_user(&req, compat_ptr((compat_uptr_t)arg),
-				   sizeof(struct compat_vpu_request))) {
-			vpu_err("compat set_reg copy_from_user failed\n");
-			return -EFAULT;
-		}
-		reg = reg_init(data, session,
-			       compat_ptr((compat_uptr_t)req.req), req.size);
-		if (NULL == reg) {
-			return -EFAULT;
-		} else {
-			queue_work(pservice->set_workq, &data->set_work);
-		}
-	} break;
-	case COMPAT_VPU_IOC_GET_REG: {
-		struct compat_vpu_request req;
-		struct vpu_reg *reg;
-		int ret;
-
-		vpu_debug(DEBUG_IOCTL, "compat get reg type %d\n",
-			  session->type);
-		if (copy_from_user(&req, compat_ptr((compat_uptr_t)arg),
-				   sizeof(struct compat_vpu_request))) {
-			vpu_err("compat get reg copy_from_user failed\n");
-			return -EFAULT;
-		}
-
-		ret = wait_event_timeout(session->wait,
-					 !list_empty(&session->done),
-					 VPU_TIMEOUT_DELAY);
-
-		if (!list_empty(&session->done)) {
-			if (ret < 0)
-				vpu_err("warning: pid %d wait task error ret %d\n",
-					session->pid, ret);
-			ret = 0;
-		} else {
-			if (unlikely(ret < 0)) {
-				vpu_err("error: pid %d wait task ret %d\n",
-					session->pid, ret);
-			} else if (ret == 0) {
-				vpu_err("error: pid %d wait %d task done timeout\n",
-					session->pid,
-					atomic_read(&session->task_running));
-				ret = -ETIMEDOUT;
-			}
-		}
-
-		if (ret < 0) {
-			int task_running = atomic_read(&session->task_running);
-
-			mutex_lock(&pservice->lock);
-			vpu_service_dump(pservice);
-			if (task_running) {
-				atomic_set(&session->task_running, 0);
-				atomic_sub(task_running,
-					   &pservice->total_running);
-				dev_err(pservice->dev,
-					"%d task is running but not return, reset hardware...",
-					task_running);
-				vpu_reset(data);
-				dev_err(pservice->dev, "done\n");
-			}
-			vpu_service_session_clear(data, session);
-			mutex_unlock(&pservice->lock);
-			return ret;
-		}
-
-		mutex_lock(&pservice->lock);
-		reg = list_entry(session->done.next,
-				 struct vpu_reg, session_link);
-		return_reg(data, reg, compat_ptr((compat_uptr_t)req.req));
-		mutex_unlock(&pservice->lock);
-	} break;
-	case COMPAT_VPU_IOC_PROBE_IOMMU_STATUS: {
-		int iommu_enable = 1;
-
-		vpu_debug(DEBUG_IOCTL, "COMPAT_VPU_IOC_PROBE_IOMMU_STATUS\n");
-
-		if (copy_to_user(compat_ptr((compat_uptr_t)arg),
-				 &iommu_enable, sizeof(int))) {
-			vpu_err("error: VPU_IOC_PROBE_IOMMU_STATUS copy_to_user failed\n");
-			return -EFAULT;
-		}
-	} break;
-	default: {
-		vpu_err("error: unknow vpu service ioctl cmd %x\n", cmd);
+		req.req = compat_ptr(req_ptr);
+		compatible_arg = 0;
 	} break;
 	}
+
+	if (compatible_arg) {
+		err = native_ioctl(file, cmd, (unsigned long)up);
+	} else {
+		mm_segment_t old_fs = get_fs();
+
+		set_fs(KERNEL_DS);
+		err = native_ioctl(file, cmd, (unsigned long)&req);
+		set_fs(old_fs);
+	}
+
 	vpu_debug_leave();
-	return 0;
+	return err;
 }
 #endif
 
@@ -2143,6 +2021,14 @@ static int vpu_service_release(struct inode *inode, struct file *filp)
 		msleep(50);
 	}
 	wake_up(&session->wait);
+
+	if (atomic_read(&pservice->secure_mode)) {
+		atomic_set(&pservice->secure_mode, 0);
+		if (!pservice->secure_irq_status) {
+			enable_irq(data->irq_dec);
+			pservice->secure_irq_status = true;
+		}
+	}
 
 	mutex_lock(&pservice->lock);
 	/* remove this filp from the asynchronusly notified filp's */
@@ -2248,30 +2134,29 @@ int vcodec_sysmmu_fault_hdl(struct device *dev,
 		int i = 0;
 
 		pr_err("vcodec, fault addr 0x%08lx\n", fault_addr);
-		if (!list_empty(&reg->mem_region_list)) {
+		if (!list_empty(&reg->mem_region_list))
 			list_for_each_entry_safe(mem, n, &reg->mem_region_list,
 						 reg_lnk) {
-				pr_err("vcodec, reg[%02u] mem region [%02d] 0x%lx %lx\n",
-				       mem->reg_idx, i, mem->iova, mem->len);
+				dev_err(dev, "reg[%02u] mem region [%02d] %pad %lx\n",
+					mem->reg_idx, i, &mem->iova, mem->len);
 				i++;
 			}
-		} else {
-			pr_err("no memory region mapped\n");
-		}
+		else
+			dev_err(dev, "no memory region mapped\n");
 
 		if (reg->data) {
 			struct vpu_subdev_data *data = reg->data;
 			u32 *base = (u32 *)data->dec_dev.regs;
 			u32 len = data->hw_info->dec_reg_num;
 
-			pr_err("current errror register set:\n");
+			dev_err(dev, "current errror register set:\n");
 
 			for (i = 0; i < len; i++)
 				pr_err("reg[%02d] %08x\n",
 				       i, readl_relaxed(base + i));
 		}
 
-		pr_alert("vcodec, page fault occur, reset hw\n");
+		dev_alert(dev, "page fault occur, reset hw\n");
 
 		/* reg->reg[101] = 1; */
 		_vpu_reset(data);
@@ -2323,7 +2208,7 @@ static int vcodec_subdev_probe(struct platform_device *pdev,
 		break;
 	}
 
-	if (pservice->reg_base == 0) {
+	if (!pservice->reg_base) {
 		res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 		data->regs = devm_ioremap_resource(dev, res);
 		if (IS_ERR(data->regs)) {
@@ -2370,6 +2255,12 @@ static int vcodec_subdev_probe(struct platform_device *pdev,
 	}
 
 	dev_info(dev, "vpu mmu dec %p\n", data->mmu_dev);
+
+#define BIT_VCODEC_CLK_SEL	BIT(10)
+	if (of_machine_is_compatible("rockchip,rk3126") ||
+	    of_machine_is_compatible("rockchip,rk3128"))
+		regmap_write(pservice->grf, RK312X_GRF_SOC_CON1,
+			BIT_VCODEC_CLK_SEL | (BIT_VCODEC_CLK_SEL << 16));
 
 	clear_bit(MMU_ACTIVATED, &data->state);
 	vpu_service_power_on(data, pservice);
@@ -2433,7 +2324,6 @@ static int vcodec_subdev_probe(struct platform_device *pdev,
 	atomic_set(&data->enc_dev.irq_count_pp, 0);
 
 	get_hw_info(data);
-	pservice->auto_freq = true;
 
 	/* create device node */
 	ret = alloc_chrdev_region(&data->dev_t, 0, 1, name);
@@ -2504,11 +2394,6 @@ static void vcodec_subdev_remove(struct vpu_subdev_data *data)
 	class_destroy(data->cls);
 	cdev_del(&data->cdev);
 	unregister_chrdev_region(data->dev_t, 1);
-
-#ifdef CONFIG_DEBUG_FS
-	if (!IS_ERR_OR_NULL(data->debugfs_dir))
-		debugfs_remove_recursive(data->debugfs_dir);
-#endif
 }
 
 static void vcodec_read_property(struct device_node *np,
@@ -2517,7 +2402,6 @@ static void vcodec_read_property(struct device_node *np,
 	pservice->mode_bit = 0;
 	pservice->mode_ctrl = 0;
 	pservice->subcnt = 0;
-	pservice->grf_base = NULL;
 
 	of_property_read_u32(np, "subcnt", &pservice->subcnt);
 
@@ -2525,25 +2409,13 @@ static void vcodec_read_property(struct device_node *np,
 		of_property_read_u32(np, "mode_bit", &pservice->mode_bit);
 		of_property_read_u32(np, "mode_ctrl", &pservice->mode_ctrl);
 	}
-#ifdef CONFIG_MFD_SYSCON
+
 	pservice->grf = syscon_regmap_lookup_by_phandle(np, "rockchip,grf");
 	if (IS_ERR_OR_NULL(pservice->grf)) {
 		pservice->grf = NULL;
-#ifdef CONFIG_ARM
-		pservice->grf_base = RK_GRF_VIRT;
-#else
 		vpu_err("can't find vpu grf property\n");
 		return;
-#endif
 	}
-#else
-#ifdef CONFIG_ARM
-	pservice->grf_base = RK_GRF_VIRT;
-#else
-	vpu_err("can't find vpu grf property\n");
-	return;
-#endif
-#endif
 
 #ifdef CONFIG_RESET_CONTROLLER
 	pservice->rst_a = devm_reset_control_get(pservice->dev, "video_a");
@@ -2551,6 +2423,10 @@ static void vcodec_read_property(struct device_node *np,
 	pservice->rst_v = devm_reset_control_get(pservice->dev, "video");
 	pservice->rst_niu_a = devm_reset_control_get(pservice->dev, "niu_a");
 	pservice->rst_niu_h = devm_reset_control_get(pservice->dev, "niu_h");
+	pservice->rst_core = devm_reset_control_get(pservice->dev,
+						    "video_core");
+	pservice->rst_cabac = devm_reset_control_get(pservice->dev,
+						     "video_cabac");
 
 	if (IS_ERR_OR_NULL(pservice->rst_a)) {
 		dev_dbg(pservice->dev, "No aclk reset resource define\n");
@@ -2563,7 +2439,7 @@ static void vcodec_read_property(struct device_node *np,
 	}
 
 	if (IS_ERR_OR_NULL(pservice->rst_v)) {
-		dev_dbg(pservice->dev, "No core reset resource define\n");
+		dev_dbg(pservice->dev, "No core rst_v reset resource define\n");
 		pservice->rst_v = NULL;
 	}
 
@@ -2575,6 +2451,16 @@ static void vcodec_read_property(struct device_node *np,
 	if (IS_ERR_OR_NULL(pservice->rst_niu_h)) {
 		dev_dbg(pservice->dev, "No NIU hclk reset resource define\n");
 		pservice->rst_niu_h = NULL;
+	}
+
+	if (IS_ERR_OR_NULL(pservice->rst_core)) {
+		dev_dbg(pservice->dev, "No core reset resource define\n");
+		pservice->rst_core = NULL;
+	}
+
+	if (IS_ERR_OR_NULL(pservice->rst_cabac)) {
+		dev_dbg(pservice->dev, "No cabac reset resource define\n");
+		pservice->rst_cabac = NULL;
 	}
 #endif
 
@@ -2591,6 +2477,7 @@ static void vcodec_init_drvdata(struct vpu_service_info *pservice)
 	INIT_LIST_HEAD(&pservice->running);
 	mutex_init(&pservice->lock);
 	mutex_init(&pservice->shutdown_lock);
+	mutex_init(&pservice->reset_lock);
 	atomic_set(&pservice->service_on, 1);
 
 	INIT_LIST_HEAD(&pservice->done);
@@ -2657,6 +2544,9 @@ static int vcodec_probe(struct platform_device *pdev)
 		dev_err(dev, "unsupported device type\n");
 		return -ENODEV;
 	}
+
+	pservice->secure_isr = false;
+	pservice->secure_irq_status = true;
 
 	if (0 > vpu_get_clk(pservice))
 		goto err;
@@ -2803,7 +2693,6 @@ static struct platform_driver vcodec_driver = {
 	.shutdown = vcodec_shutdown,
 	.driver = {
 		.name = "rk-vcodec",
-		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(vcodec_service_dt_ids),
 	},
 };
@@ -2814,16 +2703,8 @@ static void get_hw_info(struct vpu_subdev_data *data)
 	struct vpu_dec_config *dec = &pservice->dec_config;
 	struct vpu_enc_config *enc = &pservice->enc_config;
 
-	if (of_machine_is_compatible("rockchip,rk2928") ||
-			of_machine_is_compatible("rockchip,rk3036") ||
-			of_machine_is_compatible("rockchip,rk3066") ||
-			of_machine_is_compatible("rockchip,rk3126") ||
-			of_machine_is_compatible("rockchip,rk3188"))
-		dec->max_dec_pic_width = 1920;
-	else
-		dec->max_dec_pic_width = 4096;
-
-	if (data->mode == VCODEC_RUNNING_MODE_VPU) {
+	switch (data->mode) {
+	case VCODEC_RUNNING_MODE_VPU:
 		dec->h264_support = 3;
 		dec->jpeg_support = 1;
 		dec->mpeg4_support = 2;
@@ -2862,12 +2743,26 @@ static void get_hw_info(struct vpu_subdev_data *data)
 
 		pservice->bug_dec_addr = of_machine_is_compatible
 			("rockchip,rk30xx");
-	} else if (data->mode == VCODEC_RUNNING_MODE_RKVDEC) {
+		break;
+	case VCODEC_RUNNING_MODE_RKVDEC:
 		pservice->auto_freq = true;
 		atomic_set(&pservice->freq_status, VPU_FREQ_BUT);
-	} else {
+		break;
+	default:
 		/* disable frequency switch in hevc.*/
 		pservice->auto_freq = false;
+	}
+
+	if (of_machine_is_compatible("rockchip,rk2928") ||
+			of_machine_is_compatible("rockchip,rk3036") ||
+			of_machine_is_compatible("rockchip,rk3066") ||
+			of_machine_is_compatible("rockchip,rk3126") ||
+			of_machine_is_compatible("rockchip,rk3128") ||
+			of_machine_is_compatible("rockchip,rk3188")) {
+		dec->max_dec_pic_width = 1920;
+		pservice->auto_freq = false;
+	} else {
+		dec->max_dec_pic_width = 4096;
 	}
 }
 
@@ -2888,6 +2783,15 @@ static irqreturn_t vdpu_irq(int irq, void *dev_id)
 	u32 hw_id = data->hw_info->hw_id;
 	u32 raw_status;
 	u32 dec_status;
+
+	/* this interrupt can be cleared here, no need in security zone */
+	if (atomic_read(&pservice->secure_mode)) {
+		disable_irq_nosync(data->irq_dec);
+		pservice->secure_isr = true;
+		pservice->secure_irq_status = false;
+		wake_up(pservice->wait_secure_isr);
+		return IRQ_WAKE_THREAD;
+	}
 
 	task = &data->task_info[TASK_DEC];
 
@@ -2955,6 +2859,9 @@ static irqreturn_t vdpu_isr(int irq, void *dev_id)
 	struct vpu_subdev_data *data = (struct vpu_subdev_data *)dev_id;
 	struct vpu_service_info *pservice = data->pservice;
 	struct vpu_device *dev = &data->dec_dev;
+
+	if (atomic_read(&pservice->secure_mode))
+		return IRQ_HANDLED;
 
 	mutex_lock(&pservice->lock);
 	if (atomic_read(&dev->irq_count_codec)) {

@@ -30,6 +30,7 @@ struct rksdmmc_gpio_wifi_moudle {
     bool wifi_power_remain;
     struct rksdmmc_pmu    mregulator;
     struct rksdmmc_pmu    ioregulator;
+    struct rksdmmc_gpio   vbat_n;
     struct rksdmmc_gpio   power_n;  //PMU_EN  
     struct rksdmmc_gpio   reset_n;  //SYSRET_B, DAIRST 
     struct rksdmmc_gpio   vddio;
@@ -49,6 +50,7 @@ enum {
     WIFI_AP6210,
     WIFI_AP6212,
     WIFI_AP6234,
+    WIFI_AP6255,
     WIFI_AP6330,
     WIFI_AP6335,
     WIFI_AP6354,
@@ -62,6 +64,7 @@ enum {
     WIFI_RTL8723BS,
     WIFI_RTL8723BS_VQ0,
     WIFI_RTL8723CS,
+    WIFI_RTL8723DS,
     WIFI_RTL8723BU,
     WIFI_RTL8723AU,
     WIFI_RTL8189ES,

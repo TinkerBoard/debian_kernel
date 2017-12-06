@@ -23,15 +23,17 @@
  *	0:	power on successfully
  *	others: power on failed
  */
+#include <linux/rfkill-wlan.h>
+extern unsigned int oob_irq;
 int platform_wifi_power_on(void)
 {
 	int ret = 0;
 
-
+	oob_irq = rockchip_wifi_get_oob_irq();
 	return ret;
 }
 
 void platform_wifi_power_off(void)
 {
 }
-#endif // !CONFIG_PLATFORM_OPS
+#endif /* !CONFIG_PLATFORM_OPS */

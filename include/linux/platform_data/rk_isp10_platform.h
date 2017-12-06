@@ -47,12 +47,14 @@ enum pltfrm_cam_itf_type {
 	PLTFRM_CAM_ITF_BT601_12 = 0x200000B1,
 	PLTFRM_CAM_ITF_BT656_12 = 0x200000B2,
 	PLTFRM_CAM_ITF_BT601_16 = 0x200000F1,
-	PLTFRM_CAM_ITF_BT656_16 = 0x200000F2
+	PLTFRM_CAM_ITF_BT656_16 = 0x200000F2,
+	PLTFRM_CAM_ITF_BT656_8I = 0x20000172
 };
 
 #define PLTFRM_CAM_ITF_MAIN_MASK   0xf0000000
 #define PLTFRM_CAM_ITF_SUB_MASK    0x0000000f
 #define PLTFRM_CAM_ITF_DVP_BW_MASK 0x000000f0
+#define PLTFRM_CAM_ITF_INTERLACE_MASK	0x00000100
 
 #define PLTFRM_CAM_ITF_IS_MIPI(a)    \
 		(((a) & PLTFRM_CAM_ITF_MAIN_MASK) == 0x10000000)
@@ -64,6 +66,8 @@ enum pltfrm_cam_itf_type {
 		(((a) & PLTFRM_CAM_ITF_SUB_MASK) == 0x01))
 #define PLTFRM_CAM_ITF_DVP_BW(a)    \
 		((((a) & PLTFRM_CAM_ITF_DVP_BW_MASK) >> 4) + 1)
+#define PLTFRM_CAM_ITF_INTERLACE(a)   \
+		(((a) & PLTFRM_CAM_ITF_INTERLACE_MASK) == 0x00000100)
 
 struct pltfrm_cam_mipi_config {
 	u32 dphy_index;
@@ -164,17 +168,18 @@ struct pltfrm_soc_mclk_para {
 
 struct pltfrm_soc_cfg_para {
 	enum pltfrm_soc_cfg_cmd cmd;
+	void **isp_config;
 	void *cfg_para;
 };
 
 struct pltfrm_soc_cfg {
 	char name[32];
+	void *isp_config;
 	int (*soc_cfg)(struct pltfrm_soc_cfg_para *cfg);
 };
 
-int pltfrm_rk3288_cfg(
-		struct pltfrm_soc_cfg_para *cfg);
-int pltfrm_rk3399_cfg(
-		struct pltfrm_soc_cfg_para *cfg);
+int pltfrm_rk3288_cfg(struct pltfrm_soc_cfg_para *cfg);
+int pltfrm_rk3399_cfg(struct pltfrm_soc_cfg_para *cfg);
+
 
 #endif

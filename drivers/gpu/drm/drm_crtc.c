@@ -707,6 +707,9 @@ int drm_crtc_init_with_planes(struct drm_device *dev, struct drm_crtc *crtc,
 	crtc->dev = dev;
 	crtc->funcs = funcs;
 
+	INIT_LIST_HEAD(&crtc->commit_list);
+	spin_lock_init(&crtc->commit_lock);
+
 	drm_modeset_lock_init(&crtc->mutex);
 	ret = drm_mode_object_get(dev, &crtc->base, DRM_MODE_OBJECT_CRTC);
 	if (ret)
@@ -1125,7 +1128,6 @@ int drm_connector_register_all(struct drm_device *dev)
 	return 0;
 
 err:
-	mutex_unlock(&dev->mode_config.mutex);
 	drm_connector_unregister_all(dev);
 	return ret;
 }
@@ -1146,7 +1148,7 @@ void drm_connector_unregister_all(struct drm_device *dev)
 	struct drm_connector *connector;
 
 	/* FIXME: taking the mode config mutex ends up in a clash with sysfs */
-	drm_for_each_connector(connector, dev)
+	list_for_each_entry(connector, &dev->mode_config.connector_list, head)
 		drm_connector_unregister(connector);
 }
 EXPORT_SYMBOL(drm_connector_unregister_all);
@@ -1659,6 +1661,21 @@ static int drm_mode_create_standard_properties(struct drm_device *dev)
 	if (!prop)
 		return -ENOMEM;
 	dev->mode_config.tile_property = prop;
+
+	prop = drm_property_create(dev, DRM_MODE_PROP_BLOB,
+				   "HDR_SOURCE_METADATA", 0);
+
+	if (!prop)
+		return -ENOMEM;
+	dev->mode_config.hdr_source_metadata_property = prop;
+
+	prop = drm_property_create(dev,
+				   DRM_MODE_PROP_BLOB |
+				   DRM_MODE_PROP_IMMUTABLE,
+				   "HDR_PANEL_METADATA", 0);
+	if (!prop)
+		return -ENOMEM;
+	dev->mode_config.hdr_panel_metadata_property = prop;
 
 	prop = drm_property_create_enum(dev, DRM_MODE_PROP_IMMUTABLE,
 					"type", drm_plane_type_enum_list,
@@ -5039,6 +5056,26 @@ int drm_mode_connector_update_edid_property(struct drm_connector *connector,
 }
 EXPORT_SYMBOL(drm_mode_connector_update_edid_property);
 
+int
+drm_mode_connector_update_hdr_property(struct drm_connector *connector,
+				       const struct hdr_static_metadata *data)
+{
+	struct drm_device *dev = connector->dev;
+	size_t size = sizeof(*data);
+	struct drm_property *property =
+			dev->mode_config.hdr_panel_metadata_property;
+	int ret;
+
+	ret = drm_property_replace_global_blob(dev,
+					       &connector->hdr_panel_blob_ptr,
+					       size,
+					       data,
+					       &connector->base,
+					       property);
+	return ret;
+}
+EXPORT_SYMBOL(drm_mode_connector_update_hdr_property);
+
 /* Some properties could refer to dynamic refcnt'd objects, or things that
  * need special locking to handle lifetime issues (ie. to ensure the prop
  * value doesn't become invalid part way through the property update due to
@@ -5573,7 +5610,6 @@ int drm_mode_page_flip_ioctl(struct drm_device *dev,
 	struct drm_crtc *crtc;
 	struct drm_framebuffer *fb = NULL;
 	struct drm_pending_vblank_event *e = NULL;
-	unsigned long flags;
 	int ret = -EINVAL;
 
 	if (!drm_core_check_feature(dev, DRIVER_MODESET))
@@ -5627,41 +5663,26 @@ int drm_mode_page_flip_ioctl(struct drm_device *dev,
 	}
 
 	if (page_flip->flags & DRM_MODE_PAGE_FLIP_EVENT) {
-		ret = -ENOMEM;
-		spin_lock_irqsave(&dev->event_lock, flags);
-		if (file_priv->event_space < sizeof(e->event)) {
-			spin_unlock_irqrestore(&dev->event_lock, flags);
+		e = kzalloc(sizeof *e, GFP_KERNEL);
+		if (!e) {
+			ret = -ENOMEM;
 			goto out;
 		}
-		file_priv->event_space -= sizeof(e->event);
-		spin_unlock_irqrestore(&dev->event_lock, flags);
-
-		e = kzalloc(sizeof(*e), GFP_KERNEL);
-		if (e == NULL) {
-			spin_lock_irqsave(&dev->event_lock, flags);
-			file_priv->event_space += sizeof(e->event);
-			spin_unlock_irqrestore(&dev->event_lock, flags);
-			goto out;
-		}
-
 		e->event.base.type = DRM_EVENT_FLIP_COMPLETE;
 		e->event.base.length = sizeof(e->event);
 		e->event.user_data = page_flip->user_data;
-		e->base.event = &e->event.base;
-		e->base.file_priv = file_priv;
-		e->base.destroy =
-			(void (*) (struct drm_pending_event *)) kfree;
+		ret = drm_event_reserve_init(dev, file_priv, &e->base, &e->event.base);
+		if (ret) {
+			kfree(e);
+			goto out;
+		}
 	}
 
 	crtc->primary->old_fb = crtc->primary->fb;
 	ret = crtc->funcs->page_flip(crtc, fb, e, page_flip->flags);
 	if (ret) {
-		if (page_flip->flags & DRM_MODE_PAGE_FLIP_EVENT) {
-			spin_lock_irqsave(&dev->event_lock, flags);
-			file_priv->event_space += sizeof(e->event);
-			spin_unlock_irqrestore(&dev->event_lock, flags);
-			kfree(e);
-		}
+		if (page_flip->flags & DRM_MODE_PAGE_FLIP_EVENT)
+			drm_event_cancel_free(dev, &e->base);
 		/* Keep the old fb, don't unref it. */
 		crtc->primary->old_fb = NULL;
 	} else {

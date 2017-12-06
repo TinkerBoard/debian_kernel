@@ -1154,6 +1154,8 @@ int cif_isp10_pltfrm_dev_init(
 	struct iommu_domain *domain;
 	struct iommu_group *group;
 	struct device_node *np;
+	struct device_node *of_node = pdev->dev.of_node;
+	const char *compatible;
 	int err = 0;
 #endif
 
@@ -1175,6 +1177,7 @@ int cif_isp10_pltfrm_dev_init(
 		ret = -ENODEV;
 		goto err;
 	}
+
 	base_addr = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR_OR_NULL(base_addr)) {
 		cif_isp10_pltfrm_pr_err(NULL, "devm_ioremap_resource failed\n");
@@ -1241,7 +1244,13 @@ int cif_isp10_pltfrm_dev_init(
 		pdata->irq_handlers[i].mis = -EINVAL;
 
 #ifdef CIF_ISP10_MODE_DMA_SG
-		np = of_find_node_by_name(NULL, "isp_mmu");
+		of_property_read_string(of_node, "compatible", &compatible);
+		if ((strcmp(compatible, "rockchip,rk3399-cif-isp") == 0) &&
+			(res->start == 0xFF920000)) {
+			np = of_find_node_by_name(NULL, "isp1_mmu");
+		} else {
+			np = of_find_node_by_name(NULL, "isp0_mmu");
+		}
 		if (!np) {
 			int index = 0;
 			/* iommu domain */
@@ -1275,7 +1284,7 @@ int cif_isp10_pltfrm_dev_init(
 
 			cif_isp10_drm_iommu_cb(&pdev->dev, cif_isp10_dev, true);
 		} else {
-			//cif_isp10_mrv_iommu_cb();
+			/*cif_isp10_mrv_iommu_cb();*/
 		}
 #endif
 
@@ -1357,11 +1366,13 @@ int cif_isp10_pltfrm_soc_init(
 	if (!IS_ERR_OR_NULL(soc_cfg) && !IS_ERR_OR_NULL(soc_cfg->soc_cfg)) {
 		cfg_para.cmd = PLTFRM_SOC_INIT;
 		cfg_para.cfg_para = &init_para;
+		cfg_para.isp_config = &(soc_cfg->isp_config);
 		init_para.pdev = pdev;
 		init_para.isp_base = cif_isp10_dev->config.base_addr;
 		ret = soc_cfg->soc_cfg(&cfg_para);
 		if (ret == 0)
-			cif_isp10_dev->soc_cfg = soc_cfg;
+			memcpy(&(cif_isp10_dev->soc_cfg), soc_cfg, sizeof(*soc_cfg));
+
 	}
 
 	return ret;
@@ -1374,13 +1385,14 @@ int cif_isp10_pltfrm_mipi_dphy_config(
 	struct pltfrm_soc_cfg *soc_cfg;
 	int ret = 0;
 
-	soc_cfg = cif_isp10_dev->soc_cfg;
+	soc_cfg = &(cif_isp10_dev->soc_cfg);
 	if (!IS_ERR_OR_NULL(soc_cfg) &&
 		!IS_ERR_OR_NULL(soc_cfg->soc_cfg)) {
 		cfg_para.cmd =
 			PLTFRM_MIPI_DPHY_CFG;
 		cfg_para.cfg_para =
 			(void *)(&cif_isp10_dev->config.cam_itf.cfg.mipi);
+		cfg_para.isp_config = &(soc_cfg->isp_config);
 		ret = soc_cfg->soc_cfg(&cfg_para);
 	}
 
@@ -1393,7 +1405,7 @@ int cif_isp10_pltfrm_pm_set_state(
 {
 	int ret;
 	struct cif_isp10_device *cif_isp10_dev = dev_get_drvdata(dev);
-	struct pltfrm_soc_cfg *soc_cfg = cif_isp10_dev->soc_cfg;
+	struct pltfrm_soc_cfg *soc_cfg = &(cif_isp10_dev->soc_cfg);
 	struct pltfrm_soc_cfg_para cfg_para;
 
 	switch (pm_state) {
@@ -1401,12 +1413,14 @@ int cif_isp10_pltfrm_pm_set_state(
 	case CIF_ISP10_PM_STATE_SUSPENDED:
 		cfg_para.cmd = PLTFRM_CLKDIS;
 		cfg_para.cfg_para = NULL;
+		cfg_para.isp_config = &(soc_cfg->isp_config);
 		ret = soc_cfg->soc_cfg(&cfg_para);
 		break;
 	case CIF_ISP10_PM_STATE_SW_STNDBY:
 	case CIF_ISP10_PM_STATE_STREAMING:
 		cfg_para.cmd = PLTFRM_CLKEN;
 		cfg_para.cfg_para = NULL;
+		cfg_para.isp_config = &(soc_cfg->isp_config);
 		ret = soc_cfg->soc_cfg(&cfg_para);
 		break;
 	default:
@@ -1641,7 +1655,7 @@ int cif_isp10_pltfrm_get_img_src_device(
 		img_src_array[num_cameras] =
 			cif_isp10_img_src_to_img_src(
 				&client->dev,
-				cif_isp10_dev->soc_cfg);
+				&(cif_isp10_dev->soc_cfg));
 		if (!IS_ERR_OR_NULL(img_src_array[num_cameras])) {
 			cif_isp10_pltfrm_pr_info(dev,
 				"%s attach to cif isp10 img_src_array[%d]\n",

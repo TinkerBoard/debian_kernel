@@ -31,12 +31,10 @@
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
 #include <linux/gpio.h>
-#include <linux/rockchip/iomap.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <linux/skbuff.h>
 #include <linux/fb.h>
 #include <linux/rockchip/grf.h>
-#include <linux/rockchip/common.h>
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
 #include <linux/mmc/host.h>
@@ -115,7 +113,9 @@ int get_wifi_chip_type(void)
     } else if (strcmp(wifi_chip_type_string, "ap6181") == 0) {
         type = WIFI_AP6181;
     } else if (strcmp(wifi_chip_type_string, "ap6234") == 0) {
-        type = WIFI_AP6234;                            
+	type = WIFI_AP6234;
+    } else if (strcmp(wifi_chip_type_string, "ap6255") == 0) {
+	type = WIFI_AP6255;
     } else if (strcmp(wifi_chip_type_string, "ap6330") == 0) {
         type = WIFI_AP6330;
     } else if (strcmp(wifi_chip_type_string, "ap6335") == 0) {
@@ -140,6 +140,8 @@ int get_wifi_chip_type(void)
         type = WIFI_RTL8723BS;
     } else if (strcmp(wifi_chip_type_string, "rtl8723cs") == 0) {
 	type = WIFI_RTL8723CS;
+    } else if (strcmp(wifi_chip_type_string, "rtl8723ds") == 0) {
+	type = WIFI_RTL8723DS;
     } else if (strcmp(wifi_chip_type_string, "rtl8723au") == 0) {
         type = WIFI_RTL8723AU;        
     } else if (strcmp(wifi_chip_type_string, "rtl8723bu") == 0) {
@@ -454,7 +456,14 @@ u8 wifi_custom_mac_addr[6] = {0,0,0,0,0,0};
 static int get_wifi_addr_vendor(unsigned char *addr)
 {
 	int ret;
+	int count = 5;
 
+	while (count-- > 0) {
+		if (is_rk_vendor_ready())
+			break;
+		/* sleep 500ms wait rk vendor driver ready */
+		msleep(500);
+	}
 	ret = rk_vendor_read(WIFI_MAC_ID, addr, 6);
 	if (ret != 6 || is_zero_ether_addr(addr)) {
 		LOG("%s: rk_vendor_read wifi mac address failed (%d)\n",
@@ -626,6 +635,14 @@ static int wlan_platdata_parse_dt(struct device *dev,
 			data->power_n.enable = (flags == GPIO_ACTIVE_HIGH)? 1:0;
 			LOG("%s: get property: WIFI,poweren_gpio = %d, flags = %d.\n", __func__, gpio, flags);
         } else data->power_n.io = -1;
+	gpio = of_get_named_gpio_flags(node, "WIFI,vbat_gpio", 0, &flags);
+	if (gpio_is_valid(gpio)) {
+			data->vbat_n.io = gpio;
+			data->vbat_n.enable = (flags == GPIO_ACTIVE_HIGH) ? 1:0;
+			LOG("%s: get property: WIFI,vbat_gpio = %d, flags = %d.\n", __func__, gpio, flags);
+	} else {
+		data->vbat_n.io = -1;
+	}
         gpio = of_get_named_gpio_flags(node, "WIFI,reset_gpio", 0, &flags);
         if (gpio_is_valid(gpio)){
 			data->reset_n.io = gpio;
@@ -743,15 +760,24 @@ static int rfkill_wlan_probe(struct platform_device *pdev)
     LOG("%s: init gpio\n", __func__);
 
     if (!pdata->mregulator.power_ctrl_by_pmu) {
+	ret = rfkill_rk_setup_gpio(&pdata->vbat_n, wlan_name, "wlan_vbat");
+	if (ret)
+		goto fail_alloc;
+
         ret = rfkill_rk_setup_gpio(&pdata->power_n, wlan_name, "wlan_poweren");
-        if (ret) goto fail_alloc;
+	if (ret)
+		goto fail_alloc;
 
         ret = rfkill_rk_setup_gpio(&pdata->reset_n, wlan_name, "wlan_reset");
-        if (ret) goto fail_alloc;
+	if (ret)
+		goto fail_alloc;
     }
 
     wake_lock_init(&(rfkill->wlan_irq_wl), WAKE_LOCK_SUSPEND, "rfkill_wlan_wake");
 
+    if (gpio_is_valid(pdata->vbat_n.io)) {
+	gpio_direction_output(pdata->vbat_n.io, pdata->vbat_n.enable);
+    }
     // Turn off wifi power as default
     if (gpio_is_valid(pdata->power_n.io))
     {

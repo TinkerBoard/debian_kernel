@@ -111,6 +111,8 @@
 
 	wireless-bluetooth {
 		compatible = "bluetooth-platdata";
+		clocks = <&rk808 1>;
+		clock-names = "ext_clock";
 		//wifi-bt-power-toggle;
 		uart_rts_gpios = <&gpio2 19 GPIO_ACTIVE_LOW>; /* GPIO2_C3 */
 		pinctrl-names = "default", "rts_gpio";
@@ -143,6 +145,8 @@
 		reg = <0x1a>;
 		clocks = <&cru SCLK_I2S_8CH_OUT>;
 		clock-names = "mclk";
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2s_8ch_mclk>;
 		spk-con-gpio = <&gpio0 11 GPIO_ACTIVE_HIGH>;
 		hp-det-gpio = <&gpio4 28 GPIO_ACTIVE_LOW>;
 	};
@@ -166,6 +170,13 @@
 		orientation-z= <0>;
 		mpu-debug = <1>;
 	};
+};
+
+&pcie0 {
+	ep-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>;
+	num-lanes = <4>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie_clkreqn>;
 };
 
 &uart0 {

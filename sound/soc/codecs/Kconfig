@@ -68,6 +68,8 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_ES8323 if I2C
 	select SND_SOC_ES8328_SPI if SPI_MASTER
 	select SND_SOC_ES8328_I2C if I2C
+	select SND_SOC_ES8396 if I2C
+	select SND_SOC_FM1288 if I2C
 	select SND_SOC_GTM601
 	select SND_SOC_ICS43432
 	select SND_SOC_ISABELLE if I2C
@@ -92,6 +94,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_PCM5102A
 	select SND_SOC_PCM512x_I2C if I2C
 	select SND_SOC_PCM512x_SPI if SPI_MASTER
+	select SND_SOC_RK1000 if I2C
 	select SND_SOC_RK3328
 	select SND_SOC_RT286 if I2C
 	select SND_SOC_RT298 if I2C
@@ -495,11 +498,22 @@ config SND_SOC_ES8328_SPI
 	tristate
 	select SND_SOC_ES8328
 
+config SND_SOC_ES8396
+	tristate "Everest Semi ES8396 CODEC"
+
 config SND_SOC_GTM601
 	tristate 'GTM601 UMTS modem audio codec'
 
+config SND_SOC_GVA_CODEC
+	tristate "gva codec"
+
 config SND_SOC_ICS43432
 	tristate
+
+config SND_SOC_FM1288
+	tristate "Voice Processor support for FM1288"
+	help
+	  Say Y if you want to add support for Voice Processor FM1288.
 
 config SND_SOC_ISABELLE
         tristate
@@ -553,6 +567,14 @@ config SND_SOC_PCM512x_SPI
 	depends on SPI_MASTER
 	select SND_SOC_PCM512x
 	select REGMAP_SPI
+
+config SND_SOC_RK1000
+	tristate "Rockchip RK1000 CODEC"
+	depends on MFD_RK1000
+
+config SND_SOC_RK312X
+	select REGMAP_MMIO
+	tristate "Rockchip RK312X CODEC"
 
 config SND_SOC_RK3328
 	select REGMAP_MMIO

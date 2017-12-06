@@ -92,6 +92,12 @@
 			reg = <0x0 0x0 0x0 0x0>;
 		};
 
+		secure_memory: secure-memory@e7000000 {
+			compatible = "rockchip,secure-memory";
+			reg = <0x0 0xe7000000 0x0 0x10000000>;
+			status = "disabled";
+		};
+
 		stb_devinfo: stb-devinfo@00000000 {
 			compatible = "rockchip,stb-devinfo";
 			reg = <0x0 0x0 0x0 0x0>;
@@ -283,7 +289,8 @@
 	status = "okay";
 
 	ports = <&vopb_out>, <&vopl_out>;
-	memory-region = <&drm_logo>;
+	logo-memory-region = <&drm_logo>;
+	secure-memory-region = <&secure_memory>;
 	route {
 		route_hdmi: route-hdmi {
 			status = "disabled";
@@ -294,13 +301,22 @@
 			connect = <&vopb_out_hdmi>;
 		};
 
-		route_mipi: route-mipi {
+		route_dsi: route-dsi {
 			status = "disabled";
 			logo,uboot = "logo.bmp";
 			logo,kernel = "logo_kernel.bmp";
 			logo,mode = "fullscreen";
 			charge_logo,mode = "center";
-			connect = <&vopb_out_mipi>;
+			connect = <&vopb_out_dsi>;
+		};
+
+		route_dsi1: route-dsi1 {
+			status = "disabled";
+			logo,uboot = "logo.bmp";
+			logo,kernel = "logo_kernel.bmp";
+			logo,mode = "fullscreen";
+			charge_logo,mode = "center";
+			connect = <&vopl_out_dsi1>;
 		};
 
 		route_edp: route-edp {
@@ -336,6 +352,10 @@
 };
 
 &vpu {
+	status = "okay";
+};
+
+&pvtm {
 	status = "okay";
 };
 

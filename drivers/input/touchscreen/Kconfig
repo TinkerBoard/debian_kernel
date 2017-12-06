@@ -153,6 +153,15 @@ config TOUCHSCREEN_CHIPONE_ICN8318
 	  To compile this driver as a module, choose M here: the
 	  module will be called chipone_icn8318.
 
+config TOUCHSCREEN_CY8C40XX
+	tristate "cy8c40xx touchpad based on IIC"
+	depends on I2C || GPIOLIB
+	help
+	  Say Y here if you have a cy8c40xx capacitive touchpad.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cy8c_touchpad
+
 config TOUCHSCREEN_CY8CTMG110
 	tristate "cy8ctmg110 touchscreen"
 	depends on I2C
@@ -335,6 +344,11 @@ config TOUCHSCREEN_GOODIX
 	  To compile this driver as a module, choose M here: the
 	  module will be called goodix.
 
+config TOUCHSCREEN_GSLX680_D708
+	tristate "gslX680 d708 touchpad driver for rk3126 pad"
+	help
+	  gslX680 d708 touchpad driver for RK3126 pad
+
 config TOUCHSCREEN_GSLX680_PAD
 	tristate "gslX680 touchpad driver for pad"
 	help
@@ -344,6 +358,11 @@ config TOUCHSCREEN_GSLX680_VR
 	tristate "gslX680 touchpad driver for VR"
 	help
 	  gslX680 touchpad driver for VR
+
+config TOUCHSCREEN_GSLX680_FIREFLY
+	tristate "gslX680 touchpad driver for firefly-rk3288"
+	help
+	  gslX680 touchpad driver for firefly-rk3288
 
 config TOUCHSCREEN_GSL3673
 	tristate "gsl3673 touchpad driver for evb"
@@ -1130,10 +1149,7 @@ config TOUCHSCREEN_ROHM_BU21023
 	  To compile this driver as a module, choose M here: the
 	  module will be called bu21023_ts.
 
-config TOUCHSCREEN_TINKER_FT5406
-	tristate "tinker ft5406"
-	default y
-	depends on I2C
-	help
-	  Control ft5406 touch ic.
+config TOUCHSCREEN_VTL_CT36X
+	tristate "VTL touchscreens support"
+
 endif
