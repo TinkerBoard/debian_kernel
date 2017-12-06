@@ -1272,26 +1272,6 @@ static int rk_iommu_probe(struct platform_device *pdev)
 		clk_prepare(iommu->hclk);
 	}
 
-
-	iommu->reset_disabled = device_property_read_bool(dev,
-				"rk_iommu,disable_reset_quirk");
-
-	iommu->aclk = devm_clk_get(dev, "aclk");
-	if (IS_ERR(iommu->aclk)) {
-		dev_info(dev, "can't get aclk\n");
-		iommu->aclk = NULL;
-	}
-
-	iommu->hclk = devm_clk_get(dev, "hclk");
-	if (IS_ERR(iommu->hclk)) {
-		dev_info(dev, "can't get hclk\n");
-		iommu->hclk = NULL;
-	}
-
-	if (iommu->aclk && iommu->hclk) {
-		clk_prepare(iommu->aclk);
-		clk_prepare(iommu->hclk);
-	}
 	pm_runtime_enable(iommu->dev);
 	pm_runtime_get_sync(iommu->dev);
 	list_add(&iommu->dev_node, &iommu_dev_list);
