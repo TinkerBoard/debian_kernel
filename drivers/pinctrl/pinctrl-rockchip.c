@@ -2119,7 +2119,7 @@ static int _rockchip_pmx_gpio_set_direction(struct gpio_chip *chip,
 		data &= ~BIT(pin);
 	#ifdef CONFIG_I2S_SHORT
 	/* For pin 185 and 186 are shorted. */
-	if (bank->pin_base + pin == 185) 
+	if (gpio_pin == 185) 
 		data &= ~BIT(2);
 	#endif
 	writel_relaxed(data, bank->reg_base + GPIO_SWPORT_DDR);
