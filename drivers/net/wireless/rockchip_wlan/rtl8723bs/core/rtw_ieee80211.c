@@ -23,7 +23,7 @@
 #include <linux/fs.h>
 #endif 
 #include <drv_types.h>
-#include <linux/rfkill-wlan.h>
+
 
 u8 RTW_WPA_OUI_TYPE[] = { 0x00, 0x50, 0xf2, 1 };
 u16 RTW_WPA_VERSION = 1;
@@ -1517,10 +1517,6 @@ void rtw_macaddr_cfg(u8 *out, const u8 *hw_mac_addr)
 	}
 
 err_chk:
-    if (!rockchip_wifi_mac_addr(mac)) {
-		printk("get mac address from flash=[%02x:%02x:%02x:%02x:%02x:%02x]\n", mac[0], mac[1],
-		mac[2], mac[3], mac[4], mac[5]);
-	}
 	if (rtw_check_invalid_mac_address(mac, _TRUE) == _TRUE) {
 		#if DEFAULT_RANDOM_MACADDR
 		DBG_871X_LEVEL(_drv_err_, "invalid mac addr:"MAC_FMT", assign random MAC\n", MAC_ARG(mac));

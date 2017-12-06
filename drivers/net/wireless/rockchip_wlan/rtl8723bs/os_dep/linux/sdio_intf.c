@@ -69,9 +69,9 @@ static const struct sdio_device_id sdio_ids[] =
 	{SDIO_DEVICE(0x024c, 0xF179), .driver_data = RTL8188F},
 #endif
 
-#if defined(RTW_ENABLE_WIFI_CONTROL_FUNC) /* temporarily add this to accept all sdio wlan id */
+//#if defined(RTW_ENABLE_WIFI_CONTROL_FUNC) /* temporarily add this to accept all sdio wlan id */
 	{ SDIO_DEVICE_CLASS(SDIO_CLASS_WLAN) },
-#endif
+//#endif
 	{ /* end: all zeroes */				},
 };
 
@@ -973,7 +973,7 @@ static int rtw_sdio_resume(struct device *dev)
 
 }
 
-static int rtw_drv_entry(void)
+static int __init rtw_drv_entry(void)
 {
 	int ret = 0;
 
@@ -1020,7 +1020,7 @@ exit:
 	return ret;
 }
 
-static void rtw_drv_halt(void)
+static void __exit rtw_drv_halt(void)
 {
 	DBG_871X_LEVEL(_drv_always_, "module exit start\n");
 
@@ -1056,58 +1056,6 @@ int rtw_sdio_set_power(int on)
 }
 #endif //CONFIG_PLATFORM_INTEL_BYT
 
-#include <linux/rfkill-wlan.h>
-extern int get_wifi_chip_type(void);
-extern int rockchip_wifi_power(int on);
-extern int rockchip_wifi_set_carddetect(int val);
-
-int rockchip_wifi_init_module_rtkwifi(void)
-{
-#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
-    int type = get_wifi_chip_type();
-    if (type < WIFI_AP6XXX_SERIES || type == WIFI_ESP8089) return 0;
-#endif
-    printk("\n");
-    printk("=======================================================\n");
-    printk("==== Launching Wi-Fi driver! (Powered by Rockchip) ====\n");
-    printk("=======================================================\n");
-    printk("Realtek 8723BS SDIO WiFi driver (Powered by Rockchip,Ver %s) init.\n", DRIVERVERSION);
-
-    rockchip_wifi_power(1);
-    rockchip_wifi_set_carddetect(1);
-
-    return rtw_drv_entry();
-}
-
-void rockchip_wifi_exit_module_rtkwifi(void)
-{
-#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
-    int type = get_wifi_chip_type();
-    if (type < WIFI_AP6XXX_SERIES || type == WIFI_ESP8089) return;
-#endif
-    printk("\n");
-    printk("=======================================================\n");
-    printk("==== Dislaunching Wi-Fi driver! (Powered by Rockchip) ====\n");
-    printk("=======================================================\n");
-    printk("Realtek 8723BS SDIO WiFi driver (Powered by Rockchip,Ver %s) init.\n", DRIVERVERSION);
-
-    rtw_drv_halt();
-
-    rockchip_wifi_set_carddetect(0);
-    rockchip_wifi_power(0);
-}
-#ifdef CONFIG_WIFI_BUILD_MODULE
-module_init(rockchip_wifi_init_module_rtkwifi);
-module_exit(rockchip_wifi_exit_module_rtkwifi);
-#else
-#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
-late_initcall(rockchip_wifi_init_module_rtkwifi);
-module_exit(rockchip_wifi_exit_module_rtkwifi);
-#else
-EXPORT_SYMBOL(rockchip_wifi_init_module_rtkwifi);
-EXPORT_SYMBOL(rockchip_wifi_exit_module_rtkwifi);
-#endif
-#endif
-//module_init(rtw_drv_entry);
-//module_exit(rtw_drv_halt);
+module_init(rtw_drv_entry);
+module_exit(rtw_drv_halt);
 

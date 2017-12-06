@@ -95,7 +95,7 @@ void* wl_android_prealloc(int section, unsigned long size);
 int wifi_get_irq_number(unsigned long *irq_flags_ptr);
 int wifi_set_power(int on, unsigned long msec);
 int wifi_get_mac_addr(unsigned char *buf);
-void *wifi_get_country_code(char *ccode, u32 flags);
+void *wifi_get_country_code(char *ccode);
 #else
 static int rtw_android_wifictrl_func_add(void) { return 0; }
 static void rtw_android_wifictrl_func_del(void) {}
