@@ -1079,16 +1079,13 @@ static int rockchip_set_mux(struct rockchip_pin_bank *bank, int pin, int mux)
 		}
 	}
 	#ifdef CONFIG_I2S_SHORT
-	if(bank->bank_num == 6 && (pin == 1 || pin == 2))
-	{
+	if(bank->bank_num == 6 && (pin == 1 || pin == 2)) {
 		mask = 0xf;
 		bit = 1 * 2;
 		data = (mask << (bit + 16));
 		rmask = data | (data >> 16);
 		data |= (((mux << 2) | mux) & mask) << bit;
-	}
-	else
-	{
+	} else {
 		data = (mask << (bit + 16));
 		rmask = data | (data >> 16);
 		data |= (mux & mask) << bit;
@@ -1889,7 +1886,7 @@ static int rockchip_set_pull(struct rockchip_pin_bank *bank,
 	u8 bit;
 	u32 data, rmask;
 	#ifdef CONFIG_I2S_SHORT
-	/* For pin 185 and 186 are shorted. */
+	/* For GPIO 185 and 186 are shorted. */
 	if(bank->bank_num == 6 && pin_num == 2) 
 		pull = PIN_CONFIG_BIAS_DISABLE;
 	#endif
@@ -2098,7 +2095,7 @@ static int _rockchip_pmx_gpio_set_direction(struct gpio_chip *chip,
 	if (ret < 0)
 		return ret;
 	#ifdef CONFIG_I2S_SHORT
-	/* For pin 185 and 186 are shorted. */
+	/* For GPIO 185 and 186 are shorted. */
 	gpio_pin = bank->pin_base + pin;
 	if (gpio_pin == 185 || gpio_pin == 186) {
 		ret = rockchip_set_pull(bank, 2, PIN_CONFIG_BIAS_DISABLE);
@@ -2118,7 +2115,7 @@ static int _rockchip_pmx_gpio_set_direction(struct gpio_chip *chip,
 	else
 		data &= ~BIT(pin);
 	#ifdef CONFIG_I2S_SHORT
-	/* For pin 185 and 186 are shorted. */
+	/* For GPIO 185 and 186 are shorted. */
 	if (gpio_pin == 185) 
 		data &= ~BIT(2);
 	#endif
