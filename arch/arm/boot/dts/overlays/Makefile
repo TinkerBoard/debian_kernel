@@ -9,6 +9,8 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	iqaudio-dac.dtbo \
 	iqaudio-dacplus.dtbo \
 	iqaudio-digi-wm8804-audio.dtbo \
+	justboom-dac.dtbo \
+	justboom-digi.dtbo \
 	waveshare35a-tinker.dtbo \
 	waveshare32b-tinker.dtbo \
 	pps-gpio.dtbo \
