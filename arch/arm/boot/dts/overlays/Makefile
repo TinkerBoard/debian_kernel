@@ -4,7 +4,9 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	hifiberry-amp.dtbo \
 	hifiberry-dac.dtbo \
 	hifiberry-dacplus.dtbo \
+	hifiberry-digi.dtbo \
 	iqaudio-dacplus.dtbo \
+	iqaudio-digi-wm8804-audio.dtbo \
 	waveshare35a-tinker.dtbo \
 	waveshare32b-tinker.dtbo \
 	pps-gpio.dtbo \

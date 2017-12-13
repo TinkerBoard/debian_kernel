@@ -12,15 +12,12 @@
 	};
 
 	fragment@1 {
-		target = <&i2s>;
-		__overlay__ {
-			rockchip,xfer-mode = <1>;
-		};
-	};
-
-	fragment@2 {
 		target = <&i2c1>;
 		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
 			tas5713@1b {
 				#sound-dai-cells = <0>;
 				compatible = "ti,tas5713";
@@ -30,7 +27,7 @@
 		};
 	};
 
-	fragment@3 {
+	fragment@2 {
 		target-path = "/sound-ext-card";
 		__overlay__ {
 			compatible = "hifiberry,hifiberry-amp";

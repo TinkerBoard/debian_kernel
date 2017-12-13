@@ -19,7 +19,9 @@ snd-soc-rockchip-cdndp-objs := rockchip_cdndp.o
 snd-soc-hifiberry-amp-objs := hifiberry_amp.o
 snd-soc-hifiberry-dac-objs := hifiberry_dac.o
 snd-soc-hifiberry-dacplus-objs := hifiberry_dacplus.o
+snd-soc-hifiberry-digi-objs := hifiberry_digi.o
 snd-soc-iqaudio-dac-objs := iqaudio-dac.o
+snd-soc-iqaudio-digi-objs := iqaudio-digi.o
 
 obj-$(CONFIG_SND_SOC_ROCKCHIP_DA7219) += snd-soc-rockchip-da7219.o
 obj-$(CONFIG_SND_SOC_ROCKCHIP_HDMI_ANALOG) += snd-soc-rockchip-hdmi-analog.o
@@ -31,4 +33,6 @@ obj-$(CONFIG_SND_SOC_ROCKCHIP_CDNDP) += snd-soc-rockchip-cdndp.o
 obj-$(CONFIG_SND_SOC_HIFIBERRY_AMP) += snd-soc-hifiberry-amp.o
 obj-$(CONFIG_SND_SOC_HIFIBERRY_DAC) += snd-soc-hifiberry-dac.o
 obj-$(CONFIG_SND_SOC_HIFIBERRY_DACPLUS) += snd-soc-hifiberry-dacplus.o
+obj-$(CONFIG_SND_SOC_HIFIBERRY_DIGI) += snd-soc-hifiberry-digi.o
 obj-$(CONFIG_SND_SOC_IQAUDIO_DAC) += snd-soc-iqaudio-dac.o
+obj-$(CONFIG_SND_SOC_IQAUDIO_DIGI) += snd-soc-iqaudio-digi.o

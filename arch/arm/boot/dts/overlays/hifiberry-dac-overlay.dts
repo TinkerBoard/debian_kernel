@@ -12,13 +12,6 @@
 	};
 
 	fragment@1 {
-		target = <&i2s>;
-		__overlay__ {
-			rockchip,xfer-mode = <1>;
-		};
-	};
-
-	fragment@2 {
 		target-path = "/";
 		__overlay__ {
 			pcm5102a-codec {
@@ -29,7 +22,7 @@
 		};
 	};
 
-	fragment@3 {
+	fragment@2 {
 		target-path = "/sound-ext-card";
 		__overlay__ {
 			compatible = "hifiberry,hifiberry-dac";
