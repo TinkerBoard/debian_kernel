@@ -293,6 +293,46 @@ static const struct dw_hdmi_mpll_config rockchip_mpll_cfg[] = {
 	}
 };
 
+static const struct dw_hdmi_mpll_config rockchip_mpll_cfg_420[] = {
+	{
+		30666000, {
+			{ 0x00b7, 0x0000 },
+			{ 0x2157, 0x0000 },
+			{ 0x40f7, 0x0000 },
+		},
+	},  {
+		92000000, {
+			{ 0x00b7, 0x0000 },
+			{ 0x2143, 0x0001 },
+			{ 0x40a3, 0x0001 },
+		},
+	},  {
+		184000000, {
+			{ 0x0073, 0x0001 },
+			{ 0x2146, 0x0002 },
+			{ 0x4062, 0x0002 },
+		},
+	},  {
+		340000000, {
+			{ 0x0052, 0x0003 },
+			{ 0x214d, 0x0003 },
+			{ 0x4065, 0x0003 },
+		},
+	},  {
+		600000000, {
+			{ 0x0041, 0x0003 },
+			{ 0x3b4d, 0x0003 },
+			{ 0x5a65, 0x0003 },
+		},
+	},  {
+		~0UL, {
+			{ 0x0000, 0x0000 },
+			{ 0x0000, 0x0000 },
+			{ 0x0000, 0x0000 },
+		},
+	}
+};
+
 static const struct dw_hdmi_curr_ctrl rockchip_cur_ctr[] = {
 	/*      pixelclk    bpp8    bpp10   bpp12 */
 	{
@@ -617,6 +657,8 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 	struct hdr_static_metadata *hdr_metadata;
 	u32 vic = drm_match_cea_mode(mode);
 	unsigned long tmdsclock, pixclock = mode->crtc_clock;
+	bool support_dc = false;
+	u32 max_tmds_clock = info->max_tmds_clock;
 
 	*color_format = DRM_HDMI_OUTPUT_DEFAULT_RGB;
 
@@ -657,21 +699,22 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 		break;
 	}
 
+	if (*color_format == DRM_HDMI_OUTPUT_DEFAULT_RGB &&
+	    info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_30)
+		support_dc = true;
 	if (*color_format == DRM_HDMI_OUTPUT_YCBCR444 &&
-	    !(info->edid_hdmi_dc_modes & DRM_EDID_HDMI_DC_Y444))
-		*color_depth = 8;
-	else if (!hdmi->colordepth)
-		*color_depth = info->bpc;
-	else
-		*color_depth = hdmi->colordepth;
+	    info->edid_hdmi_dc_modes & (DRM_EDID_HDMI_DC_Y444 | DRM_EDID_HDMI_DC_30))
+		support_dc = true;
+	if (*color_format == DRM_HDMI_OUTPUT_YCBCR422)
+		support_dc = true;
+	if (*color_format == DRM_HDMI_OUTPUT_YCBCR420 &&
+	    info->hdmi.y420_dc_modes & DRM_EDID_YCBCR420_DC_30)
+		support_dc = true;
 
-	/* Color depth on rockchip platform is limited up to 10bit */
-	if (*color_depth > 10) {
+	if (hdmi->colordepth > 8 && support_dc)
 		*color_depth = 10;
-		if (*color_format == DRM_HDMI_OUTPUT_YCBCR420 &&
-		    !(info->hdmi.y420_dc_modes & DRM_EDID_YCBCR420_DC_30))
-			*color_depth = 8;
-	}
+	else
+		*color_depth = 8;
 
 	*eotf = TRADITIONAL_GAMMA_SDR;
 	if (conn_state->hdr_source_metadata_blob_ptr) {
@@ -688,7 +731,7 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 	     info->hdmi.colorimetry & (BIT(6) | BIT(7))))
 		*enc_out_encoding = V4L2_YCBCR_ENC_BT2020;
 	else if ((vic == 6) || (vic == 7) || (vic == 21) || (vic == 22) ||
-		   (vic == 2) || (vic == 3) || (vic == 17) || (vic == 18))
+		 (vic == 2) || (vic == 3) || (vic == 17) || (vic == 18))
 		*enc_out_encoding = V4L2_YCBCR_ENC_601;
 	else
 		*enc_out_encoding = V4L2_YCBCR_ENC_709;
@@ -714,16 +757,15 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 
 	if (*color_format == DRM_HDMI_OUTPUT_YCBCR420)
 		tmdsclock /= 2;
-	/*
-	 * For some display device, max_tmds_clock is 0, we think
-	 * max_tmds_clock is 340MHz. If tmdsclock > max_tmds_clock,
-	 * fallback to 8bit. If mode support YCBCR420, use YCBCR420.
-	 */
-	if ((!info->max_tmds_clock && tmdsclock > 340000) ||
-	    (info->max_tmds_clock && tmdsclock > info->max_tmds_clock) ||
-	    hdmi->dev_type == RK3368_HDMI) {
+
+	/* XXX: max_tmds_clock of some sink is 0, we think it is 340MHz. */
+	if (!max_tmds_clock)
+		max_tmds_clock = 340000;
+
+	if (tmdsclock > max_tmds_clock) {
 		*color_depth = 8;
-		if (drm_mode_is_420(info, mode))
+		if (tmdsclock > 340000 && drm_mode_is_420(info, mode) &&
+		    (max_tmds_clock <= 340000 || hdmi->dev_type == RK3368_HDMI))
 			*color_format = DRM_HDMI_OUTPUT_YCBCR420;
 	}
 }
@@ -1085,6 +1127,7 @@ static const struct dw_hdmi_plat_data rk3366_hdmi_drv_data = {
 static const struct dw_hdmi_plat_data rk3368_hdmi_drv_data = {
 	.mode_valid = dw_hdmi_rockchip_mode_valid,
 	.mpll_cfg   = rockchip_mpll_cfg,
+	.mpll_cfg_420 = rockchip_mpll_cfg_420,
 	.cur_ctr    = rockchip_cur_ctr,
 	.phy_config = rockchip_phy_config,
 	.dev_type   = RK3368_HDMI,
@@ -1093,6 +1136,7 @@ static const struct dw_hdmi_plat_data rk3368_hdmi_drv_data = {
 static const struct dw_hdmi_plat_data rk3399_hdmi_drv_data = {
 	.mode_valid = dw_hdmi_rockchip_mode_valid,
 	.mpll_cfg   = rockchip_mpll_cfg,
+	.mpll_cfg_420 = rockchip_mpll_cfg_420,
 	.cur_ctr    = rockchip_cur_ctr,
 	.phy_config = rockchip_phy_config,
 	.dev_type   = RK3399_HDMI,
@@ -1240,7 +1284,7 @@ static int dw_hdmi_rockchip_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int dw_hdmi_rockchip_suspend(struct device *dev)
+static int __maybe_unused dw_hdmi_rockchip_suspend(struct device *dev)
 {
 	dw_hdmi_suspend(dev);
 	pm_runtime_put_sync(dev);
@@ -1248,7 +1292,7 @@ static int dw_hdmi_rockchip_suspend(struct device *dev)
 	return 0;
 }
 
-static int dw_hdmi_rockchip_resume(struct device *dev)
+static int __maybe_unused dw_hdmi_rockchip_resume(struct device *dev)
 {
 	pm_runtime_get_sync(dev);
 	dw_hdmi_resume(dev);

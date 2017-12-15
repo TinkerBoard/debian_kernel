@@ -178,9 +178,16 @@
 	1) enable SYS_STATUS_ISP status set.
 *v0.0x22.5:
 	1) gpio base start from 1000,adapt to it.
+*v0.0x22.6:
+	1) revert v0.0x22.3.
+*v0.0x22.7:
+	1) read MRV_MIPI_FRAME register in camsys_mrv_irq, and pass the value
+	fs_id and fe_id into isp library.
+*v0.0x22.8:
+	1) 3399 power management is wrong, correct it.
 */
 
-#define CAMSYS_DRIVER_VERSION                   KERNEL_VERSION(0, 0x22, 5)
+#define CAMSYS_DRIVER_VERSION                   KERNEL_VERSION(0, 0x22, 8)
 
 #define CAMSYS_PLATFORM_DRV_NAME                "RockChip-CamSys"
 #define CAMSYS_PLATFORM_MARVIN_NAME             "Platform_MarvinDev"

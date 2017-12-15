@@ -156,6 +156,16 @@ static const struct regulator_linear_range rk816_buck4_voltage_ranges[] = {
 	REGULATOR_LINEAR_RANGE(3500000, 27, 31, 0),	/* 3.5v */
 };
 
+static unsigned int rk8xx_regulator_of_map_mode(unsigned int mode)
+{
+	if (mode == 1)
+		return REGULATOR_MODE_FAST;
+	if (mode == 2)
+		return REGULATOR_MODE_NORMAL;
+
+	return -EINVAL;
+}
+
 static int rk808_buck1_2_get_voltage_sel_regmap(struct regulator_dev *rdev)
 {
 	struct rk808_regulator_data *pdata = rdev_get_drvdata(rdev);
@@ -224,6 +234,38 @@ static int rk808_buck1_2_i2c_set_voltage_sel(struct regulator_dev *rdev,
 	 * so we needn't wait extra time after that.
 	 */
 	udelay(1);
+
+	return ret;
+}
+
+extern void rkclk_cpuclk_div_setting(int div);
+
+static int rk816_regulator_set_voltage_sel_regmap(struct regulator_dev *rdev,
+						  unsigned int sel)
+{
+	int ret, real_sel, delay = 100;
+
+	sel <<= ffs(rdev->desc->vsel_mask) - 1;
+
+	if (sel > 23)
+		rkclk_cpuclk_div_setting(4);
+	else
+		rkclk_cpuclk_div_setting(2);
+
+	do {
+		ret = regmap_update_bits(rdev->regmap,
+					 rdev->desc->vsel_reg,
+					 rdev->desc->vsel_mask, sel);
+		if (ret)
+			return ret;
+
+		regmap_read(rdev->regmap,
+			    rdev->desc->vsel_reg, &real_sel);
+		real_sel &= rdev->desc->vsel_mask;
+		delay--;
+	} while ((sel != real_sel) && (delay > 0));
+
+	rkclk_cpuclk_div_setting(1);
 
 	return ret;
 }
@@ -344,18 +386,13 @@ static int rk816_set_suspend_enable(struct regulator_dev *rdev)
 	if (rdev->desc->id <= RK816_ID_DCDC4) {
 		reg = rdev->desc->enable_reg +
 			RK816_DCDC_SLP_EN_REG_OFFSET;
-			val = 1 << rdev->desc->id;
-	}
-
-	if ((rdev->desc->id > RK816_ID_DCDC4) &&
-	    (rdev->desc->id <= RK816_ID_LDO4)) {
+		val = 1 << rdev->desc->id;
+	} else if ((rdev->desc->id > RK816_ID_DCDC4) &&
+		   (rdev->desc->id <= RK816_ID_LDO4)) {
 		reg = rdev->desc->enable_reg -
 			RK816_LDO1_4_SLP_EN_REG_OFFSET;
 		val = 1 << (rdev->desc->id - RK816_ID_LDO1);
-	}
-
-	if ((rdev->desc->id > RK816_ID_LDO4) &&
-	    (rdev->desc->id <= RK816_ID_LDO6)) {
+	} else {
 		reg = rdev->desc->enable_reg -
 			RK816_LDO5_6_SLP_EN_REG_OFFSET;
 		val = 1 << (rdev->desc->id - RK816_ID_LDO1);
@@ -370,21 +407,20 @@ static int rk816_set_suspend_disable(struct regulator_dev *rdev)
 {
 	unsigned int reg, val;
 
-	if (rdev->desc->id <= RK816_ID_DCDC4)
+	if (rdev->desc->id <= RK816_ID_DCDC4) {
 		reg = rdev->desc->enable_reg +
 			RK816_DCDC_SLP_EN_REG_OFFSET;
-
-	if ((rdev->desc->id > RK816_ID_DCDC4) &&
-	    (rdev->desc->id <= RK816_ID_LDO4))
+		val = 1 << rdev->desc->id;
+	} else if ((rdev->desc->id > RK816_ID_DCDC4) &&
+		   (rdev->desc->id <= RK816_ID_LDO4)) {
 		reg = rdev->desc->enable_reg -
 			RK816_LDO1_4_SLP_EN_REG_OFFSET;
-
-	if ((rdev->desc->id > RK816_ID_LDO4) &&
-	    (rdev->desc->id <= RK816_ID_LDO6))
+		val = 1 << (rdev->desc->id - RK816_ID_LDO1);
+	} else {
 		reg = rdev->desc->enable_reg -
 			RK816_LDO5_6_SLP_EN_REG_OFFSET;
-
-	val = 1 << (rdev->desc->id % 8);
+		val = 1 << (rdev->desc->id - RK816_ID_LDO1);
+	}
 
 	return regmap_update_bits(rdev->regmap, reg,
 				  val,
@@ -553,6 +589,24 @@ static struct regulator_ops rk808_switch_ops = {
 	.set_suspend_mode	= rk8xx_set_suspend_mode,
 };
 
+static struct regulator_ops rk816_buck_ops_range = {
+	.list_voltage		= regulator_list_voltage_linear_range,
+	.map_voltage		= regulator_map_voltage_linear_range,
+	.get_voltage_sel	= regulator_get_voltage_sel_regmap,
+	.set_voltage_sel	= rk816_regulator_set_voltage_sel_regmap,
+	.set_voltage_time_sel	= regulator_set_voltage_time_sel,
+	.enable			= regulator_enable_regmap,
+	.disable		= regulator_disable_regmap,
+	.is_enabled		= regulator_is_enabled_regmap,
+	.set_mode		= rk8xx_set_mode,
+	.get_mode		= rk8xx_get_mode,
+	.set_suspend_mode	= rk8xx_set_suspend_mode,
+	.set_ramp_delay		= rk808_set_ramp_delay,
+	.set_suspend_voltage	= rk808_set_suspend_voltage_range,
+	.set_suspend_enable	= rk808_set_suspend_enable,
+	.set_suspend_disable	= rk808_set_suspend_disable,
+};
+
 static const struct regulator_desc rk808_reg[] = {
 	{
 		.name = "DCDC_REG1",
@@ -654,7 +708,7 @@ static const struct regulator_desc rk816_reg[] = {
 		.of_match = of_match_ptr("DCDC_REG1"),
 		.regulators_node = of_match_ptr("regulators"),
 		.id = RK816_ID_DCDC1,
-		.ops = &rk8xx_buck_ops_range,
+		.ops = &rk816_buck_ops_range,
 		.type = REGULATOR_VOLTAGE,
 		.n_voltages = 64,
 		.linear_ranges = rk816_buck_voltage_ranges,
@@ -665,6 +719,7 @@ static const struct regulator_desc rk816_reg[] = {
 		.enable_mask = BIT(4) | BIT(0),
 		.enable_val = BIT(4) | BIT(0),
 		.disable_val = BIT(4),
+		.of_map_mode = rk8xx_regulator_of_map_mode,
 		.owner = THIS_MODULE,
 	}, {
 		.name = "DCDC_REG2",
@@ -683,6 +738,7 @@ static const struct regulator_desc rk816_reg[] = {
 		.enable_mask = BIT(5) | BIT(1),
 		.enable_val = BIT(5) | BIT(1),
 		.disable_val = BIT(5),
+		.of_map_mode = rk8xx_regulator_of_map_mode,
 		.owner = THIS_MODULE,
 	}, {
 		.name = "DCDC_REG3",
@@ -697,6 +753,7 @@ static const struct regulator_desc rk816_reg[] = {
 		.enable_mask = BIT(6) | BIT(2),
 		.enable_val =  BIT(6) | BIT(2),
 		.disable_val = BIT(6),
+		.of_map_mode = rk8xx_regulator_of_map_mode,
 		.owner = THIS_MODULE,
 	}, {
 		.name = "DCDC_REG4",
@@ -715,6 +772,7 @@ static const struct regulator_desc rk816_reg[] = {
 		.enable_mask = BIT(7) | BIT(3),
 		.enable_val = BIT(7) | BIT(3),
 		.disable_val = BIT(7),
+		.of_map_mode = rk8xx_regulator_of_map_mode,
 		.owner = THIS_MODULE,
 	},
 	RK816_DESC(RK816_ID_LDO1, "LDO_REG1", "vcc5", 800, 3400, 100,
