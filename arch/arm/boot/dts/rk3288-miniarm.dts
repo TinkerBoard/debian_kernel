@@ -732,6 +732,8 @@
 };
 
 &uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_xfer>, <&uart1_cts>, <&uart1_rts>;
 	status = "okay";
 };
 
@@ -744,6 +746,8 @@
 };
 
 &uart4 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart4_xfer>, <&uart4_cts>, <&uart4_rts>;
 	status = "okay";
 };
 
