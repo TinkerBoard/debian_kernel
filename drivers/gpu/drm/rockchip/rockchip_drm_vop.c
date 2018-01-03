@@ -1297,6 +1297,12 @@ static void vop_plane_atomic_update(struct drm_plane *plane,
 		VOP_WIN_SET_EXT(vop, win, csc, r2r_en, !!r2r_table);
 		VOP_WIN_SET_EXT(vop, win, csc, r2y_en, !!r2y_table);
 	}
+
+	if (plane->type == DRM_PLANE_TYPE_PRIMARY) {
+		VOP_WIN_SET(vop, win, key_color, 0x00000000);
+		VOP_WIN_SET(vop, win, key_en, 1);
+	}
+
 	VOP_WIN_SET(vop, win, enable, 1);
 	spin_unlock(&vop->reg_lock);
 	vop->is_iommu_needed = true;
