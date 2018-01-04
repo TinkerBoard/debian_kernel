@@ -198,7 +198,7 @@ static struct ov_camera_module_reg ov7750_init_tab_640_480_60fps[] = {
 };
 
 static struct ov_camera_module_config ov7750_configs[] = {
-	{OV_CAMERA_MODULE_REG_TYPE_DATA, 
+	{
 		.name = "640x480_60fps",
 		.frm_fmt = {
 			.width = 640,
