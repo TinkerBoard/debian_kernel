@@ -39,4 +39,11 @@
 			clock48-gpio = <&gpio5 16 0>;
 		};
 	};
+
+	fragment@3 {
+		target = <&hdmi>;
+		__overlay__ {
+			hdmi-i2s-audio-disable;
+		};
+	};
 };

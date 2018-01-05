@@ -218,6 +218,7 @@ static struct hdmi_codec_ops dw_hdmi_i2s_ops = {
 static int snd_dw_hdmi_probe(struct platform_device *pdev)
 {
 	struct dw_hdmi_i2s_audio_data *audio = pdev->dev.platform_data;
+	struct dw_hdmi *hdmi = audio->hdmi;
 	struct platform_device_info pdevinfo;
 	struct hdmi_codec_pdata pdata;
 
@@ -235,6 +236,13 @@ static int snd_dw_hdmi_probe(struct platform_device *pdev)
 	pdevinfo.dma_mask	= DMA_BIT_MASK(32);
 
 	audio->pdev = platform_device_register_full(&pdevinfo);
+
+	if (hdmi_i2s_audio_disable) {
+		dw_hdmi_audio_disable(hdmi);
+		hdmi_write(audio, HDMI_AUD_CONF0_SW_RESET, HDMI_AUD_CONF0);
+		dev_info(&pdev->dev, "disable hdmi i2s audio\n");
+	}
+
 	return IS_ERR_OR_NULL(audio->pdev);
 }
 

@@ -2,6 +2,7 @@
 #define DW_HDMI_AUDIO_H
 
 struct dw_hdmi;
+extern bool hdmi_i2s_audio_disable;
 
 struct dw_hdmi_audio_data {
 	phys_addr_t phys;

@@ -41,6 +41,13 @@
 		};
 	};
 
+	fragment@3 {
+		target = <&hdmi>;
+		__overlay__ {
+			hdmi-i2s-audio-disable;
+		};
+	};
+
 	__overrides__ {
 		24db_digital_gain = <&iqaudio_dac>,"iqaudio,24db_digital_gain?";
 		auto_mute_amp = <&iqaudio_dac>,"iqaudio-dac,auto-mute-amp?";

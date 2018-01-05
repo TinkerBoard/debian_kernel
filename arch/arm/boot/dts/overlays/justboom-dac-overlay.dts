@@ -39,6 +39,13 @@
 		};
 	};
 
+	fragment@3 {
+		target = <&hdmi>;
+		__overlay__ {
+			hdmi-i2s-audio-disable;
+		};
+	};
+
 	__overrides__ {
 		24db_digital_gain = <&frag2>,"justboom,24db_digital_gain?";
 	};

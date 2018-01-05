@@ -38,6 +38,13 @@
 		};
 	};
 
+	fragment@3 {
+		target = <&hdmi>;
+		__overlay__ {
+			hdmi-i2s-audio-disable;
+		};
+	};
+
 	__overrides__ {
 		card_name = <&wm8804_digi>,"wm8804-digi,card-name";
 		dai_name = <&wm8804_digi>,"wm8804-digi,dai-name";

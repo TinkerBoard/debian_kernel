@@ -37,4 +37,11 @@
 			status = "okay";
 		};
 	};
+
+	fragment@3 {
+		target = <&hdmi>;
+		__overlay__ {
+			hdmi-i2s-audio-disable;
+		};
+	};
 };

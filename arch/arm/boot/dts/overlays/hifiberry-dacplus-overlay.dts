@@ -40,6 +40,13 @@
 		};
 	};
 
+	fragment@3 {
+		target = <&hdmi>;
+		__overlay__ {
+			hdmi-i2s-audio-disable;
+		};
+	};
+
 	__overrides__ {
 		24db_digital_gain =
 			<&hifiberry_dacplus>,"hifiberry,24db_digital_gain?";
