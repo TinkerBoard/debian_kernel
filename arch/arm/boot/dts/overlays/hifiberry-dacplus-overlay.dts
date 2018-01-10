@@ -12,6 +12,16 @@
 	};
 
 	fragment@1 {
+		target-path = "/";
+		__overlay__ {
+			dacpro_osc: dacpro_osc {
+				compatible = "hifiberry,dacpro-clk";
+				#clock-cells = <0>;
+			};
+		};
+	};
+
+	fragment@2 {
 		target = <&i2c1>;
 		__overlay__ {
 			#address-cells = <1>;
@@ -22,6 +32,7 @@
 				#sound-dai-cells = <0>;
 				compatible = "ti,pcm5122";
 				reg = <0x4d>;
+				clocks = <&dacpro_osc>;
 				AVDD-supply = <&vdd_3v3_reg>;
 				DVDD-supply = <&vdd_3v3_reg>;
 				CPVDD-supply = <&vdd_3v3_reg>;
@@ -30,17 +41,16 @@
 		};
 	};
 
-	fragment@2 {
+	fragment@3 {
 		target-path = "/sound-ext-card";
 		hifiberry_dacplus: __overlay__ {
 			compatible = "hifiberry,hifiberry-dacplus";
 			i2s-controller = <&i2s>;
-			hifiberry-dacplus,slave;
 			status = "okay";
 		};
 	};
 
-	fragment@3 {
+	fragment@4 {
 		target = <&hdmi>;
 		__overlay__ {
 			hdmi-i2s-audio-disable;

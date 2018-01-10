@@ -121,6 +121,7 @@ static int snd_rpi_hifiberry_dacplus_clk_for_rate(int sample_rate)
 	case 44100:
 	case 88200:
 	case 176400:
+	case 352800:
 		type = HIFIBERRY_DACPRO_CLK44EN;
 		break;
 	default:
@@ -232,7 +233,7 @@ static int snd_rpi_hifiberry_dacplus_set_bclk_ratio_pro(
 static int snd_rpi_hifiberry_dacplus_hw_params(
 	struct snd_pcm_substream *substream, struct snd_pcm_hw_params *params)
 {
-	int ret;
+	int ret = 0;
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
 #ifdef ROCKCHIP_AUDIO
@@ -245,11 +246,7 @@ static int snd_rpi_hifiberry_dacplus_hw_params(
 		snd_rpi_hifiberry_dacplus_set_sclk(codec,
 			params_rate(params));
 
-#ifdef ROCKCHIP_AUDIO
-		mclk = params_rate(params) * ROCKCHIP_I2S_MCLK;
-		ret = snd_soc_dai_set_sysclk(cpu_dai, 0, mclk,
-						SND_SOC_CLOCK_OUT);
-#else
+#ifndef ROCKCHIP_AUDIO
 		ret = snd_rpi_hifiberry_dacplus_set_bclk_ratio_pro(cpu_dai,
 			params);
 #endif
