@@ -637,7 +637,11 @@ static int pinctrl_gpio_direction(unsigned gpio, bool input)
 	}
 	#ifdef CONFIG_I2S_SHORT
 	/* For pin 185 and 186 are shorted.*/
-	if (gpio == 186) 
+	#ifdef ARCH_GPIO_BASE
+	if (gpio % 1000 == 186)  //% 1000 for ARCH_GPIO_BASE Issue
+	#else
+	if (gpio == 186)
+	#endif
 		input = true;
 	#endif	
 	mutex_lock(&pctldev->mutex);
@@ -645,8 +649,12 @@ static int pinctrl_gpio_direction(unsigned gpio, bool input)
 	/* Convert to the pin controllers number space */
 	#ifdef CONFIG_I2S_SHORT
 	/* For pin 185 and 186 are shorted.*/
+	#ifdef ARCH_GPIO_BASE
+	if (gpio % 1000 == 185) { // % 1000 for ARCH_GPIO_BASE Issue
+	#else
 	if (gpio == 185) {
-		pin = gpio_to_pin(range, 186);
+	#endif
+		pin = gpio_to_pin(range, gpio + 1);
 		ret = pinmux_gpio_direction(pctldev, range, pin, true);
 	}
 	#endif
