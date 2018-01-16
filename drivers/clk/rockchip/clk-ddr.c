@@ -14,6 +14,7 @@
  */
 
 #include <drm/drmP.h>
+#include <drm/drm_modeset_lock.h>
 #include <dt-bindings/display/rk_fb.h>
 #include <linux/arm-smccc.h>
 #include <linux/clk.h>
@@ -25,6 +26,9 @@
 #include <soc/rockchip/rockchip_sip.h>
 #include <soc/rockchip/scpi.h>
 #include <uapi/drm/drm_mode.h>
+#ifdef CONFIG_ARM
+#include <asm/psci.h>
+#endif
 
 #include "clk.h"
 
@@ -39,7 +43,6 @@ struct rockchip_ddrclk {
 	int		div_shift;
 	int		div_width;
 	int		ddr_flag;
-	spinlock_t	*lock;
 };
 
 #define to_rockchip_ddrclk_hw(hw) container_of(hw, struct rockchip_ddrclk, hw)
@@ -53,14 +56,13 @@ static int rk_drm_get_lcdc_type(void)
 	if (drm) {
 		struct drm_connector *conn;
 
-		mutex_lock(&drm->mode_config.mutex);
-		drm_for_each_connector(conn, drm) {
+		list_for_each_entry(conn, &drm->mode_config.connector_list,
+				    head) {
 			if (conn->encoder) {
 				lcdc_type = conn->connector_type;
 				break;
 			}
 		}
-		mutex_unlock(&drm->mode_config.mutex);
 	}
 
 	switch (lcdc_type) {
@@ -94,15 +96,11 @@ static int rk_drm_get_lcdc_type(void)
 static int rockchip_ddrclk_sip_set_rate(struct clk_hw *hw, unsigned long drate,
 					unsigned long prate)
 {
-	struct rockchip_ddrclk *ddrclk = to_rockchip_ddrclk_hw(hw);
-	unsigned long flags;
 	struct arm_smccc_res res;
 
-	spin_lock_irqsave(ddrclk->lock, flags);
 	arm_smccc_smc(ROCKCHIP_SIP_DRAM_FREQ, drate, 0,
 		      ROCKCHIP_SIP_CONFIG_DRAM_SET_RATE,
 		      0, 0, 0, 0, &res);
-	spin_unlock_irqrestore(ddrclk->lock, flags);
 
 	return res.a0;
 }
@@ -311,12 +309,16 @@ struct clk *rockchip_clk_register_ddrclk(const char *name, int flags,
 					 u8 num_parents, int mux_offset,
 					 int mux_shift, int mux_width,
 					 int div_shift, int div_width,
-					 int ddr_flag, void __iomem *reg_base,
-					 spinlock_t *lock)
+					 int ddr_flag, void __iomem *reg_base)
 {
 	struct rockchip_ddrclk *ddrclk;
 	struct clk_init_data init;
 	struct clk *clk;
+
+#ifdef CONFIG_ARM
+	if (!psci_smp_available())
+		return NULL;
+#endif
 
 	ddrclk = kzalloc(sizeof(*ddrclk), GFP_KERNEL);
 	if (!ddrclk)
@@ -347,7 +349,6 @@ struct clk *rockchip_clk_register_ddrclk(const char *name, int flags,
 	}
 
 	ddrclk->reg_base = reg_base;
-	ddrclk->lock = lock;
 	ddrclk->hw.init = &init;
 	ddrclk->mux_offset = mux_offset;
 	ddrclk->mux_shift = mux_shift;

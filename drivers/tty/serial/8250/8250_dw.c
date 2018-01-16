@@ -245,24 +245,57 @@ static void dw8250_set_termios(struct uart_port *p, struct ktermios *termios,
 	unsigned int baud = tty_termios_baud_rate(termios);
 	struct dw8250_data *d = p->private_data;
 	unsigned int rate;
+#ifdef CONFIG_ARCH_ROCKCHIP
+	unsigned int div, rate_temp, diff;
+#endif
 	int ret;
 
 	if (IS_ERR(d->clk) || !old)
 		goto out;
 
 	clk_disable_unprepare(d->clk);
+#ifdef CONFIG_ARCH_ROCKCHIP
+	if ((baud * 16) <= 4000000) {
+		/*
+		 * Make sure uart sclk is high enough
+		 */
+		div = 4000000 / baud / 16;
+		rate = baud * 16 * div;
+	} else {
+		rate = baud * 16;
+	}
+
+	ret = clk_set_rate(d->clk, rate);
+	rate_temp = clk_get_rate(d->clk);
+	diff = rate * 20 / 1000;
+	/*
+	 * If rate_temp is not equal to rate, is means fractional frequency
+	 * division is failed. Then use Integer frequency division, and
+	 * the buad rate error must be under -+2%
+	 */
+	if ((rate_temp < rate) && ((rate - rate_temp) > diff)) {
+		ret = clk_set_rate(d->clk, rate + diff);
+		rate_temp = clk_get_rate(d->clk);
+		if ((rate_temp < rate) && ((rate - rate_temp) > diff))
+			dev_info(p->dev, "set rate:%d, but get rate:%d\n",
+				 rate, rate_temp);
+		else if ((rate < rate_temp) && ((rate_temp - rate) > diff))
+			dev_info(p->dev, "set rate:%d, but get rate:%d\n",
+				 rate, rate_temp);
+	}
+#else
 	rate = clk_round_rate(d->clk, baud * 16);
 	ret = clk_set_rate(d->clk, rate);
+#endif
 	clk_prepare_enable(d->clk);
 
 	if (!ret)
 		p->uartclk = rate;
-
+out:
 	p->status &= ~UPSTAT_AUTOCTS;
 	if (termios->c_cflag & CRTSCTS)
 		p->status |= UPSTAT_AUTOCTS;
 
-out:
 	serial8250_do_set_termios(p, termios, old);
 }
 
@@ -308,7 +341,6 @@ static void dw8250_quirks(struct uart_port *p, struct dw8250_data *data)
 		p->iotype = UPIO_MEM32;
 		p->regshift = 2;
 		p->serial_in = dw8250_serial_in32;
-		p->set_termios = dw8250_set_termios;
 		/* So far none of there implement the Busy Functionality */
 		data->uart_16550_compatible = true;
 	}
@@ -316,7 +348,6 @@ static void dw8250_quirks(struct uart_port *p, struct dw8250_data *data)
 	/* Platforms with iDMA */
 	if (platform_get_resource_byname(to_platform_device(p->dev),
 					 IORESOURCE_MEM, "lpss_priv")) {
-		p->set_termios = dw8250_set_termios;
 		data->dma.rx_param = p->dev->parent;
 		data->dma.tx_param = p->dev->parent;
 		data->dma.fn = dw8250_idma_filter;
@@ -387,6 +418,7 @@ static int dw8250_probe(struct platform_device *pdev)
 	p->iotype	= UPIO_MEM;
 	p->serial_in	= dw8250_serial_in;
 	p->serial_out	= dw8250_serial_out;
+	p->set_termios = dw8250_set_termios;
 
 	p->membase = devm_ioremap(&pdev->dev, regs->start, resource_size(regs));
 	if (!p->membase)

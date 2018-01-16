@@ -33,6 +33,7 @@
 *.lzo
 *.patch
 *.gcno
+*.ll
 modules.builtin
 Module.symvers
 *.dwo
@@ -41,6 +42,8 @@ Module.symvers
 #
 # Top-level generic files
 #
+/kernel.img
+/resource.img
 /tags
 /TAGS
 /linux
@@ -112,3 +115,6 @@ all.config
 
 # Kdevelop4
 *.kdev4
+
+# fetched Android config fragments
+android/configs/android-*.cfg

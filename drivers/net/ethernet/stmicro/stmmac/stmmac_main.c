@@ -166,7 +166,7 @@ static void stmmac_clk_csr_set(struct stmmac_priv *priv)
 {
 	u32 clk_rate;
 
-	clk_rate = clk_get_rate(priv->stmmac_clk);
+	clk_rate = clk_get_rate(priv->pclk);
 
 	/* Platform provided default clk_csr would be assumed valid
 	 * for all other cases except for the below mentioned ones.
@@ -2928,7 +2928,7 @@ int stmmac_dvr_probe(struct device *device,
 	}
 	clk_prepare_enable(priv->stmmac_clk);
 
-	priv->pclk = devm_clk_get(priv->device, "pclk");
+	priv->pclk = devm_clk_get(priv->device, "pclk_mac");
 	if (IS_ERR(priv->pclk)) {
 		if (PTR_ERR(priv->pclk) == -EPROBE_DEFER) {
 			ret = -EPROBE_DEFER;
@@ -3039,12 +3039,13 @@ EXPORT_SYMBOL_GPL(stmmac_dvr_probe);
 
 /**
  * stmmac_dvr_remove
- * @ndev: net device pointer
+ * @dev: device pointer
  * Description: this function resets the TX/RX processes, disables the MAC RX/TX
  * changes the link status, releases the DMA descriptor rings.
  */
-int stmmac_dvr_remove(struct net_device *ndev)
+int stmmac_dvr_remove(struct device *dev)
 {
+	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
 
 	pr_info("%s:\n\tremoving driver", __func__);
@@ -3070,13 +3071,14 @@ EXPORT_SYMBOL_GPL(stmmac_dvr_remove);
 
 /**
  * stmmac_suspend - suspend callback
- * @ndev: net device pointer
+ * @dev: device pointer
  * Description: this is the function to suspend the device and it is called
  * by the platform driver to stop the network queue, release the resources,
  * program the PMT register (for WoL), clean and release driver resources.
  */
-int stmmac_suspend(struct net_device *ndev)
+int stmmac_suspend(struct device *dev)
 {
+	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
 	unsigned long flags;
 
@@ -3119,12 +3121,13 @@ EXPORT_SYMBOL_GPL(stmmac_suspend);
 
 /**
  * stmmac_resume - resume callback
- * @ndev: net device pointer
+ * @dev: device pointer
  * Description: when resume this function is invoked to setup the DMA and CORE
  * in a usable state.
  */
-int stmmac_resume(struct net_device *ndev)
+int stmmac_resume(struct device *dev)
 {
+	struct net_device *ndev = dev_get_drvdata(dev);
 	struct stmmac_priv *priv = netdev_priv(ndev);
 	unsigned long flags;
 

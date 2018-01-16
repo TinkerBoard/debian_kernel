@@ -74,7 +74,7 @@ int rga2_flag;
 int first_RGA2_proc;
 
 rga2_session rga2_session_global;
-long (*rga_ioctl_kernel_p)(struct rga_req *);
+long (*rga2_ioctl_kernel_p)(struct rga_req *);
 
 struct rga2_drvdata_t {
 	struct miscdevice miscdev;
@@ -225,11 +225,11 @@ static void rga2_dump(void)
 		printk("task_running %d\n", running);
 		list_for_each_entry_safe(reg, reg_tmp, &session->waiting, session_link)
 		{
-			printk("waiting register set 0x%.lu\n", (unsigned long)reg);
+			printk("waiting register set 0x %.lu\n", (unsigned long)reg);
 		}
 		list_for_each_entry_safe(reg, reg_tmp, &session->running, session_link)
 		{
-			printk("running register set 0x%.lu\n", (unsigned long)reg);
+			printk("running register set 0x %.lu\n", (unsigned long)reg);
 		}
 	}
 }
@@ -246,10 +246,6 @@ static void rga2_power_on(void)
 	static ktime_t last;
 	ktime_t now = ktime_get();
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
-	pm_runtime_get_sync(rga2_drvdata->dev);
-#endif
-
 	if (ktime_to_ns(ktime_sub(now, last)) > NSEC_PER_SEC) {
 		cancel_delayed_work_sync(&rga2_drvdata->power_off_work);
 		rga2_queue_power_off_work();
@@ -258,6 +254,10 @@ static void rga2_power_on(void)
 
 	if (rga2_service.enable)
 		return;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+	pm_runtime_get_sync(rga2_drvdata->dev);
+#endif
 
 	clk_prepare_enable(rga2_drvdata->rga2);
 	clk_prepare_enable(rga2_drvdata->aclk_rga2);
@@ -452,8 +452,7 @@ static struct rga2_reg * rga2_reg_init(rga2_session *session, struct rga2_req *r
         ret = rga2_set_mmu_info(reg, req);
         if(ret < 0) {
             printk("%s, [%d] set mmu info error \n", __FUNCTION__, __LINE__);
-            if(reg != NULL)
-                kfree(reg);
+            kfree(reg);
 
             return NULL;
         }
@@ -461,8 +460,7 @@ static struct rga2_reg * rga2_reg_init(rga2_session *session, struct rga2_req *r
 
     if(RGA2_gen_reg_info((uint8_t *)reg->cmd_reg, req) == -1) {
         printk("gen reg info error\n");
-        if(reg != NULL)
-            kfree(reg);
+        kfree(reg);
 
         return NULL;
     }
@@ -690,82 +688,54 @@ static void rga2_del_running_list_timeout(void)
 
 static int rga2_get_img_info(rga_img_info_t *img,
 			     u8 mmu_flag,
-			     u8 buf_gem_type_dma,
 			     struct sg_table **psgt,
 			     struct dma_buf_attachment **pattach)
 {
 	struct dma_buf_attachment *attach = NULL;
-	struct ion_client *ion_client = NULL;
-	struct ion_handle *hdl = NULL;
 	struct device *rga_dev = NULL;
 	struct sg_table *sgt = NULL;
 	struct dma_buf *dma_buf = NULL;
 	u32 vir_w, vir_h;
-	ion_phys_addr_t phy_addr;
-	size_t len = 0;
 	int yrgb_addr = -1;
 	int ret = 0;
 
-	ion_client = rga2_drvdata->ion_client;
 	rga_dev = rga2_drvdata->dev;
 	yrgb_addr = (int)img->yrgb_addr;
 	vir_w = img->vir_w;
 	vir_h = img->vir_h;
 
 	if (yrgb_addr > 0) {
-		if (buf_gem_type_dma) {
-			dma_buf = dma_buf_get(img->yrgb_addr);
-			if (IS_ERR(dma_buf)) {
-				ret = -EINVAL;
-				pr_err("dma_buf_get fail fd[%d]\n", yrgb_addr);
-				return ret;
-			}
+		dma_buf = dma_buf_get(img->yrgb_addr);
+		if (IS_ERR(dma_buf)) {
+			ret = -EINVAL;
+			pr_err("dma_buf_get fail fd[%d]\n", yrgb_addr);
+			return ret;
+		}
 
-			attach = dma_buf_attach(dma_buf, rga_dev);
-			if (IS_ERR(attach)) {
-				dma_buf_put(dma_buf);
-				ret = -EINVAL;
-				pr_err("Failed to attach dma_buf\n");
-				return ret;
-			}
+		attach = dma_buf_attach(dma_buf, rga_dev);
+		if (IS_ERR(attach)) {
+			dma_buf_put(dma_buf);
+			ret = -EINVAL;
+			pr_err("Failed to attach dma_buf\n");
+			return ret;
+		}
 
-			*pattach = attach;
-			sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
-			if (IS_ERR(sgt)) {
-				ret = -EINVAL;
-				pr_err("Failed to map src attachment\n");
-				goto err_get_sg;
-			}
-			if (!mmu_flag) {
-				ret = -EINVAL;
-				pr_err("Fix it please enable iommu flag\n");
-				goto err_get_sg;
-			}
-		} else {
-			hdl = ion_import_dma_buf(ion_client, img->yrgb_addr);
-			if (IS_ERR(hdl)) {
-				ret = -EINVAL;
-				pr_err("RGA2 ERROR ion buf handle\n");
-				return ret;
-			}
-			if (mmu_flag) {
-				sgt = ion_sg_table(ion_client, hdl);
-				if (IS_ERR(sgt)) {
-					ret = -EINVAL;
-					pr_err("Fail map src attachment\n");
-					goto err_get_sg;
-				}
-			}
+		*pattach = attach;
+		sgt = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+		if (IS_ERR(sgt)) {
+			ret = -EINVAL;
+			pr_err("Failed to map src attachment\n");
+			goto err_get_sg;
+		}
+		if (!mmu_flag) {
+			ret = -EINVAL;
+			pr_err("Fix it please enable iommu flag\n");
+			goto err_get_sg;
 		}
 
 		if (mmu_flag) {
 			*psgt = sgt;
 			img->yrgb_addr = img->uv_addr;
-			img->uv_addr = img->yrgb_addr + (vir_w * vir_h);
-			img->v_addr = img->uv_addr + (vir_w * vir_h) / 4;
-		} else {
-			ion_phys(ion_client, hdl, &phy_addr, &len);
-			img->yrgb_addr = phy_addr;
 			img->uv_addr = img->yrgb_addr + (vir_w * vir_h);
 			img->v_addr = img->uv_addr + (vir_w * vir_h) / 4;
 		}
@@ -775,15 +745,10 @@ static int rga2_get_img_info(rga_img_info_t *img,
 		img->v_addr = img->uv_addr + (vir_w * vir_h) / 4;
 	}
 
-	if (hdl)
-		ion_free(ion_client, hdl);
-
 	return ret;
 
 err_get_sg:
-	if (hdl)
-		ion_free(ion_client, hdl);
-	if (sgt && buf_gem_type_dma)
+	if (sgt)
 		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
 	if (attach) {
 		dma_buf = attach->dmabuf;
@@ -797,11 +762,9 @@ err_get_sg:
 static int rga2_get_dma_buf(struct rga2_req *req)
 {
 	struct dma_buf *dma_buf = NULL;
-	u8 buf_gem_type_dma = 0;
 	u8 mmu_flag = 0;
 	int ret = 0;
 
-	buf_gem_type_dma = req->buf_type & RGA_BUF_GEM_TYPE_DMA;
 	req->sg_src0 = NULL;
 	req->sg_src1 = NULL;
 	req->sg_dst = NULL;
@@ -810,24 +773,24 @@ static int rga2_get_dma_buf(struct rga2_req *req)
 	req->attach_dst = NULL;
 	req->attach_src1 = NULL;
 	mmu_flag = req->mmu_info.src0_mmu_flag;
-	ret = rga2_get_img_info(&req->src, mmu_flag, buf_gem_type_dma,
-				&req->sg_src0, &req->attach_src0);
+	ret = rga2_get_img_info(&req->src, mmu_flag, &req->sg_src0,
+				&req->attach_src0);
 	if (ret) {
 		pr_err("src:rga2_get_img_info fail\n");
 		goto err_src;
 	}
 
 	mmu_flag = req->mmu_info.dst_mmu_flag;
-	ret = rga2_get_img_info(&req->dst, mmu_flag, buf_gem_type_dma,
-				&req->sg_dst, &req->attach_dst);
+	ret = rga2_get_img_info(&req->dst, mmu_flag, &req->sg_dst,
+				&req->attach_dst);
 	if (ret) {
 		pr_err("dst:rga2_get_img_info fail\n");
 		goto err_dst;
 	}
 
 	mmu_flag = req->mmu_info.src1_mmu_flag;
-	ret = rga2_get_img_info(&req->src1, mmu_flag, buf_gem_type_dma,
-				&req->sg_src1, &req->attach_src1);
+	ret = rga2_get_img_info(&req->src1, mmu_flag, &req->sg_src1,
+				&req->attach_src1);
 	if (ret) {
 		pr_err("src1:rga2_get_img_info fail\n");
 		goto err_src1;
@@ -836,7 +799,7 @@ static int rga2_get_dma_buf(struct rga2_req *req)
 	return ret;
 
 err_src1:
-	if (buf_gem_type_dma && req->sg_dst && req->attach_dst) {
+	if (req->sg_dst && req->attach_dst) {
 		dma_buf_unmap_attachment(req->attach_dst,
 					 req->sg_dst, DMA_BIDIRECTIONAL);
 		dma_buf = req->attach_dst->dmabuf;
@@ -844,7 +807,7 @@ err_src1:
 		dma_buf_put(dma_buf);
 	}
 err_dst:
-	if (buf_gem_type_dma && req->sg_src0 && req->attach_src0) {
+	if (req->sg_src0 && req->attach_src0) {
 		dma_buf_unmap_attachment(req->attach_src0,
 					 req->sg_src0, DMA_BIDIRECTIONAL);
 		dma_buf = req->attach_src0->dmabuf;
@@ -1393,7 +1356,7 @@ static int rga2_drv_probe(struct platform_device *pdev)
 	rga2_service.last_prc_src_format = 1; /* default is yuv first*/
 	rga2_service.enable = false;
 
-	rga_ioctl_kernel_p = rga2_ioctl_kernel;
+	rga2_ioctl_kernel_p = rga2_ioctl_kernel;
 
 	data = devm_kzalloc(&pdev->dev, sizeof(struct rga2_drvdata_t), GFP_KERNEL);
 	if(NULL == data)
@@ -1492,7 +1455,7 @@ static int rga2_drv_remove(struct platform_device *pdev)
 	pm_runtime_disable(&pdev->dev);
 #endif
 
-	kfree(data);
+	//kfree(data);
 	return 0;
 }
 
@@ -1500,7 +1463,6 @@ static struct platform_driver rga2_driver = {
 	.probe		= rga2_drv_probe,
 	.remove		= rga2_drv_remove,
 	.driver		= {
-		.owner  = THIS_MODULE,
 		.name	= "rga2",
 		.of_match_table = of_match_ptr(rockchip_rga_dt_ids),
 	},
@@ -1565,8 +1527,7 @@ static void __exit rga2_exit(void)
 {
 	rga2_power_off();
 
-	if (rga2_mmu_buf.buf_virtual)
-		kfree(rga2_mmu_buf.buf_virtual);
+	kfree(rga2_mmu_buf.buf_virtual);
 
 	platform_driver_unregister(&rga2_driver);
 }
@@ -1707,10 +1668,8 @@ void rga2_test_0(void)
 	}
 #endif
 
-	if(src)
-		kfree(src);
-	if(dst)
-		kfree(dst);
+	kfree(src);
+	kfree(dst);
 }
 #endif
 

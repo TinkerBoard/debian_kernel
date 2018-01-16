@@ -52,9 +52,7 @@ enum rk816_reg {
 	RK816_ID_DCDC2,
 	RK816_ID_DCDC3,
 	RK816_ID_DCDC4,
-	RK816_ID_BOOST = 5,
-	RK816_ID_OTG_SWITCH,
-	RK816_ID_LDO1 = 8,
+	RK816_ID_LDO1,
 	RK816_ID_LDO2,
 	RK816_ID_LDO3,
 	RK816_ID_LDO4,
@@ -539,6 +537,7 @@ enum rk805_reg {
 #define RK805_OUT_REG			0x52
 #define RK805_ON_SOURCE_REG		0xAE
 #define RK805_OFF_SOURCE_REG		0xAF
+#define RK805_DCDC_VRP_REG		0x92
 
 #define RK805_NUM_REGULATORS		7
 
@@ -549,7 +548,7 @@ enum rk805_reg {
 #define RK816_CHIP_NAME_REG			0x17
 #define RK816_CHIP_VER_REG			0x18
 #define RK816_OTP_VER_REG			0x19
-#define RK816_NUM_REGULATORS			12
+#define RK816_NUM_REGULATORS			10
 
 /*POWER ON/OFF REGISTER*/
 #define RK816_VB_MON_REG			0x21
@@ -606,6 +605,78 @@ enum rk805_reg {
 #define RK816_BAT_CTRL_REG                      0xA6
 #define RK816_BAT_HTS_TS_REG                    0xA8
 #define RK816_BAT_LTS_TS_REG                    0xA9
+
+#define RK816_TS_CTRL_REG			0xAC
+#define RK816_ADC_CTRL_REG			0xAD
+#define RK816_GGCON_REG				0xB0
+#define RK816_GGSTS_REG				0xB1
+#define RK816_ZERO_CUR_ADC_REGH			0xB2
+#define RK816_ZERO_CUR_ADC_REGL			0xB3
+#define RK816_GASCNT_CAL_REG3			0xB4
+#define RK816_GASCNT_CAL_REG2			0xB5
+#define RK816_GASCNT_CAL_REG1			0xB6
+#define RK816_GASCNT_CAL_REG0			0xB7
+#define RK816_GASCNT_REG3			0xB8
+#define RK816_GASCNT_REG2			0xB9
+#define RK816_GASCNT_REG1			0xBA
+#define RK816_GASCNT_REG0			0xBB
+#define RK816_BAT_CUR_AVG_REGH			0xBC
+#define RK816_BAT_CUR_AVG_REGL			0xBD
+#define RK816_TS_ADC_REGH			0xBE
+#define RK816_TS_ADC_REGL			0xBF
+#define RK816_USB_ADC_REGH			0xC0
+#define RK816_USB_ADC_REGL			0xC1
+#define RK816_BAT_OCV_REGH			0xC2
+#define RK816_BAT_OCV_REGL			0xC3
+#define RK816_BAT_VOL_REGH			0xC4
+#define RK816_BAT_VOL_REGL			0xC5
+#define RK816_RELAX_ENTRY_THRES_REGH		0xC6
+#define RK816_RELAX_ENTRY_THRES_REGL		0xC7
+#define RK816_RELAX_EXIT_THRES_REGH		0xC8
+#define RK816_RELAX_EXIT_THRES_REGL		0xC9
+#define RK816_RELAX_VOL1_REGH			0xCA
+#define RK816_RELAX_VOL1_REGL			0xCB
+#define RK816_RELAX_VOL2_REGH			0xCC
+#define RK816_RELAX_VOL2_REGL			0xCD
+#define RK816_RELAX_CUR1_REGH			0xCE
+#define RK816_RELAX_CUR1_REGL			0xCF
+#define RK816_RELAX_CUR2_REGH			0xD0
+#define RK816_RELAX_CUR2_REGL			0xD1
+#define RK816_CAL_OFFSET_REGH			0xD2
+#define RK816_CAL_OFFSET_REGL			0xD3
+#define RK816_NON_ACT_TIMER_CNT_REG		0xD4
+#define RK816_VCALIB0_REGH			0xD5
+#define RK816_VCALIB0_REGL			0xD6
+#define RK816_VCALIB1_REGH			0xD7
+#define RK816_VCALIB1_REGL			0xD8
+#define RK816_FCC_GASCNT_REG3			0xD9
+#define RK816_FCC_GASCNT_REG2			0xDA
+#define RK816_FCC_GASCNT_REG1			0xDB
+#define RK816_FCC_GASCNT_REG0			0xDC
+#define RK816_IOFFSET_REGH			0xDD
+#define RK816_IOFFSET_REGL			0xDE
+#define RK816_SLEEP_CON_SAMP_CUR_REG		0xDF
+
+/*DATA REGISTER*/
+#define RK816_SOC_REG				0xE0
+#define	RK816_REMAIN_CAP_REG3			0xE1
+#define	RK816_REMAIN_CAP_REG2			0xE2
+#define	RK816_REMAIN_CAP_REG1			0xE3
+#define	RK816_REMAIN_CAP_REG0			0xE4
+#define	RK816_UPDATE_LEVE_REG			0xE5
+#define	RK816_NEW_FCC_REG3			0xE6
+#define	RK816_NEW_FCC_REG2			0xE7
+#define	RK816_NEW_FCC_REG1			0xE8
+#define	RK816_NEW_FCC_REG0			0xE9
+#define RK816_NON_ACT_TIMER_CNT_REG_SAVE	0xEA
+#define RK816_OCV_VOL_VALID_REG			0xEB
+#define RK816_REBOOT_CNT_REG			0xEC
+#define RK816_PCB_IOFFSET_REG			0xED
+#define RK816_MISC_MARK_REG			0xEE
+#define RK816_HALT_CNT_REG			0xEF
+#define RK816_CALC_REST_REGH			0xF0
+#define RK816_CALC_REST_REGL			0xF1
+#define DATA18_REG				0xF2
 
 /*INTERRUPT REGISTER*/
 #define RK816_INT_STS_REG1			0x49
@@ -682,6 +753,7 @@ enum rk805_reg {
 #define BUCK1_2_IMAX_MAX			(0x3 << 6)
 #define BUCK3_4_IMAX_MAX			(0x3 << 3)
 #define BOOST_DISABLE				((0x1 << 5) | (0x0 << 1))
+#define BUCK4_VRP_3PERCENT			0xc0
 
 #define TEMP105C			0x08
 #define TEMP115C			0x0c
@@ -690,7 +762,9 @@ enum rk805_reg {
 #define SHUTDOWN_FUN			(0x2 << 2)
 #define SLEEP_FUN			(0x1 << 2)
 #define RK8XX_ID_MSK			0xfff0
+#define PWM_MODE_MSK			BIT(7)
 #define FPWM_MODE			BIT(7)
+#define AUTO_PWM_MODE			0
 
 enum {
 	BUCK_ILMIN_50MA,
@@ -717,6 +791,7 @@ enum {
 struct rk808 {
 	struct i2c_client *i2c;
 	struct regmap_irq_chip_data *irq_data;
+	struct regmap_irq_chip_data *battery_irq_data;
 	struct regmap *regmap;
 	long variant;
 };

@@ -63,7 +63,7 @@
 		 * - SDIO_RESET_L_WL_REG_ON
 		 * - PDN (power down when low)
 		 */
-		reset-gpios = <&gpio2 26 GPIO_ACTIVE_LOW>; /* GPIO2_D2 */
+		reset-gpios = <&gpio3 15 GPIO_ACTIVE_LOW>; /* GPIO3_B7 */
 	};
 
 	wireless-bluetooth {
@@ -83,8 +83,7 @@
 	wireless-wlan {
 		compatible = "wlan-platdata";
 		rockchip,grf = <&grf>;
-		wifi_chip_type = "ap6335";
-		sdio_vref = <3300>;
+		wifi_chip_type = "ap6255";
 		WIFI,host_wake_irq = <&gpio0 28 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
@@ -120,6 +119,26 @@
 			debounce-interval = <100>;
 		};
 	};
+
+	gva_codec: gva-codec {
+		compatible = "rockchip,gva-codec";
+		#sound-dai-cells = <0>;
+		status = "okay";
+	};
+
+	gva-sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,name = "rockchip,rk3229-dummy";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,cpu {
+			sound-dai = <&i2s1>;
+		};
+		simple-audio-card,codec {
+			sound-dai = <&gva_codec>;
+		};
+	};
+
 };
 
 &gpu {
@@ -128,11 +147,16 @@
 };
 
 &nandc {
-	status = "okay";
+	status = "disabled";
 };
 
 &emmc {
-	status = "disabled";
+	max-frequency = <125000000>;
+	cap-mmc-highspeed;
+	mmc-ddr-1_8v;
+	non-removable;
+	supports-emmc;
+	status = "okay";
 };
 
 &i2c0 {
@@ -272,6 +296,17 @@
 	};
 };
 
+&i2c1 {
+	status = "okay";
+	ts@8 {
+		compatible = "cypress,cy8c4024";
+		reg = <0x8>;
+		interrupt-parent = <&gpio1>;
+		interrupts = <RK_PA1 IRQ_TYPE_LEVEL_LOW>;
+		status = "okay";
+	};
+};
+
 &i2c2 {
 	status = "okay";
 
@@ -290,6 +325,15 @@
 	};
 };
 
+&i2s1 {
+	status = "okay";
+	rockchip,i2s-broken-burst-len;
+	rockchip,playback-channels = <8>;
+	rockchip,capture-channels = <8>;
+	rockchip,bclk-fs = <64>;
+	#sound-dai-cells = <0>;
+};
+
 &cpu0 {
 	cpu-supply = <&vdd_arm>;
 };
@@ -298,7 +342,7 @@
 	status = "okay";
 
 	vccio1-supply = <&vcc_io>;
-	vccio2-supply = <&vcc_io>;
+	vccio2-supply = <&vcc_18>;
 	vccio4-supply = <&vcc_io>;
 };
 
@@ -325,20 +369,26 @@
 
 	sdio-pwrseq {
 		wifi_enable_h: wifi-enable-h {
-			rockchip,pins = <2 26 RK_FUNC_GPIO &pcfg_pull_none>;
+			rockchip,pins = <3 15 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
 };
 
 &sdio {
-	status = "okay";
+	max-frequency = <150000000>;
 	mmc-pwrseq = <&sdio_pwrseq>;
-	assigned-clocks = <&cru SCLK_SDIO_SRC>;
-	assigned-clock-parents = <&xin24m>;
+	num-slots = <1>;
+	sd-uhs-sdr104;
+	status = "okay";
 };
 
-&sdmmc {
-	status = "disabled";
+&rockchip_suspend {
+	rockchip,sleep-mode-config = <
+		(0
+		|RKPM_CTR_GTCLKS
+		|RKPM_CTR_IDLESRAM_MD
+		|RKPM_CTR_PMIC
+		)
+	>;
 };
-

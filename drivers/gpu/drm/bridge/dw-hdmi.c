@@ -47,6 +47,8 @@
 #define HDMI_EDID_LEN		128*257
 #define DDC_SEGMENT_ADDR       0x30
 
+
+
 enum hdmi_datamap {
 	RGB444_8B = 0x01,
 	RGB444_10B = 0x03,
@@ -149,9 +151,12 @@ static const u16 csc_coeff_rgb_in_eitu709[3][4] = {
 struct hdmi_vmode {
 	bool mdataenablepolarity;
 
+	unsigned int previous_pixelclock;
 	unsigned int mpixelclock;
 	unsigned int mpixelrepetitioninput;
 	unsigned int mpixelrepetitionoutput;
+	unsigned int previous_tmdsclock;
+	unsigned int mtmdsclock;
 };
 
 struct hdmi_data_info {
@@ -161,6 +166,7 @@ struct hdmi_data_info {
 	unsigned int enc_out_encoding;
 	unsigned int pix_repet_factor;
 	struct hdmi_vmode video_mode;
+	bool update;
 };
 
 struct dw_hdmi_i2c {
@@ -778,7 +784,7 @@ static void hdmi_init_clk_regenerator(struct dw_hdmi *hdmi)
 static void hdmi_clk_regenerator_update_pixel_clock(struct dw_hdmi *hdmi)
 {
 	mutex_lock(&hdmi->audio_mutex);
-	hdmi_set_clk_regenerator(hdmi, hdmi->hdmi_data.video_mode.mpixelclock,
+	hdmi_set_clk_regenerator(hdmi, hdmi->hdmi_data.video_mode.mtmdsclock,
 				 hdmi->sample_rate);
 	mutex_unlock(&hdmi->audio_mutex);
 }
@@ -787,7 +793,7 @@ void dw_hdmi_set_sample_rate(struct dw_hdmi *hdmi, unsigned int rate)
 {
 	mutex_lock(&hdmi->audio_mutex);
 	hdmi->sample_rate = rate;
-	hdmi_set_clk_regenerator(hdmi, hdmi->hdmi_data.video_mode.mpixelclock,
+	hdmi_set_clk_regenerator(hdmi, hdmi->hdmi_data.video_mode.mtmdsclock,
 				 hdmi->sample_rate);
 	mutex_unlock(&hdmi->audio_mutex);
 }
@@ -1142,11 +1148,8 @@ static void hdmi_video_packetize(struct dw_hdmi *hdmi)
 	}
 
 	/* set the packetizer registers */
-	val = ((color_depth << HDMI_VP_PR_CD_COLOR_DEPTH_OFFSET) &
-		HDMI_VP_PR_CD_COLOR_DEPTH_MASK) |
-		((hdmi_data->pix_repet_factor <<
-		HDMI_VP_PR_CD_DESIRED_PR_FACTOR_OFFSET) &
-		HDMI_VP_PR_CD_DESIRED_PR_FACTOR_MASK);
+	val = (color_depth << HDMI_VP_PR_CD_COLOR_DEPTH_OFFSET) &
+	      HDMI_VP_PR_CD_COLOR_DEPTH_MASK;
 	hdmi_writeb(hdmi, val, HDMI_VP_PR_CD);
 
 	hdmi_modb(hdmi, HDMI_VP_STUFF_PR_STUFFING_STUFFING_MODE,
@@ -1165,8 +1168,13 @@ static void hdmi_video_packetize(struct dw_hdmi *hdmi)
 		  HDMI_VP_CONF_PR_EN_MASK |
 		  HDMI_VP_CONF_BYPASS_SELECT_MASK, HDMI_VP_CONF);
 
-	hdmi_modb(hdmi, 1 << HDMI_VP_STUFF_IDEFAULT_PHASE_OFFSET,
-		  HDMI_VP_STUFF_IDEFAULT_PHASE_MASK, HDMI_VP_STUFF);
+	if ((color_depth == 5 && hdmi->previous_mode.htotal % 4) ||
+	    (color_depth == 6 && hdmi->previous_mode.htotal % 2))
+		hdmi_modb(hdmi, 0, HDMI_VP_STUFF_IDEFAULT_PHASE_MASK,
+			  HDMI_VP_STUFF);
+	else
+		hdmi_modb(hdmi, 1 << HDMI_VP_STUFF_IDEFAULT_PHASE_OFFSET,
+			HDMI_VP_STUFF_IDEFAULT_PHASE_MASK, HDMI_VP_STUFF);
 
 	hdmi_writeb(hdmi, remap_size, HDMI_VP_REMAP);
 
@@ -1413,6 +1421,13 @@ static int hdmi_phy_configure_dwc_hdmi_3d_tx(struct dw_hdmi *hdmi,
 	const struct dw_hdmi_mpll_config *mpll_config = pdata->mpll_cfg;
 	const struct dw_hdmi_curr_ctrl *curr_ctrl = pdata->cur_ctr;
 	const struct dw_hdmi_phy_config *phy_config = pdata->phy_config;
+	unsigned int tmdsclock = hdmi->hdmi_data.video_mode.mtmdsclock;
+	unsigned int depth =
+		hdmi_bus_fmt_color_depth(hdmi->hdmi_data.enc_out_bus_format);
+
+	if (hdmi_bus_fmt_is_yuv420(hdmi->hdmi_data.enc_out_bus_format) &&
+	    pdata->mpll_cfg_420)
+		mpll_config = pdata->mpll_cfg_420;
 
 	/* PLL/MPLL Cfg - always match on final entry */
 	for (; mpll_config->mpixelclock != ~0UL; mpll_config++)
@@ -1420,11 +1435,11 @@ static int hdmi_phy_configure_dwc_hdmi_3d_tx(struct dw_hdmi *hdmi,
 			break;
 
 	for (; curr_ctrl->mpixelclock != ~0UL; curr_ctrl++)
-		if (mpixelclock <= curr_ctrl->mpixelclock)
+		if (tmdsclock <= curr_ctrl->mpixelclock)
 			break;
 
 	for (; phy_config->mpixelclock != ~0UL; phy_config++)
-		if (mpixelclock <= phy_config->mpixelclock)
+		if (tmdsclock <= phy_config->mpixelclock)
 			break;
 
 	if (mpll_config->mpixelclock == ~0UL ||
@@ -1432,21 +1447,18 @@ static int hdmi_phy_configure_dwc_hdmi_3d_tx(struct dw_hdmi *hdmi,
 	    phy_config->mpixelclock == ~0UL)
 		return -EINVAL;
 
-	/*
-	 * RK3399 mpll clock source is vpll, also is vop clock source.
-	 * vpll rate is twice of mpixelclock in YCBCR420 mode, we need
-	 * to enable mpll pre-divider.
-	 */
-	if (hdmi_bus_fmt_is_yuv420(hdmi->hdmi_data.enc_out_bus_format) &&
-	    (hdmi->dev_type == RK3399_HDMI || hdmi->dev_type == RK3368_HDMI))
-		dw_hdmi_phy_i2c_write(hdmi, mpll_config->res[0].cpce | 4,
-				      HDMI_3D_TX_PHY_CPCE_CTRL);
+	if (!hdmi_bus_fmt_is_yuv422(hdmi->hdmi_data.enc_out_bus_format))
+		depth = fls(depth - 8);
 	else
-		dw_hdmi_phy_i2c_write(hdmi, mpll_config->res[0].cpce,
-				      HDMI_3D_TX_PHY_CPCE_CTRL);
-	dw_hdmi_phy_i2c_write(hdmi, mpll_config->res[0].gmp,
+		depth = 0;
+	if (depth)
+		depth--;
+
+	dw_hdmi_phy_i2c_write(hdmi, mpll_config->res[depth].cpce,
+			      HDMI_3D_TX_PHY_CPCE_CTRL);
+	dw_hdmi_phy_i2c_write(hdmi, mpll_config->res[depth].gmp,
 			      HDMI_3D_TX_PHY_GMPCTRL);
-	dw_hdmi_phy_i2c_write(hdmi, curr_ctrl->curr[0],
+	dw_hdmi_phy_i2c_write(hdmi, curr_ctrl->curr[depth],
 			      HDMI_3D_TX_PHY_CURRCTRL);
 
 	dw_hdmi_phy_i2c_write(hdmi, 0, HDMI_3D_TX_PHY_PLLPHBYCTRL);
@@ -1470,13 +1482,14 @@ static int hdmi_phy_configure(struct dw_hdmi *hdmi)
 	const struct dw_hdmi_phy_data *phy = hdmi->phy.data;
 	const struct dw_hdmi_plat_data *pdata = hdmi->plat_data;
 	unsigned long mpixelclock = hdmi->hdmi_data.video_mode.mpixelclock;
+	unsigned long mtmdsclock = hdmi->hdmi_data.video_mode.mtmdsclock;
 	int ret;
 
 	dw_hdmi_phy_power_off(hdmi);
 
 	/* Control for TMDS Bit Period/TMDS Clock-Period Ratio */
 	if (hdmi->connector.display_info.hdmi.scdc.supported) {
-		if (mpixelclock > 340000000)
+		if (mtmdsclock > 340000000)
 			drm_scdc_set_high_tmds_clock_ratio(hdmi->ddc, 1);
 		else
 			drm_scdc_set_high_tmds_clock_ratio(hdmi->ddc, 0);
@@ -1509,7 +1522,7 @@ static int hdmi_phy_configure(struct dw_hdmi *hdmi)
 	}
 
 	/* Wait for resuming transmission of TMDS clock and data */
-	if (mpixelclock > 340000000)
+	if (mtmdsclock > 340000000)
 		msleep(100);
 
 	return dw_hdmi_phy_power_on(hdmi);
@@ -1594,7 +1607,7 @@ static void hdmi_config_AVI(struct dw_hdmi *hdmi, struct drm_display_mode *mode)
 	u8 val;
 	bool is_hdmi2 = false;
 
-	if ((mode->flags & DRM_MODE_FLAG_420_MASK) ||
+	if (hdmi_bus_fmt_is_yuv420(hdmi->hdmi_data.enc_out_bus_format) ||
 	    hdmi->connector.display_info.hdmi.scdc.supported)
 		is_hdmi2 = true;
 	/* Initialise info frame from DRM mode */
@@ -1626,6 +1639,14 @@ static void hdmi_config_AVI(struct dw_hdmi *hdmi, struct drm_display_mode *mode)
 			frame.colorimetry = HDMI_COLORIMETRY_ITU_709;
 		frame.extended_colorimetry =
 				HDMI_EXTENDED_COLORIMETRY_XV_YCC_709;
+		break;
+	case V4L2_YCBCR_ENC_BT2020:
+		if (hdmi->hdmi_data.enc_in_encoding == V4L2_YCBCR_ENC_BT2020)
+			frame.colorimetry = HDMI_COLORIMETRY_EXTENDED;
+		else
+			frame.colorimetry = HDMI_COLORIMETRY_ITU_709;
+		frame.extended_colorimetry =
+				HDMI_EXTENDED_COLORIMETRY_BT2020;
 		break;
 	default: /* Carries no data */
 		frame.colorimetry = HDMI_COLORIMETRY_ITU_601;
@@ -1755,6 +1776,131 @@ static void hdmi_config_vendor_specific_infoframe(struct dw_hdmi *hdmi,
 			HDMI_FC_DATAUTO0_VSD_MASK);
 }
 
+#define HDR_LSB(n) ((n) & 0xff)
+#define HDR_MSB(n) (((n) & 0xff00) >> 8)
+
+/* Set Dynamic Range and Mastering Infoframe */
+static void hdmi_config_hdr_infoframe(struct dw_hdmi *hdmi)
+{
+	struct hdmi_drm_infoframe frame;
+	struct hdr_static_metadata *hdr_metadata;
+	struct drm_connector_state *conn_state = hdmi->connector.state;
+	struct drm_hdmi_info *hdmi_info = &hdmi->connector.display_info.hdmi;
+	int ret;
+
+	/* Dynamic Range and Mastering Infoframe is introduced in v2.11a. */
+	if (hdmi->version < 0x211a) {
+		DRM_ERROR("Not support DRM Infoframe\n");
+		return;
+	}
+
+	hdmi_modb(hdmi, HDMI_FC_PACKET_DRM_TX_DEN,
+		  HDMI_FC_PACKET_DRM_TX_EN_MASK, HDMI_FC_PACKET_TX_EN);
+
+	if (!hdmi_info->hdr_panel_metadata.eotf) {
+		DRM_DEBUG("No need to set HDR metadata in infoframe\n");
+		return;
+	}
+
+	if (!conn_state->hdr_source_metadata_blob_ptr) {
+		DRM_DEBUG("source metadata not set yet\n");
+		return;
+	}
+
+	hdr_metadata = (struct hdr_static_metadata *)
+		conn_state->hdr_source_metadata_blob_ptr->data;
+
+	if (!(hdmi_info->hdr_panel_metadata.eotf & BIT(hdr_metadata->eotf))) {
+		DRM_ERROR("Not support EOTF %d\n", hdr_metadata->eotf);
+		return;
+	}
+
+	ret = drm_hdmi_infoframe_set_hdr_metadata(&frame, hdr_metadata);
+	if (ret < 0) {
+		DRM_ERROR("couldn't set HDR metadata in infoframe\n");
+		return;
+	}
+
+	hdmi_writeb(hdmi, 1, HDMI_FC_DRM_HB0);
+	hdmi_writeb(hdmi, frame.length, HDMI_FC_DRM_HB1);
+	hdmi_writeb(hdmi, frame.eotf, HDMI_FC_DRM_PB0);
+	hdmi_writeb(hdmi, frame.metadata_type, HDMI_FC_DRM_PB1);
+	hdmi_writeb(hdmi, HDR_LSB(frame.display_primaries_x[0]),
+		    HDMI_FC_DRM_PB2);
+	hdmi_writeb(hdmi, HDR_MSB(frame.display_primaries_x[0]),
+		    HDMI_FC_DRM_PB3);
+	hdmi_writeb(hdmi, HDR_LSB(frame.display_primaries_y[0]),
+		    HDMI_FC_DRM_PB4);
+	hdmi_writeb(hdmi, HDR_MSB(frame.display_primaries_y[0]),
+		    HDMI_FC_DRM_PB5);
+	hdmi_writeb(hdmi, HDR_LSB(frame.display_primaries_x[1]),
+		    HDMI_FC_DRM_PB6);
+	hdmi_writeb(hdmi, HDR_MSB(frame.display_primaries_x[1]),
+		    HDMI_FC_DRM_PB7);
+	hdmi_writeb(hdmi, HDR_LSB(frame.display_primaries_y[1]),
+		    HDMI_FC_DRM_PB8);
+	hdmi_writeb(hdmi, HDR_MSB(frame.display_primaries_y[1]),
+		    HDMI_FC_DRM_PB9);
+	hdmi_writeb(hdmi, HDR_LSB(frame.display_primaries_x[2]),
+		    HDMI_FC_DRM_PB10);
+	hdmi_writeb(hdmi, HDR_MSB(frame.display_primaries_x[2]),
+		    HDMI_FC_DRM_PB11);
+	hdmi_writeb(hdmi, HDR_LSB(frame.display_primaries_y[2]),
+		    HDMI_FC_DRM_PB12);
+	hdmi_writeb(hdmi, HDR_MSB(frame.display_primaries_y[2]),
+		    HDMI_FC_DRM_PB13);
+	hdmi_writeb(hdmi, HDR_LSB(frame.white_point_x), HDMI_FC_DRM_PB14);
+	hdmi_writeb(hdmi, HDR_MSB(frame.white_point_x), HDMI_FC_DRM_PB15);
+	hdmi_writeb(hdmi, HDR_LSB(frame.white_point_y), HDMI_FC_DRM_PB16);
+	hdmi_writeb(hdmi, HDR_MSB(frame.white_point_y), HDMI_FC_DRM_PB17);
+	hdmi_writeb(hdmi, HDR_LSB(frame.max_mastering_display_luminance),
+		    HDMI_FC_DRM_PB18);
+	hdmi_writeb(hdmi, HDR_MSB(frame.max_mastering_display_luminance),
+		    HDMI_FC_DRM_PB19);
+	hdmi_writeb(hdmi, HDR_LSB(frame.min_mastering_display_luminance),
+		    HDMI_FC_DRM_PB20);
+	hdmi_writeb(hdmi, HDR_MSB(frame.min_mastering_display_luminance),
+		    HDMI_FC_DRM_PB21);
+	hdmi_writeb(hdmi, HDR_LSB(frame.max_cll), HDMI_FC_DRM_PB22);
+	hdmi_writeb(hdmi, HDR_MSB(frame.max_cll), HDMI_FC_DRM_PB23);
+	hdmi_writeb(hdmi, HDR_LSB(frame.max_fall), HDMI_FC_DRM_PB24);
+	hdmi_writeb(hdmi, HDR_MSB(frame.max_fall), HDMI_FC_DRM_PB25);
+	hdmi_writeb(hdmi, 1, HDMI_FC_DRM_UP);
+	hdmi_modb(hdmi, HDMI_FC_PACKET_DRM_TX_EN,
+		  HDMI_FC_PACKET_DRM_TX_EN_MASK, HDMI_FC_PACKET_TX_EN);
+
+	if (conn_state->hdr_metadata_changed)
+		conn_state->hdr_metadata_changed = false;
+
+	DRM_DEBUG("%s eotf %d end\n", __func__, hdr_metadata->eotf);
+}
+
+static unsigned int
+hdmi_get_tmdsclock(struct dw_hdmi *hdmi, unsigned long mpixelclock)
+{
+	unsigned int tmdsclock = mpixelclock;
+	unsigned int depth =
+		hdmi_bus_fmt_color_depth(hdmi->hdmi_data.enc_out_bus_format);
+
+	if (!hdmi_bus_fmt_is_yuv422(hdmi->hdmi_data.enc_out_bus_format)) {
+		switch (depth) {
+		case 16:
+			tmdsclock = mpixelclock * 2;
+			break;
+		case 12:
+			tmdsclock = mpixelclock * 3 / 2;
+			break;
+		case 10:
+			tmdsclock = mpixelclock * 5 / 4;
+			break;
+		default:
+			break;
+		}
+	}
+
+	return tmdsclock;
+}
+
 static void hdmi_av_composer(struct dw_hdmi *hdmi,
 			     const struct drm_display_mode *mode)
 {
@@ -1764,19 +1910,23 @@ static void hdmi_av_composer(struct dw_hdmi *hdmi,
 	int hblank, vblank, h_de_hs, v_de_vs, hsync_len, vsync_len;
 	unsigned int hdisplay, vdisplay;
 
+	vmode->previous_pixelclock = vmode->mpixelclock;
 	vmode->mpixelclock = mode->crtc_clock * 1000;
-	if (mode->flags & DRM_MODE_FLAG_420_MASK)
-		vmode->mpixelclock /= 2;
 	if ((mode->flags & DRM_MODE_FLAG_3D_MASK) ==
 		DRM_MODE_FLAG_3D_FRAME_PACKING)
 		vmode->mpixelclock *= 2;
 	dev_dbg(hdmi->dev, "final pixclk = %d\n", vmode->mpixelclock);
+	vmode->previous_tmdsclock = vmode->mtmdsclock;
+	vmode->mtmdsclock = hdmi_get_tmdsclock(hdmi, vmode->mpixelclock);
+	if (hdmi_bus_fmt_is_yuv420(hdmi->hdmi_data.enc_out_bus_format))
+		vmode->mtmdsclock /= 2;
+	dev_dbg(hdmi->dev, "final tmdsclk = %d\n", vmode->mtmdsclock);
 
 	/* Set up HDMI_FC_INVIDCONF
 	 * fc_invidconf.HDCP_keepout must be set (1'b1)
 	 * when activate the scrambler feature.
 	 */
-	inv_val = (vmode->mpixelclock > 340000000 ||
+	inv_val = (vmode->mtmdsclock > 340000000 ||
 		   hdmi_info->scdc.scrambling.low_rates ?
 		   HDMI_FC_INVIDCONF_HDCP_KEEPOUT_ACTIVE :
 		   HDMI_FC_INVIDCONF_HDCP_KEEPOUT_INACTIVE);
@@ -1819,7 +1969,7 @@ static void hdmi_av_composer(struct dw_hdmi *hdmi,
 	 * When we're setting a YCbCr420 mode, we need
 	 * to adjust the horizontal timing to suit.
 	 */
-	if (mode->flags & DRM_MODE_FLAG_420_MASK) {
+	if (hdmi_bus_fmt_is_yuv420(hdmi->hdmi_data.enc_out_bus_format)) {
 		hdisplay /= 2;
 		hblank /= 2;
 		h_de_hs /= 2;
@@ -1847,7 +1997,7 @@ static void hdmi_av_composer(struct dw_hdmi *hdmi,
 
 	/* Scrambling Control */
 	if (hdmi_info->scdc.supported) {
-		if (vmode->mpixelclock > 340000000 ||
+		if (vmode->mtmdsclock > 340000000 ||
 		    hdmi_info->scdc.scrambling.low_rates) {
 			drm_scdc_readb(&hdmi->i2c->adap, SCDC_SINK_VERSION,
 				       &bytes);
@@ -1971,6 +2121,9 @@ static void dw_hdmi_clear_overflow(struct dw_hdmi *hdmi)
 		count = 4;
 		break;
 	case 0x131a:
+	case 0x200a:
+	case 0x201a:
+	case 0x211a:
 		count = 1;
 		break;
 	default:
@@ -2000,6 +2153,8 @@ static void hdmi_disable_overflow_interrupts(struct dw_hdmi *hdmi)
 static int dw_hdmi_setup(struct dw_hdmi *hdmi, struct drm_display_mode *mode)
 {
 	int ret;
+	void *data = hdmi->plat_data->phy_data;
+	bool need_delay = false;
 
 	hdmi_disable_overflow_interrupts(hdmi);
 
@@ -2011,10 +2166,13 @@ static int dw_hdmi_setup(struct dw_hdmi *hdmi, struct drm_display_mode *mode)
 		dev_dbg(hdmi->dev, "CEA mode used vic=%d\n", hdmi->vic);
 	}
 
-	if ((hdmi->vic == 6) || (hdmi->vic == 7) ||
-	    (hdmi->vic == 21) || (hdmi->vic == 22) ||
-	    (hdmi->vic == 2) || (hdmi->vic == 3) ||
-	    (hdmi->vic == 17) || (hdmi->vic == 18))
+	if (hdmi->plat_data->get_enc_out_encoding)
+		hdmi->hdmi_data.enc_out_encoding =
+			hdmi->plat_data->get_enc_out_encoding(data);
+	else if ((hdmi->vic == 6) || (hdmi->vic == 7) ||
+		 (hdmi->vic == 21) || (hdmi->vic == 22) ||
+		 (hdmi->vic == 2) || (hdmi->vic == 3) ||
+		 (hdmi->vic == 17) || (hdmi->vic == 18))
 		hdmi->hdmi_data.enc_out_encoding = V4L2_YCBCR_ENC_601;
 	else
 		hdmi->hdmi_data.enc_out_encoding = V4L2_YCBCR_ENC_709;
@@ -2027,31 +2185,30 @@ static int dw_hdmi_setup(struct dw_hdmi *hdmi, struct drm_display_mode *mode)
 		hdmi->hdmi_data.video_mode.mpixelrepetitioninput = 0;
 	}
 
-	if ((hdmi->dev_type == RK3328_HDMI ||
-	     hdmi->dev_type == RK3228_HDMI) &&
-	    drm_match_cea_mode(mode) > 94 &&
-	    mode->crtc_clock > 340000 &&
-	    !(mode->flags & DRM_MODE_FLAG_420_MASK))
-		mode->flags |= DRM_MODE_FLAG_420;
-
-	if (mode->flags & DRM_MODE_FLAG_420_MASK) {
+	/* TOFIX: Get input format from plat data or fallback to RGB888 */
+	if (hdmi->plat_data->get_input_bus_format)
 		hdmi->hdmi_data.enc_in_bus_format =
-			MEDIA_BUS_FMT_UYYVYY8_0_5X24;
+			hdmi->plat_data->get_input_bus_format(data);
+	else if (hdmi->plat_data->input_bus_format)
+		hdmi->hdmi_data.enc_in_bus_format =
+			hdmi->plat_data->input_bus_format;
+	else
+		hdmi->hdmi_data.enc_in_bus_format =
+			MEDIA_BUS_FMT_RGB888_1X24;
+
+	/* TOFIX: Default to RGB888 output format */
+	if (hdmi->plat_data->get_output_bus_format)
 		hdmi->hdmi_data.enc_out_bus_format =
-			MEDIA_BUS_FMT_UYYVYY8_0_5X24;
-	} else {
-		/* TOFIX: Get input format from plat data or fallback to RGB888 */
-		if (hdmi->plat_data->input_bus_format)
-			hdmi->hdmi_data.enc_in_bus_format =
-				hdmi->plat_data->input_bus_format;
-		else
-			hdmi->hdmi_data.enc_in_bus_format =
-				MEDIA_BUS_FMT_RGB888_1X24;
-		/* TOFIX: Default to RGB888 output format */
-		hdmi->hdmi_data.enc_out_bus_format = MEDIA_BUS_FMT_RGB888_1X24;
-	}
+			hdmi->plat_data->get_output_bus_format(data);
+	else
+		hdmi->hdmi_data.enc_out_bus_format =
+			MEDIA_BUS_FMT_RGB888_1X24;
+
 	/* TOFIX: Get input encoding from plat data or fallback to none */
-	if (hdmi->plat_data->input_bus_encoding)
+	if (hdmi->plat_data->get_enc_in_encoding)
+		hdmi->hdmi_data.enc_in_encoding =
+			hdmi->plat_data->get_enc_in_encoding(data);
+	else if (hdmi->plat_data->input_bus_encoding)
 		hdmi->hdmi_data.enc_in_encoding =
 			hdmi->plat_data->input_bus_encoding;
 	else
@@ -2069,14 +2226,22 @@ static int dw_hdmi_setup(struct dw_hdmi *hdmi, struct drm_display_mode *mode)
 	/* HDMI Initialization Step B.1 */
 	hdmi_av_composer(hdmi, mode);
 
-	/* HDMI Initialization Step B.2 */
+	/* HDMI Initializateion Step B.2 */
+	if (!hdmi->phy.enabled ||
+	    hdmi->hdmi_data.video_mode.previous_pixelclock !=
+	    hdmi->hdmi_data.video_mode.mpixelclock ||
+	    hdmi->hdmi_data.video_mode.previous_tmdsclock !=
+	    hdmi->hdmi_data.video_mode.mtmdsclock) {
+		ret = hdmi->phy.ops->init(hdmi, hdmi->phy.data,
+					  &hdmi->previous_mode);
+		if (ret)
+			return ret;
+		hdmi->phy.enabled = true;
+	} else {
+		need_delay = true;
+	}
+	/* HDMI Initialization Step B.3 */
 	dw_hdmi_enable_video_path(hdmi);
-
-	/* HDMI Initializateion Step B.3 */
-	ret = hdmi->phy.ops->init(hdmi, hdmi->phy.data, &hdmi->previous_mode);
-	if (ret)
-		return ret;
-	hdmi->phy.enabled = true;
 
 	if (hdmi->sink_has_audio) {
 		dev_dbg(hdmi->dev, "sink has audio support\n");
@@ -2093,6 +2258,7 @@ static int dw_hdmi_setup(struct dw_hdmi *hdmi, struct drm_display_mode *mode)
 		/* HDMI Initialization Step F - Configure AVI InfoFrame */
 		hdmi_config_AVI(hdmi, mode);
 		hdmi_config_vendor_specific_infoframe(hdmi, mode);
+		hdmi_config_hdr_infoframe(hdmi);
 	} else {
 		dev_dbg(hdmi->dev, "%s DVI mode\n", __func__);
 	}
@@ -2105,6 +2271,9 @@ static int dw_hdmi_setup(struct dw_hdmi *hdmi, struct drm_display_mode *mode)
 	if (hdmi->cable_plugin && hdmi->sink_is_hdmi)
 		hdmi_enable_overflow_interrupts(hdmi);
 
+	/* XXX: Add delay to make csc work before unmute video. */
+	if (need_delay)
+		msleep(50);
 	return 0;
 }
 
@@ -2285,7 +2454,11 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 	struct dw_hdmi *hdmi = container_of(connector, struct dw_hdmi,
 					     connector);
 	struct edid *edid;
-	int ret = 0;
+	struct drm_display_mode *mode;
+	const u8 def_modes[6] = {4, 16, 31, 19, 17, 2};
+	struct hdr_static_metadata *metedata =
+			&connector->display_info.hdmi.hdr_panel_metadata;
+	int i, ret = 0;
 
 	if (!hdmi->ddc)
 		return 0;
@@ -2303,9 +2476,23 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 		/* Store the ELD */
 		drm_edid_to_eld(connector, edid);
 		hdmi_event_new_eld(hdmi->n, connector->eld);
+		drm_mode_connector_update_hdr_property(connector, metedata);
 		kfree(edid);
 	} else {
-		dev_dbg(hdmi->dev, "failed to get edid\n");
+		hdmi->sink_is_hdmi = true;
+		hdmi->sink_has_audio = true;
+		for (i = 0; i < sizeof(def_modes); i++) {
+			mode = drm_display_mode_from_vic_index(connector,
+							       def_modes,
+							       31, i);
+			if (mode) {
+				if (!i)
+					mode->type = DRM_MODE_TYPE_PREFERRED;
+				drm_mode_probed_add(connector, mode);
+				ret++;
+			}
+		}
+		dev_info(hdmi->dev, "failed to get edid\n");
 	}
 
 	return ret;
@@ -2340,12 +2527,151 @@ static void dw_hdmi_connector_destroy(struct drm_connector *connector)
 	drm_connector_cleanup(connector);
 }
 
+static void
+dw_hdmi_connector_atomic_begin(struct drm_connector *connector,
+			       struct drm_connector_state *conn_state)
+{
+	struct dw_hdmi *hdmi = container_of(connector, struct dw_hdmi,
+					    connector);
+	void *data = hdmi->plat_data->phy_data;
+	unsigned int enc_in_bus_format;
+	unsigned int enc_out_bus_format;
+	unsigned int enc_in_encoding;
+	unsigned int enc_out_encoding;
+
+	if (!hdmi->hpd_state || !conn_state->crtc)
+		return;
+
+	if (!hdmi->hdmi_data.video_mode.mpixelclock)
+		return;
+
+	if (hdmi->plat_data->get_enc_in_encoding)
+		enc_in_encoding = hdmi->plat_data->get_enc_in_encoding(data);
+	else
+		enc_in_encoding = hdmi->hdmi_data.enc_in_encoding;
+	if (hdmi->plat_data->get_enc_out_encoding)
+		enc_out_encoding = hdmi->plat_data->get_enc_out_encoding(data);
+	else
+		enc_out_encoding = hdmi->hdmi_data.enc_out_encoding;
+	if (hdmi->plat_data->get_input_bus_format)
+		enc_in_bus_format =
+			hdmi->plat_data->get_input_bus_format(data);
+	else
+		enc_in_bus_format = hdmi->hdmi_data.enc_in_bus_format;
+	if (hdmi->plat_data->get_output_bus_format)
+		enc_out_bus_format =
+			hdmi->plat_data->get_output_bus_format(data);
+	else
+		enc_out_bus_format = hdmi->hdmi_data.enc_out_bus_format;
+
+	if (enc_in_encoding != hdmi->hdmi_data.enc_in_encoding ||
+	    enc_out_encoding != hdmi->hdmi_data.enc_out_encoding ||
+	    enc_in_bus_format != hdmi->hdmi_data.enc_in_bus_format ||
+	    enc_out_bus_format != hdmi->hdmi_data.enc_out_bus_format) {
+		hdmi->hdmi_data.update = true;
+		hdmi_writeb(hdmi, HDMI_FC_GCP_SET_AVMUTE, HDMI_FC_GCP);
+		/* XXX: Add delay to make av mute work on sink*/
+		msleep(50);
+	} else {
+		hdmi->hdmi_data.update = false;
+	}
+}
+
+static void
+dw_hdmi_connector_atomic_flush(struct drm_connector *connector,
+			       struct drm_connector_state *conn_state)
+{
+	struct dw_hdmi *hdmi = container_of(connector, struct dw_hdmi,
+					     connector);
+	struct drm_display_mode *mode = NULL;
+
+	if (!hdmi->hpd_state || !conn_state->crtc)
+		return;
+
+	DRM_DEBUG("%s\n", __func__);
+
+	/*
+	 * If HDMI is enabled in uboot, it's need to record
+	 * drm_display_mode and set phy status to enabled.
+	 */
+	if (!hdmi->hdmi_data.video_mode.mpixelclock) {
+		mode = &conn_state->crtc->mode;
+		memcpy(&hdmi->previous_mode, mode, sizeof(hdmi->previous_mode));
+		hdmi->hdmi_data.video_mode.mpixelclock = mode->clock;
+		hdmi->hdmi_data.video_mode.previous_pixelclock = mode->clock;
+		hdmi->hdmi_data.video_mode.previous_tmdsclock = mode->clock;
+		hdmi->phy.enabled = true;
+		return;
+	}
+
+	if (hdmi->hdmi_data.update) {
+		dw_hdmi_setup(hdmi, &hdmi->previous_mode);
+		hdmi_writeb(hdmi, HDMI_FC_GCP_CLEAR_AVMUTE, HDMI_FC_GCP);
+		hdmi->hdmi_data.update = false;
+	} else if (connector->state->hdr_metadata_changed &&
+		   hdmi->sink_is_hdmi) {
+		hdmi_config_hdr_infoframe(hdmi);
+	}
+}
+
+static int
+dw_hdmi_atomic_connector_set_property(struct drm_connector *connector,
+				      struct drm_connector_state *state,
+				      struct drm_property *property,
+				      uint64_t val)
+{
+	struct dw_hdmi *hdmi = container_of(connector, struct dw_hdmi,
+					     connector);
+	const struct dw_hdmi_property_ops *ops =
+				hdmi->plat_data->property_ops;
+
+	if (ops && ops->set_property)
+		return ops->set_property(connector, state, property,
+					 val, hdmi->plat_data->phy_data);
+	else
+		return -EINVAL;
+}
+
+static int
+dw_hdmi_atomic_connector_get_property(struct drm_connector *connector,
+				      const struct drm_connector_state *state,
+				      struct drm_property *property,
+				      uint64_t *val)
+{
+	struct dw_hdmi *hdmi = container_of(connector, struct dw_hdmi,
+					     connector);
+	const struct dw_hdmi_property_ops *ops =
+				hdmi->plat_data->property_ops;
+
+	if (ops && ops->get_property)
+		return ops->get_property(connector, state, property,
+					 val, hdmi->plat_data->phy_data);
+	else
+		return -EINVAL;
+}
+
+static int
+dw_hdmi_connector_set_property(struct drm_connector *connector,
+			       struct drm_property *property, uint64_t val)
+{
+	return dw_hdmi_atomic_connector_set_property(connector, NULL,
+						     property, val);
+}
+
 static void dw_hdmi_connector_force(struct drm_connector *connector)
 {
 	struct dw_hdmi *hdmi = container_of(connector, struct dw_hdmi,
 					     connector);
 
 	mutex_lock(&hdmi->mutex);
+#ifdef CONFIG_SWITCH
+	if (!hdmi->disabled && hdmi->force != connector->force) {
+		if (connector->force == DRM_FORCE_OFF)
+			switch_set_state(&hdmi->switchdev, 0);
+		else if (connector->force == DRM_FORCE_ON)
+			switch_set_state(&hdmi->switchdev, 1);
+	}
+#endif
 	hdmi->force = connector->force;
 	dw_hdmi_update_power(hdmi);
 	dw_hdmi_update_phy_mask(hdmi);
@@ -2367,14 +2693,19 @@ static const struct drm_connector_funcs dw_hdmi_atomic_connector_funcs = {
 	.destroy = dw_hdmi_connector_destroy,
 	.force = dw_hdmi_connector_force,
 	.reset = drm_atomic_helper_connector_reset,
+	.set_property = dw_hdmi_connector_set_property,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
+	.atomic_set_property = dw_hdmi_atomic_connector_set_property,
+	.atomic_get_property = dw_hdmi_atomic_connector_get_property,
 };
 
 static const struct drm_connector_helper_funcs dw_hdmi_connector_helper_funcs = {
 	.get_modes = dw_hdmi_connector_get_modes,
 	.mode_valid = dw_hdmi_connector_mode_valid,
 	.best_encoder = dw_hdmi_connector_best_encoder,
+	.atomic_begin = dw_hdmi_connector_atomic_begin,
+	.atomic_flush = dw_hdmi_connector_atomic_flush,
 };
 
 static const struct drm_bridge_funcs dw_hdmi_bridge_funcs = {
@@ -2596,6 +2927,27 @@ static int dw_hdmi_detect_phy(struct dw_hdmi *hdmi)
 	return -ENODEV;
 }
 
+static void dw_hdmi_attatch_properties(struct dw_hdmi *hdmi)
+{
+	const struct dw_hdmi_property_ops *ops =
+				hdmi->plat_data->property_ops;
+
+	if (ops && ops->attatch_properties)
+		return ops->attatch_properties(&hdmi->connector,
+					       hdmi->version,
+					       hdmi->plat_data->phy_data);
+}
+
+static void dw_hdmi_destroy_properties(struct dw_hdmi *hdmi)
+{
+	const struct dw_hdmi_property_ops *ops =
+				hdmi->plat_data->property_ops;
+
+	if (ops && ops->destroy_properties)
+		return ops->destroy_properties(&hdmi->connector,
+					       hdmi->plat_data->phy_data);
+}
+
 static int dw_hdmi_register(struct drm_device *drm, struct dw_hdmi *hdmi)
 {
 	struct drm_encoder *encoder = hdmi->encoder;
@@ -2628,8 +2980,143 @@ static int dw_hdmi_register(struct drm_device *drm, struct dw_hdmi *hdmi)
 
 	drm_mode_connector_attach_encoder(&hdmi->connector, encoder);
 
+	dw_hdmi_attatch_properties(hdmi);
+
 	return 0;
 }
+
+static int dw_hdmi_status_show(struct seq_file *s, void *v)
+{
+	struct dw_hdmi *hdmi = s->private;
+	u32 val;
+
+	seq_puts(s, "PHY: ");
+	if (!hdmi->phy.enabled) {
+		seq_puts(s, "disabled\n");
+		return 0;
+	}
+	seq_puts(s, "enabled\t\t\tMode: ");
+	if (hdmi->sink_is_hdmi)
+		seq_puts(s, "HDMI\n");
+	else
+		seq_puts(s, "DVI\n");
+	if (hdmi->hdmi_data.video_mode.mtmdsclock > 340000000)
+		val = hdmi->hdmi_data.video_mode.mtmdsclock / 4;
+	else
+		val = hdmi->hdmi_data.video_mode.mtmdsclock;
+	seq_printf(s, "Pixel Clk: %uHz\t\tTMDS Clk: %uHz\n",
+		   hdmi->hdmi_data.video_mode.mpixelclock, val);
+	seq_puts(s, "Color Format: ");
+	if (hdmi_bus_fmt_is_rgb(hdmi->hdmi_data.enc_out_bus_format))
+		seq_puts(s, "RGB");
+	else if (hdmi_bus_fmt_is_yuv444(hdmi->hdmi_data.enc_out_bus_format))
+		seq_puts(s, "YUV444");
+	else if (hdmi_bus_fmt_is_yuv422(hdmi->hdmi_data.enc_out_bus_format))
+		seq_puts(s, "YUV422");
+	else if (hdmi_bus_fmt_is_yuv420(hdmi->hdmi_data.enc_out_bus_format))
+		seq_puts(s, "YUV420");
+	else
+		seq_puts(s, "UNKNOWN");
+	val =  hdmi_bus_fmt_color_depth(hdmi->hdmi_data.enc_out_bus_format);
+	seq_printf(s, "\t\tColor Depth: %d bit\n", val);
+	seq_puts(s, "Colorimetry: ");
+	switch (hdmi->hdmi_data.enc_out_encoding) {
+	case V4L2_YCBCR_ENC_601:
+		seq_puts(s, "ITU.BT601");
+		break;
+	case V4L2_YCBCR_ENC_709:
+		seq_puts(s, "ITU.BT709");
+		break;
+	case V4L2_YCBCR_ENC_BT2020:
+		seq_puts(s, "ITU.BT2020");
+		break;
+	default: /* Carries no data */
+		seq_puts(s, "ITU.BT601");
+		break;
+	}
+
+	seq_puts(s, "\t\tEOTF: ");
+
+	if (hdmi->version < 0x211a) {
+		seq_puts(s, "Unsupported\n");
+		return 0;
+	}
+
+	val = hdmi_readb(hdmi, HDMI_FC_PACKET_TX_EN);
+	if (!(val & HDMI_FC_PACKET_DRM_TX_EN_MASK)) {
+		seq_puts(s, "Off\n");
+		return 0;
+	}
+
+	switch (hdmi_readb(hdmi, HDMI_FC_DRM_PB0)) {
+	case TRADITIONAL_GAMMA_SDR:
+		seq_puts(s, "SDR");
+		break;
+	case TRADITIONAL_GAMMA_HDR:
+		seq_puts(s, "HDR");
+		break;
+	case SMPTE_ST2084:
+		seq_puts(s, "ST2084");
+		break;
+	case HLG:
+		seq_puts(s, "HLG");
+		break;
+	default:
+		seq_puts(s, "Not Defined\n");
+		return 0;
+	}
+
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB3) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB2);
+	seq_printf(s, "\nx0: %d", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB5) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB4);
+	seq_printf(s, "\t\t\t\ty0: %d\n", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB7) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB6);
+	seq_printf(s, "x1: %d", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB9) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB8);
+	seq_printf(s, "\t\t\t\ty1: %d\n", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB11) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB10);
+	seq_printf(s, "x2: %d", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB13) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB12);
+	seq_printf(s, "\t\t\t\ty2: %d\n", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB15) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB14);
+	seq_printf(s, "white x: %d", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB17) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB16);
+	seq_printf(s, "\t\t\twhite y: %d\n", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB19) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB18);
+	seq_printf(s, "max lum: %d", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB21) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB20);
+	seq_printf(s, "\t\t\tmin lum: %d\n", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB23) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB22);
+	seq_printf(s, "max cll: %d", val);
+	val = hdmi_readb(hdmi, HDMI_FC_DRM_PB25) << 8;
+	val |= hdmi_readb(hdmi, HDMI_FC_DRM_PB24);
+	seq_printf(s, "\t\t\tmax fall: %d\n", val);
+	return 0;
+}
+
+static int dw_hdmi_status_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, dw_hdmi_status_show, inode->i_private);
+}
+
+static const struct file_operations dw_hdmi_status_fops = {
+	.owner = THIS_MODULE,
+	.open = dw_hdmi_status_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
 
 #include <linux/fs.h>
 #include <linux/debugfs.h>
@@ -2779,6 +3266,10 @@ static void dw_hdmi_register_debugfs(struct device *dev, struct dw_hdmi *hdmi)
 		dev_err(dev, "failed to create debugfs dir!\n");
 		return;
 	}
+
+	debugfs_create_file("status", 0400, hdmi->debugfs_dir,
+			    hdmi, &dw_hdmi_status_fops);
+
 	debugfs_create_file("ctrl", 0400, hdmi->debugfs_dir,
 			    hdmi, &dw_hdmi_ctrl_fops);
 
@@ -3008,6 +3499,11 @@ int dw_hdmi_bind(struct device *dev, struct device *master,
 	/* Unmask HPD, clear transitory interrupts, then unmute */
 	hdmi_writeb(hdmi, hdmi->phy_mask, HDMI_PHY_MASK0);
 
+	if (hdmi->dev_type == RK3288_HDMI && hdmi->version == 0x200a)
+		hdmi->connector.ycbcr_420_allowed = false;
+	else
+		hdmi->connector.ycbcr_420_allowed = true;
+
 	ret = dw_hdmi_register(drm, hdmi);
 	if (ret)
 		goto err_iahb;
@@ -3130,6 +3626,7 @@ void dw_hdmi_unbind(struct device *dev, struct device *master, void *data)
 #ifdef CONFIG_SWITCH
 	switch_dev_unregister(&hdmi->switchdev);
 #endif
+	dw_hdmi_destroy_properties(hdmi);
 	hdmi->connector.funcs->destroy(&hdmi->connector);
 	hdmi->encoder->funcs->destroy(hdmi->encoder);
 
@@ -3171,6 +3668,7 @@ void dw_hdmi_suspend(struct device *dev)
 	if (hdmi->irq)
 		disable_irq(hdmi->irq);
 	mutex_unlock(&hdmi->mutex);
+	pinctrl_pm_select_sleep_state(dev);
 }
 EXPORT_SYMBOL_GPL(dw_hdmi_suspend);
 
@@ -3178,6 +3676,7 @@ void dw_hdmi_resume(struct device *dev)
 {
 	struct dw_hdmi *hdmi = dev_get_drvdata(dev);
 
+	pinctrl_pm_select_default_state(dev);
 	mutex_lock(&hdmi->mutex);
 	dw_hdmi_reg_initial(hdmi);
 	if (hdmi->i2c)

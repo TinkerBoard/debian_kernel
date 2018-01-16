@@ -36,6 +36,7 @@
 #include <asm/pgtable-hwdef.h>
 #include <asm/pgtable.h>
 #include <asm/page.h>
+#include <asm/smp.h>
 #include <asm/sysreg.h>
 #include <asm/thread_info.h>
 #include <asm/virt.h>
@@ -418,6 +419,7 @@ ENDPROC(__create_page_tables)
 	.set	initial_sp, init_thread_union + THREAD_START_SP
 __primary_switched:
 	mov	x28, lr				// preserve LR
+
 	adr_l	x8, vectors			// load VBAR_EL1 with virtual
 	msr	vbar_el1, x8			// vector table address
 	isb
@@ -430,10 +432,18 @@ __primary_switched:
 	bl	__pi_memset
 	dsb	ishst				// Make zero page visible to PTW
 
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+        adrp    x4, init_thread_union
+        add     sp, x4, #THREAD_SIZE
+        adr_l   x5, init_task
+        msr     sp_el0, x5                      // Save thread_info
+#else
 	adr_l	sp, initial_sp, x4
 	mov	x4, sp
 	and	x4, x4, #~(THREAD_SIZE - 1)
 	msr	sp_el0, x4			// Save thread_info
+#endif
+
 	str_l	x21, __fdt_pointer, x5		// Save FDT pointer
 
 	ldr_l	x4, kimage_vaddr		// Save the offset between
@@ -476,6 +486,7 @@ ENTRY(kimage_vaddr)
  * booted in EL1 or EL2 respectively.
  */
 ENTRY(el2_setup)
+	msr	SPsel, #1			// We want to use SP_EL{1,2}
 	mrs	x0, CurrentEL
 	cmp	x0, #CurrentEL_EL2
 	b.ne	1f
@@ -601,12 +612,6 @@ ENDPROC(set_cpu_boot_mode_flag)
 ENTRY(__boot_cpu_mode)
 	.long	BOOT_CPU_MODE_EL2
 	.long	BOOT_CPU_MODE_EL1
-/*
- * The booting CPU updates the failed status @__early_cpu_boot_status,
- * with MMU turned off.
- */
-ENTRY(__early_cpu_boot_status)
-	.long 	0
 
 	.popsection
 
@@ -654,14 +659,45 @@ __secondary_switched:
 	adr_l	x5, vectors
 	msr	vbar_el1, x5
 	isb
-
-	ldr_l	x0, secondary_data		// get secondary_data.stack
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+	adr_l	x0, secondary_data
+	ldr	x1, [x0, #CPU_BOOT_STACK]	// get secondary_data.stack
+	mov	sp, x1
+	ldr	x2, [x0, #CPU_BOOT_TASK]
+	msr	sp_el0, x2
+#else
+	adr_l	x0, secondary_data
+	ldr	x0, [x0, #CPU_BOOT_STACK]	// get secondary_data.stack
 	mov	sp, x0
 	and	x0, x0, #~(THREAD_SIZE - 1)
 	msr	sp_el0, x0			// save thread_info
+#endif
 	mov	x29, #0
 	b	secondary_start_kernel
 ENDPROC(__secondary_switched)
+
+/*
+ * The booting CPU updates the failed status @__early_cpu_boot_status,
+ * with MMU turned off.
+ *
+ * update_early_cpu_boot_status tmp, status
+ *  - Corrupts tmp1, tmp2
+ *  - Writes 'status' to __early_cpu_boot_status and makes sure
+ *    it is committed to memory.
+ */
+
+	.macro	update_early_cpu_boot_status status, tmp1, tmp2
+	mov	\tmp2, #\status
+	str_l	\tmp2, __early_cpu_boot_status, \tmp1
+	dmb	sy
+	dc	ivac, \tmp1			// Invalidate potentially stale cache line
+	.endm
+
+	.pushsection	.data..cacheline_aligned
+	.align	L1_CACHE_SHIFT
+ENTRY(__early_cpu_boot_status)
+	.long 	0
+	.popsection
 
 /*
  * Enable the MMU.
@@ -680,6 +716,7 @@ ENTRY(__enable_mmu)
 	ubfx	x2, x1, #ID_AA64MMFR0_TGRAN_SHIFT, 4
 	cmp	x2, #ID_AA64MMFR0_TGRAN_SUPPORTED
 	b.ne	__no_granule_support
+	update_early_cpu_boot_status 0, x1, x2
 	msr	ttbr0_el1, x25			// load TTBR0
 	msr	ttbr1_el1, x26			// load TTBR1
 	isb
@@ -719,8 +756,12 @@ ENTRY(__enable_mmu)
 ENDPROC(__enable_mmu)
 
 __no_granule_support:
+	/* Indicate that this CPU can't boot and is stuck in the kernel */
+	update_early_cpu_boot_status CPU_STUCK_IN_KERNEL, x1, x2
+1:
 	wfe
-	b __no_granule_support
+	wfi
+	b 1b
 ENDPROC(__no_granule_support)
 
 __primary_switch:

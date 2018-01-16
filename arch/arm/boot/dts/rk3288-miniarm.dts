@@ -633,6 +633,9 @@
 	status = "okay";
 };
 
+&rga{
+	status = "okay";
+};
 
 &spi2 {
 	status = "okay";

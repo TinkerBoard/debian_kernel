@@ -2563,15 +2563,16 @@ void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *hsotg,
 
 	dwc2_writel(intmsk, hsotg->regs + GINTMSK);
 
-	if (using_dma(hsotg))
-		dwc2_writel(GAHBCFG_GLBL_INTR_EN | GAHBCFG_DMA_EN |
-			    (GAHBCFG_HBSTLEN_INCR4 << GAHBCFG_HBSTLEN_SHIFT),
+	if (using_dma(hsotg)) {
+		val = hsotg->core_params->ahbcfg & ~GAHBCFG_CTRL_MASK;
+		dwc2_writel(GAHBCFG_GLBL_INTR_EN | GAHBCFG_DMA_EN | val,
 			    hsotg->regs + GAHBCFG);
-	else
+	} else {
 		dwc2_writel(((hsotg->dedicated_fifos) ?
 						(GAHBCFG_NP_TXF_EMP_LVL |
 						 GAHBCFG_P_TXF_EMP_LVL) : 0) |
 			    GAHBCFG_GLBL_INTR_EN, hsotg->regs + GAHBCFG);
+	}
 
 	/*
 	 * If INTknTXFEmpMsk is enabled, it's important to disable ep interrupts
@@ -3465,7 +3466,8 @@ static int dwc2_hsotg_udc_start(struct usb_gadget *gadget,
 	hsotg->gadget.dev.of_node = hsotg->dev->of_node;
 	hsotg->gadget.speed = USB_SPEED_UNKNOWN;
 
-	if (hsotg->dr_mode == USB_DR_MODE_PERIPHERAL) {
+	if (hsotg->dr_mode == USB_DR_MODE_PERIPHERAL ||
+	    hsotg->dr_mode == USB_DR_MODE_OTG) {
 		ret = dwc2_lowlevel_hw_enable(hsotg);
 		if (ret)
 			goto err;
@@ -3524,7 +3526,8 @@ static int dwc2_hsotg_udc_stop(struct usb_gadget *gadget)
 	if (!IS_ERR_OR_NULL(hsotg->uphy))
 		otg_set_peripheral(hsotg->uphy->otg, NULL);
 
-	if (hsotg->dr_mode == USB_DR_MODE_PERIPHERAL)
+	if (hsotg->dr_mode == USB_DR_MODE_PERIPHERAL ||
+	    hsotg->dr_mode == USB_DR_MODE_OTG)
 		dwc2_lowlevel_hw_disable(hsotg);
 
 	return 0;

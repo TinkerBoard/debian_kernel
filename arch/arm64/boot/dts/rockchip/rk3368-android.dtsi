@@ -81,10 +81,33 @@
 		#size-cells = <0>;
 
 		cma-heap {
-			reg = <0x00000000 0x02000000>;
+			reg = <0x00000000 0x2800000>;
 		};
 
 		system-heap {
+		};
+	};
+
+	firmware {
+		android {
+			compatible = "android,firmware";
+			fstab {
+				compatible = "android,fstab";
+				system {
+					compatible = "android,system";
+					dev = "/dev/block/platform/ff0f0000.dwmmc/by-name/system";
+					type = "ext4";
+					mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
+					fsmgr_flags = "wait,verify";
+				};
+				vendor {
+					compatible = "android,vendor";
+					dev = "/dev/block/platform/ff0f0000.dwmmc/by-name/vendor";
+					type = "ext4";
+					mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
+					fsmgr_flags = "wait,verify";
+				};
+			};
 		};
 	};
 
@@ -139,7 +162,7 @@
 &display_subsystem {
 	status = "okay";
 
-	memory-region = <&drm_logo>;
+	logo-memory-region = <&drm_logo>;
 	route {
 		route_dsi: route-dsi {
 			status = "disabled";
@@ -177,10 +200,6 @@
 			connect = <&vop_out_lvds>;
 		};
 	};
-};
-
-&uart2 {
-	status = "okay";
 };
 
 &iep {
@@ -227,8 +246,18 @@
 	status = "okay";
 };
 
+&cif {
+	status = "okay";
+};
+
+&vip_mmu {
+	status = "okay";
+};
+
 &usb_otg {
 	status = "okay";
+
+	compatible = "rockchip,rk3368-usb";
 	clocks = <&cru SCLK_OTGPHY0>, <&cru HCLK_OTG0>;
 	clock-names = "sclk_otgphy0", "otg";
 	resets = <&cru SRST_USBOTG_AHB>,

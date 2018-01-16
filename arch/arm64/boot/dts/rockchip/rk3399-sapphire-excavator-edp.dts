@@ -50,15 +50,49 @@
 	model = "Rockchip RK3399 Excavator Board edp (Android)";
 	compatible = "rockchip,android", "rockchip,rk3399-excavator-edp", "rockchip,rk3399";
 
-	edp_panel: edp-panel {
-		compatible = "lg,lp079qx1-sp0v", "panel-simple";
+	vcc_lcd: vcc-lcd {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_lcd";
+		gpio = <&gpio4 30 GPIO_ACTIVE_HIGH>;
+		startup-delay-us = <20000>;
+		enable-active-high;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-boot-on;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	panel: panel {
+		compatible = "simple-panel";
 		backlight = <&backlight>;
-		power-supply = <&vcc3v3_s0>;
-		enable-gpios = <&gpio4 30 GPIO_ACTIVE_HIGH>;
+		power-supply = <&vcc_lcd>;
+		enable-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
+		prepare-delay-ms = <20>;
+		enable-delay-ms = <20>;
+
+		display-timings {
+			native-mode = <&timing0>;
+
+			timing0: timing0 {
+				clock-frequency = <200000000>;
+				hactive = <1536>;
+				vactive = <2048>;
+				hfront-porch = <12>;
+				hsync-len = <16>;
+				hback-porch = <48>;
+				vfront-porch = <8>;
+				vsync-len = <4>;
+				vback-porch = <8>;
+				hsync-active = <0>;
+				vsync-active = <0>;
+				de-active = <0>;
+				pixelclk-active = <0>;
+			};
+		};
 
 		ports {
-			panel_in_edp: endpoint {
-				remote-endpoint = <&edp_out_panel>;
+			panel_in: endpoint {
+				remote-endpoint = <&edp_out>;
 			};
 		};
 	};
@@ -81,21 +115,51 @@
 
 &backlight {
 	status = "okay";
-	enable-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
+	enable-gpios = <&gpio4 29 GPIO_ACTIVE_HIGH>;
+};
+
+&dfi {
+	status = "disabled";
+};
+
+&dmc {
+	status = "disabled";
+	center-supply = <&vdd_center>;
+	upthreshold = <45>;
+	downdifferential = <20>;
+	system-status-freq = <
+		/*system status         freq(KHz)*/
+		SYS_STATUS_NORMAL       800000
+		SYS_STATUS_REBOOT       528000
+		SYS_STATUS_SUSPEND      200000
+		SYS_STATUS_VIDEO_1080P  200000
+		SYS_STATUS_VIDEO_4K     600000
+		SYS_STATUS_VIDEO_4K_10B 800000
+		SYS_STATUS_PERFORMANCE  800000
+		SYS_STATUS_BOOST        400000
+		SYS_STATUS_DUALVIEW     600000
+		SYS_STATUS_ISP          600000
+	>;
+	vop-bw-dmc-freq = <
+	/* min_bw(MB/s) max_bw(MB/s) freq(KHz) */
+		0       762      200000
+		763     1893     400000
+		1894    3012     528000
+		3013    99999    800000
+	>;
+	auto-min-freq = <200000>;
 };
 
 &edp {
 	status = "okay";
+	force-hpd;
 
 	ports {
-		edp_out: port@1 {
+		port@1 {
 			reg = <1>;
-			#address-cells = <1>;
-			#size-cells = <0>;
 
-			edp_out_panel: endpoint@0 {
-				reg = <0>;
-				remote-endpoint = <&panel_in_edp>;
+			edp_out: endpoint {
+				remote-endpoint = <&panel_in>;
 			};
 		};
 	};
@@ -163,6 +227,24 @@
 	};
 };
 
+&i2c6 {
+	cw2015@62 {
+		status = "disabled";
+		compatible = "cw201x";
+		reg = <0x62>;
+		bat_config_info = <0x15 0x42 0x60 0x59 0x52 0x58 0x4D 0x48
+				   0x48 0x44 0x44 0x46 0x49 0x48 0x32 0x24
+				   0x20 0x17 0x13 0x0F 0x19 0x3E 0x51 0x45
+				   0x08 0x76 0x0B 0x85 0x0E 0x1C 0x2E 0x3E
+				   0x4D 0x52 0x52 0x57 0x3D 0x1B 0x6A 0x2D
+				   0x25 0x43 0x52 0x87 0x8F 0x91 0x94 0x52
+				   0x82 0x8C 0x92 0x96 0xFF 0x7B 0xBB 0xCB
+				   0x2F 0x7D 0x72 0xA5 0xB5 0xC1 0x46 0xAE>;
+		monitor_sec = <5>;
+		virtual_power = <0>;
+	};
+};
+
 &isp0 {
 	status = "okay";
 };
@@ -194,10 +276,6 @@
 };
 
 &pcie0 {
-	ep-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>;
-	num-lanes = <4>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&pcie_clkreqn>;
 	status = "okay";
 };
 

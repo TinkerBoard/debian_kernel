@@ -135,7 +135,7 @@ static int debug_port_init(struct platform_device *pdev)
 	 * because of the uart irq is served when CPU is at IRQ exception, but it is
 	 * found unregistered, so it is disable.
 	 */
-	rk_fiq_write(t, 0xc1, UART_FCR);
+	rk_fiq_write(t, 0x01, UART_FCR);
 
 	/* disbale loop back mode */
 	rk_fiq_write(t, 0x0, UART_MCR);
@@ -516,7 +516,7 @@ void rk_serial_debug_init(void __iomem *base, phys_addr_t phy_base,
 	}
 
 #ifdef CONFIG_RK_CONSOLE_THREAD
-	t->console_task = kthread_create(console_thread, pdev, "kconsole");
+	t->console_task = kthread_run(console_thread, pdev, "kconsole");
 	if (!IS_ERR(t->console_task))
 		t->pdata.console_write = console_write;
 #endif

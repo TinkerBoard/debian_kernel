@@ -57,8 +57,42 @@
  *v0.1.6:
  *Add isp output size in struct isp_supplemental_sensor_mode_data.
  *
+ *v0.1.7:
+ *Add support to isp1.
+ *The running of isp0 or isp1 is ok,
+ *but running of isp0 and isp1 at the same time has not been tested.
+ *
+ *v0.1.8:
+ *Fix oops error when soc_clk_disable is called in rk3399.
+ *
+ *v0.1.9:
+ *1. Support bt656 signal interlace: odd and even field interlace generating
+ *a frame image.
+ *2. fix cif_isp10_img_src_v4l2_subdev_enum_strm_fmts defrect info get error.
+ *3. fix cif_isp10_rk3399 cif_clk_pll info doesn't match with dts config.
+ *
+ *v0.1.0xa
+ *Based on version 0.1.9:
+ *1. To optimize the readability of the code.
+ *2. optimize CIF_MI_CTRL_BURST_LEN param.
+ *3. Add the check for cam_itf.type(PLTFRM_CAM_ITF_BT656_8I) on
+ * cif_isp10_s_fmt_mp.
+ *4. get field_flag value from cif_isp10_isp_isr.
+ *
+ *v0.1.0xb
+ *1. Initialize default format for current stream.
+ *2. Implement command VIDIOC_G_FMT.
+ *3. Set bytesused of each plane to its real size.
+ *4. Support io mode 'VB2_DMABUF'.
+ *
+ *v0.1.0xc
+ *1. support isp0 and isp1 run at the same time.
+ *2. support VIDIOC_G_INPUT command.
+ *3. support VIDIOC_G_PARM command.
+ *4. support VIDIOC_G_PARM command.
+ *5. add pix.bytesperline and pix.sizeimage in VIDIOC_G_FMT command.
  */
 
-#define CONFIG_CIFISP10_DRIVER_VERSION KERNEL_VERSION(0, 1, 6)
+#define CONFIG_CIFISP10_DRIVER_VERSION KERNEL_VERSION(0, 1, 0xc)
 
 #endif

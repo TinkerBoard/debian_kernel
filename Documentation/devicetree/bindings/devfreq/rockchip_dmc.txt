@@ -2,6 +2,7 @@
 
 Required properties:
 - compatible: Should be one of the following.
+  - "rockchip,rk3128-dmc" - for RK3128 SoCs.
   - "rockchip,rk3288-dmc" - for RK3288 SoCs.
   - "rockchip,rk3368-dmc" - for RK3368 SoCs.
   - "rockchip,rk3399-dmc" - for RK3399 SoCs.
@@ -21,6 +22,12 @@ Optional properties:
 - ddr_timing:  DDR timing need to pass to arm trust firmware
 - upthreshold: The upthreshold to simpleondeamnd policy
 - downdifferential: The downdifferential to simpleondeamnd policy
+- vop-bw-dmc-freq: The property is an array of 3-tuples items, and
+		   each item consists of bandwidth and frequency like
+		   <min-bandwidth max-bandwidth frequency>.
+		   min-bandwidth: minimum ddr bandwidth in Mbyte/sec.
+		   max-bandwidth: maximum ddr bandwidth in Mbyte/sec.
+		   frequency: ddr frequency in KHz.
 
 Example:
 

@@ -20,6 +20,7 @@
 #include <drm/drm_crtc_helper.h>
 #include <linux/memblock.h>
 #include <linux/iommu.h>
+#include <soc/rockchip/rockchip_dmc.h>
 
 #include "rockchip_drm_drv.h"
 #include "rockchip_drm_gem.h"
@@ -179,6 +180,8 @@ rockchip_user_fb_create(struct drm_device *dev, struct drm_file *file_priv,
 		min_size = (height - 1) * mode_cmd->pitches[i] +
 			mode_cmd->offsets[i] + roundup(width * bpp, 8) / 8;
 		if (obj->size < min_size) {
+			DRM_ERROR("Invalid Gem size on plane[%d]: %zd < %d\n",
+				  i, obj->size, min_size);
 			drm_gem_object_unreference_unlocked(obj);
 			ret = -EINVAL;
 			goto err_gem_object_unreference;
@@ -209,11 +212,38 @@ static void rockchip_drm_output_poll_changed(struct drm_device *dev)
 		drm_fb_helper_hotplug_event(fb_helper);
 }
 
+static int rockchip_drm_bandwidth_atomic_check(struct drm_device *dev,
+					       struct drm_atomic_state *state,
+					       size_t *bandwidth)
+{
+	struct rockchip_drm_private *priv = dev->dev_private;
+	struct drm_crtc_state *crtc_state;
+	const struct rockchip_crtc_funcs *funcs;
+	struct drm_crtc *crtc;
+	int i, ret = 0;
+
+	*bandwidth = 0;
+	for_each_crtc_in_state(state, crtc, crtc_state, i) {
+		funcs = priv->crtc_funcs[drm_crtc_index(crtc)];
+
+		if (funcs && funcs->bandwidth)
+			*bandwidth += funcs->bandwidth(crtc, crtc_state);
+	}
+
+	/*
+	 * Check ddr frequency support here here.
+	 */
+	ret = rockchip_dmcfreq_vop_bandwidth_request(*bandwidth);
+
+	return ret;
+}
+
 static void
 rockchip_atomic_commit_complete(struct rockchip_atomic_commit *commit)
 {
 	struct drm_atomic_state *state = commit->state;
 	struct drm_device *dev = commit->dev;
+	size_t bandwidth = commit->bandwidth;
 
 	/*
 	 * TODO: do fence wait here.
@@ -234,27 +264,38 @@ rockchip_atomic_commit_complete(struct rockchip_atomic_commit *commit)
 	 *
 	 * See the kerneldoc entries for these three functions for more details.
 	 */
+	drm_atomic_helper_wait_for_dependencies(state);
+
 	drm_atomic_helper_commit_modeset_disables(dev, state);
 
 	drm_atomic_helper_commit_modeset_enables(dev, state);
 
 	rockchip_drm_backlight_update(dev);
 
+	rockchip_dmcfreq_vop_bandwidth_update(bandwidth);
+
 	drm_atomic_helper_commit_planes(dev, state, true);
+
+	drm_atomic_helper_commit_hw_done(state);
 
 	drm_atomic_helper_wait_for_vblanks(dev, state);
 
 	drm_atomic_helper_cleanup_planes(dev, state);
 
+	drm_atomic_helper_commit_cleanup_done(state);
+
 	drm_atomic_state_free(state);
+
+	kfree(commit);
 }
 
 void rockchip_drm_atomic_work(struct work_struct *work)
 {
-	struct rockchip_atomic_commit *commit = container_of(work,
-					struct rockchip_atomic_commit, work);
+	struct rockchip_drm_private *private = container_of(work,
+				struct rockchip_drm_private, commit_work);
 
-	rockchip_atomic_commit_complete(commit);
+	rockchip_atomic_commit_complete(private->commit);
+	private->commit = NULL;
 }
 
 int rockchip_drm_atomic_commit(struct drm_device *dev,
@@ -262,28 +303,49 @@ int rockchip_drm_atomic_commit(struct drm_device *dev,
 			       bool async)
 {
 	struct rockchip_drm_private *private = dev->dev_private;
-	struct rockchip_atomic_commit *commit = &private->commit;
+	struct rockchip_atomic_commit *commit;
+	size_t bandwidth;
 	int ret;
+
+	ret = drm_atomic_helper_setup_commit(state, false);
+	if (ret)
+		return ret;
 
 	ret = drm_atomic_helper_prepare_planes(dev, state);
 	if (ret)
 		return ret;
 
-	/* serialize outstanding asynchronous commits */
-	mutex_lock(&commit->lock);
-	flush_work(&commit->work);
+	ret = rockchip_drm_bandwidth_atomic_check(dev, state, &bandwidth);
+	if (ret) {
+		/*
+		 * TODO:
+		 * Just report bandwidth can't support now.
+		 */
+		DRM_ERROR("vop bandwidth too large %zd\n", bandwidth);
+	}
 
 	drm_atomic_helper_swap_state(dev, state);
 
+	commit = kmalloc(sizeof(*commit), GFP_KERNEL);
+	if (!commit)
+		return -ENOMEM;
+
 	commit->dev = dev;
 	commit->state = state;
+	commit->bandwidth = bandwidth;
 
-	if (async)
-		schedule_work(&commit->work);
-	else
+	if (async) {
+		mutex_lock(&private->commit_lock);
+
+		flush_work(&private->commit_work);
+		WARN_ON(private->commit);
+		private->commit = commit;
+		schedule_work(&private->commit_work);
+
+		mutex_unlock(&private->commit_lock);
+	} else {
 		rockchip_atomic_commit_complete(commit);
-
-	mutex_unlock(&commit->lock);
+	}
 
 	return 0;
 }

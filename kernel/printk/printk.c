@@ -1442,12 +1442,19 @@ static void call_console_drivers(int level,
 
 	trace_console_rcuidle(text, len);
 
+#ifndef CON_PSTORE
 	if (level >= console_loglevel && !ignore_loglevel)
 		return;
+#endif
 	if (!console_drivers)
 		return;
 
 	for_each_console(con) {
+#ifdef CON_PSTORE
+		if (!(con->flags & CON_PSTORE) &&
+		    level >= console_loglevel && !ignore_loglevel)
+			continue;
+#endif
 		if (exclusive_console && con != exclusive_console)
 			continue;
 		if (!(con->flags & CON_ENABLED))
@@ -3176,9 +3183,8 @@ void show_regs_print_info(const char *log_lvl)
 {
 	dump_stack_print_info(log_lvl);
 
-	printk("%stask: %p ti: %p task.ti: %p\n",
-	       log_lvl, current, current_thread_info(),
-	       task_thread_info(current));
+	printk("%stask: %p task.stack: %p\n",
+	       log_lvl, current, task_stack_page(current));
 }
 
 #endif

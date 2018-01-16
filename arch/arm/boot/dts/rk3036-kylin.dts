@@ -62,6 +62,8 @@
 		};
 	};
 
+	/delete-node/ psci;
+
 	sdio_pwrseq: sdio-pwrseq {
 		compatible = "mmc-pwrseq-simple";
 		pinctrl-names = "default";
@@ -74,9 +76,7 @@
 		 * - SDIO_RESET_L_WL_RST
 		 * - SDIO_RESET_L_BT_EN
 		 */
-		reset-gpios = <&gpio0 26 GPIO_ACTIVE_LOW>, /* WL_REG_ON */
-			      <&gpio0 27 GPIO_ACTIVE_LOW>, /* WL_RST */
-			      <&gpio2 9  GPIO_ACTIVE_LOW>; /* BT_EN */
+		reset-gpios = <&gpio0 26 GPIO_ACTIVE_LOW>; /* WL_REG_ON */
 	};
 
 	sound {
@@ -125,10 +125,41 @@
 		regulator-always-on;
 		regulator-boot-on;
 	};
+
+	wireless-bluetooth {
+		compatible = "bluetooth-platdata";
+		uart_rts_gpios = <&gpio0 19 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default", "rts_gpio";
+		pinctrl-0 = <&uart0_rts>;
+		pinctrl-1 = <&uart0_gpios>;
+		BT,reset_gpio = <&gpio2 9 GPIO_ACTIVE_HIGH>;
+		BT,wake_gpio = <&gpio2 8 GPIO_ACTIVE_HIGH>;
+		BT,wake_host_irq = <&gpio2 3 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
+	wireless-wlan {
+		compatible = "wlan-platdata";
+		rockchip,grf = <&grf>;
+		wifi_chip_type = "ap6212";
+		WIFI,host_wake_irq = <&gpio0 27 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
 };
 
 &acodec {
 	status = "okay";
+};
+
+&cpu0 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&cpu0_opp_table {
+	/delete-node/ opp-408000000;
+	/delete-node/ opp-600000000;
+	/delete-node/ opp-816000000;
+	/delete-node/ opp-1200000000;
 };
 
 &emac {
@@ -155,6 +186,10 @@
 };
 
 &hdmi {
+	status = "okay";
+};
+
+&hevc_mmu {
 	status = "okay";
 };
 
@@ -192,11 +227,12 @@
 			vdd_cpu: DCDC_REG1 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <1250000>;
-				regulator-max-microvolt = <1250000>;
+				regulator-min-microvolt = <1000000>;
+				regulator-max-microvolt = <1350000>;
 				regulator-name = "vdd_arm";
 				regulator-state-mem {
-					regulator-off-in-suspend;
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <1050000>;
 				};
 			};
 
@@ -357,6 +393,8 @@
 		reg = <0x1b>;
 		clocks = <&cru SCLK_I2S_OUT>;
 		clock-names = "mclk";
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2s_mclk>;
 		#sound-dai-cells = <0>;
 	};
 };
@@ -383,6 +421,7 @@
 	sd-uhs-sdr25;
 	sd-uhs-sdr50;
 	sd-uhs-sdr104;
+	supports-sdio;
 };
 
 &sdmmc {
@@ -394,9 +433,11 @@
 	num-slots = <1>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc_clk>, <&sdmmc_cmd>, <&sdmmc_cd>, <&sdmmc_bus4>;
+	supports-sd;
 };
 
 &uart0 {
+	pinctrl-0 = <&uart0_xfer>, <&uart0_cts>;
 	status = "okay";
 };
 
@@ -416,11 +457,19 @@
 	status = "okay";
 };
 
-&vpu {
+&vop_mmu {
 	status = "okay";
 };
 
-&vop_mmu {
+&vpu_combo {
+	status = "okay";
+};
+
+&vpu_mmu {
+	status = "okay";
+};
+
+&wdt {
 	status = "okay";
 };
 
@@ -452,6 +501,12 @@
 	sleep {
 		global_pwroff: global-pwroff {
 			rockchip,pins = <2 7 RK_FUNC_1 &pcfg_pull_none>;
+		};
+	};
+
+	wireless-bluetooth {
+		uart0_gpios: uart0-gpios {
+			rockchip,pins = <0 19 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 };

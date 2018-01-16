@@ -240,6 +240,7 @@ struct cec_adapter *cec_allocate_adapter(const struct cec_adap_ops *ops,
 #if IS_REACHABLE(CONFIG_RC_CORE)
 	/* Prepare the RC input device */
 	adap->rc = rc_allocate_device();
+
 	if (!adap->rc) {
 		pr_err("cec-%s: failed to allocate memory for rc_dev\n",
 		       name);

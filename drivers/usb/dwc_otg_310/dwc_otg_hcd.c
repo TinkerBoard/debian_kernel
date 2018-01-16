@@ -280,6 +280,8 @@ static int32_t dwc_otg_hcd_disconnect_cb(void *p)
 {
 	gintsts_data_t intr;
 	dwc_otg_hcd_t *dwc_otg_hcd = p;
+	struct usb_hcd *usb_hcd = dwc_otg_hcd_get_priv_data(dwc_otg_hcd);
+	struct usb_bus *bus = hcd_to_bus(usb_hcd);
 	hprt0_data_t hprt0;
 
 	dwc_otg_hcd->non_periodic_qh_ptr = &dwc_otg_hcd->non_periodic_sched_active;
@@ -412,6 +414,9 @@ out:
 		dwc_otg_hcd->fops->disconnect(dwc_otg_hcd);
 	}
 
+	if ((bus->root_hub) && (usb_hcd->state == HC_STATE_SUSPENDED))
+		usb_hcd_resume_root_hub(usb_hcd);
+
 	return 1;
 }
 
@@ -476,6 +481,8 @@ void dwc_otg_hcd_stop(dwc_otg_hcd_t *hcd)
 	hprt0_data_t hprt0 = {.d32 = 0 };
 	struct dwc_otg_platform_data *pldata;
 	dwc_irqflags_t flags;
+	struct usb_hcd *usb_hcd = dwc_otg_hcd_get_priv_data(hcd);
+	struct usb_bus *bus = hcd_to_bus(usb_hcd);
 
 	pldata = hcd->core_if->otg_dev->pldata;
 	DWC_DEBUGPL(DBG_HCD, "DWC OTG HCD STOP\n");
@@ -506,16 +513,17 @@ void dwc_otg_hcd_stop(dwc_otg_hcd_t *hcd)
 	if (pldata->power_enable)
 		pldata->power_enable(0);
 
+	if ((bus->root_hub) && (usb_hcd->state == HC_STATE_SUSPENDED))
+		usb_hcd_resume_root_hub(usb_hcd);
+
 	dwc_mdelay(1);
 }
 
 int dwc_otg_hcd_urb_enqueue(dwc_otg_hcd_t *hcd,
 			    dwc_otg_hcd_urb_t *dwc_otg_urb, void **ep_handle,
-			    int atomic_alloc)
+			    dwc_otg_qtd_t *qtd)
 {
-	dwc_irqflags_t flags;
 	int retval = 0;
-	dwc_otg_qtd_t *qtd;
 	gintmsk_data_t intr_mask = {.d32 = 0 };
 
 	if (!hcd->flags.b.port_connect_status) {
@@ -524,37 +532,38 @@ int dwc_otg_hcd_urb_enqueue(dwc_otg_hcd_t *hcd,
 		return -DWC_E_NO_DEVICE;
 	}
 
-	qtd = dwc_otg_hcd_qtd_create(dwc_otg_urb, atomic_alloc);
-	if (qtd == NULL) {
+	if (!qtd) {
 		DWC_ERROR("DWC OTG HCD URB Enqueue failed creating QTD\n");
 		return -DWC_E_NO_MEMORY;
 	}
-	DWC_SPINLOCK_IRQSAVE(hcd->lock, &flags);
-	retval =
-	    dwc_otg_hcd_qtd_add(qtd, hcd, (dwc_otg_qh_t **) ep_handle, 1);
 
+	dwc_otg_hcd_qtd_init(qtd, dwc_otg_urb);
+
+	retval = dwc_otg_hcd_qtd_add(qtd, hcd,
+				     (dwc_otg_qh_t **)ep_handle, 1);
 	if (retval < 0) {
-		DWC_ERROR("DWC OTG HCD URB Enqueue failed adding QTD. "
-			  "Error status %d\n", retval);
-		dwc_otg_hcd_qtd_free(qtd);
+		DWC_ERROR("Enqueue failed adding QTD status %d\n", retval);
+		return retval;
 	}
+
 	intr_mask.d32 =
 	    DWC_READ_REG32(&hcd->core_if->core_global_regs->gintmsk);
 	if (!intr_mask.b.sofintr && retval == 0) {
 		dwc_otg_transaction_type_e tr_type;
-		if ((qtd->qh->ep_type == UE_BULK)
-		    && !(qtd->urb->flags & URB_GIVEBACK_ASAP)) {
-			/* Do not schedule SG transactions until qtd has URB_GIVEBACK_ASAP set */
-			retval = 0;
-			goto out;
-		}
+		if ((qtd->qh->ep_type == UE_BULK) &&
+		    !(qtd->urb->flags & URB_GIVEBACK_ASAP))
+			/*
+			 * Do not schedule SG transactions until
+			 * qtd has URB_GIVEBACK_ASAP set.
+			 */
+			return 0;
+
 		tr_type = dwc_otg_hcd_select_transactions(hcd);
 		if (tr_type != DWC_OTG_TRANSACTION_NONE) {
 			dwc_otg_hcd_queue_transactions(hcd, tr_type);
 		}
 	}
-out:
-	DWC_SPINUNLOCK_IRQRESTORE(hcd->lock, flags);
+
 	return retval;
 }
 
@@ -568,9 +577,17 @@ int dwc_otg_hcd_urb_dequeue(dwc_otg_hcd_t *hcd,
 	if (!urb_qtd) {
 		DWC_PRINTF("%s error: urb_qtd is %p dwc_otg_urb %p!!!\n",
 			   __func__, urb_qtd, dwc_otg_urb);
-		return 0;
+		return -EINVAL;
 	}
+
 	qh = urb_qtd->qh;
+	if (!qh) {
+		DWC_PRINTF("## Urb QTD QH is NULL ##\n");
+		return -EINVAL;
+	}
+
+	dwc_otg_urb->priv = NULL;
+
 #ifdef DEBUG
 	if (CHK_DEBUG_LEVEL(DBG_HCDV | DBG_HCD_URB)) {
 		if (urb_qtd->in_process) {
@@ -619,6 +636,8 @@ int dwc_otg_hcd_endpoint_disable(dwc_otg_hcd_t *hcd, void *ep_handle,
 	dwc_otg_qh_t *qh = (dwc_otg_qh_t *) ep_handle;
 	int retval = 0;
 	dwc_irqflags_t flags;
+	dwc_otg_hc_regs_t *hc_regs = NULL;
+	hcchar_data_t hcchar;
 
 	if (retry < 0) {
 		retval = -DWC_E_INVALID;
@@ -637,6 +656,16 @@ int dwc_otg_hcd_endpoint_disable(dwc_otg_hcd_t *hcd, void *ep_handle,
 		retry--;
 		dwc_msleep(5);
 		DWC_SPINLOCK_IRQSAVE(hcd->lock, &flags);
+	}
+
+	if (!DWC_CIRCLEQ_EMPTY(&qh->qtd_list) && hc_regs) {
+		hcchar.d32 = DWC_READ_REG32(&hc_regs->hcchar);
+		if (hcchar.b.chen) {
+			hcchar.b.chdis = 1;
+			DWC_WRITE_REG32(&hc_regs->hcchar,
+					hcchar.d32);
+			dwc_otg_hc_cleanup(hcd->core_if, qh->channel);
+		}
 	}
 
 	dwc_otg_hcd_qh_remove(hcd, qh);

@@ -2,8 +2,8 @@
 #include "camsys_soc_priv.h"
 #include "camsys_gpio.h"
 
-#include <linux/rockchip/common.h>
-#include <dt-bindings/clock/rk_system_status.h>
+#include <dt-bindings/soc/rockchip-system-status.h>
+#include <soc/rockchip/rockchip-system-status.h>
 #include <linux/rockchip_ion.h>
 #include <linux/file.h>
 #include <linux/pm_runtime.h>
@@ -12,9 +12,6 @@
 #include <drm/rockchip_drm.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-buf.h>
-
-extern int rockchip_set_system_status(unsigned long status);
-extern int rockchip_clear_system_status(unsigned long status);
 
 static const char miscdev_name[] = CAMSYS_MARVIN_DEVNAME;
 
@@ -545,7 +542,7 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 
 	if (CHIP_TYPE == 3399) {
 		if (on && !clk->in_on) {
-			/* rockchip_set_system_status(SYS_STATUS_ISP); */
+			rockchip_set_system_status(SYS_STATUS_ISP);
 			if (on == 1)
 				isp_clk = 210000000;
 			else
@@ -579,7 +576,7 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 			}
 
 			clk->in_on = true;
-
+			pm_runtime_get_sync(&camsys_dev->pdev->dev);
 			camsys_trace(1, "%s clock(f: %ld Hz) in turn on",
 				     dev_name(camsys_dev->miscdev.this_device),
 				     isp_clk);
@@ -587,6 +584,7 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 			udelay(100);
 			camsys_mrv_reset_cb(ptr, 0);
 		} else if (!on && clk->in_on) {
+			pm_runtime_put_sync(&camsys_dev->pdev->dev);
 			if (strstr(camsys_dev->miscdev.name,
 				"camsys_marvin1")) {
 				clk_disable_unprepare(clk->hclk_isp1_noc);
@@ -612,14 +610,14 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 				clk_disable_unprepare(clk->pclk_dphy_ref);
 			}
 
-			/* rockchip_clear_system_status(SYS_STATUS_ISP); */
+			rockchip_clear_system_status(SYS_STATUS_ISP);
 			clk->in_on = false;
 			camsys_trace(1, "%s clock in turn off",
 				     dev_name(camsys_dev->miscdev.this_device));
 			}
 	} else{
 		if (on && !clk->in_on) {
-			/* rockchip_set_system_status(SYS_STATUS_ISP); */
+			rockchip_set_system_status(SYS_STATUS_ISP);
 
 		if (on == 1)
 			isp_clk = 210000000;
@@ -662,7 +660,7 @@ static int camsys_mrv_clkin_cb(void *ptr, unsigned int on)
 		}
 		/* clk_disable_unprepare(clk->pd_isp); */
 
-		/* rockchip_clear_system_status(SYS_STATUS_ISP); */
+		rockchip_clear_system_status(SYS_STATUS_ISP);
 		clk->in_on = false;
 		camsys_trace(1, "%s clock in turn off",
 			dev_name(camsys_dev->miscdev.this_device));
@@ -679,9 +677,6 @@ static int camsys_mrv_clkout_cb(void *ptr, unsigned int on, unsigned int inclk)
 
 	mutex_lock(&clk->lock);
 	if (on && (clk->out_on != on)) {
-
-		pm_runtime_get_sync(&camsys_dev->pdev->dev);
-
 		clk_set_rate(clk->cif_clk_out, inclk);
 		clk_prepare_enable(clk->cif_clk_out);
 		clk->out_on = on;
@@ -698,8 +693,6 @@ static int camsys_mrv_clkout_cb(void *ptr, unsigned int on, unsigned int inclk)
 		}
 
 		clk_disable_unprepare(clk->cif_clk_out);
-
-		pm_runtime_disable(&camsys_dev->pdev->dev);
 		clk->out_on = 0;
 
 		camsys_trace(1, "%s clock out turn off",
@@ -716,6 +709,7 @@ static irqreturn_t camsys_mrv_irq(int irq, void *data)
 	camsys_irqpool_t *irqpool;
 	unsigned int isp_mis, mipi_mis, mi_mis, *mis, jpg_mis, jpg_err_mis;
 	unsigned int mi_ris, mi_imis;
+	static unsigned int mipi_frame;
 
 	isp_mis = __raw_readl((void volatile *)
 				(camsys_dev->devmems.registermem->vir_base +
@@ -752,6 +746,13 @@ static irqreturn_t camsys_mrv_irq(int irq, void *data)
 	mi_imis = __raw_readl((void volatile *)
 				(camsys_dev->devmems.registermem->vir_base +
 				MRV_MI_IMIS));
+	}
+
+	if (isp_mis & MIS_V_START) {
+		mipi_frame = __raw_readl((void *)
+				(camsys_dev->devmems.registermem->vir_base +
+				 MRV_MIPI_FRAME));
+		camsys_trace(2, "mipi_frame: 0x%08x \r\n", mipi_frame);
 	}
 
 	__raw_writel(isp_mis, (void volatile *)
@@ -822,6 +823,11 @@ static irqreturn_t camsys_mrv_irq(int irq, void *data)
 							camsys_irqstas_t,
 							list);
 						irqsta->sta.mis = *mis;
+						irqsta->sta.fs_id =
+							mipi_frame & 0xFFFF;
+						irqsta->sta.fe_id =
+							(mipi_frame >> 16)
+							& 0xFFFF;
 						list_del_init(&irqsta->list);
 						list_add_tail(&irqsta->list,
 							&irqpool->active);

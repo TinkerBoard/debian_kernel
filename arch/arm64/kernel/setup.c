@@ -31,7 +31,6 @@
 #include <linux/screen_info.h>
 #include <linux/init.h>
 #include <linux/kexec.h>
-#include <linux/crash_dump.h>
 #include <linux/root_dev.h>
 #include <linux/cpu.h>
 #include <linux/interrupt.h>
@@ -220,6 +219,12 @@ static void __init request_standard_resources(void)
 		if (kernel_data.start >= res->start &&
 		    kernel_data.end <= res->end)
 			request_resource(res, &kernel_data);
+#ifdef CONFIG_KEXEC_CORE
+		/* Userspace will find "Crash kernel" region in /proc/iomem. */
+		if (crashk_res.end && crashk_res.start >= res->start &&
+		    crashk_res.end <= res->end)
+			request_resource(res, &crashk_res);
+#endif
 	}
 }
 
@@ -348,11 +353,15 @@ void __init setup_arch(char **cmdline_p)
 
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
 	/*
-	 * Make sure init_thread_info.ttbr0 always generates translation
+	 * Make sure thread_info.ttbr0 always generates translation
 	 * faults in case uaccess_enable() is inadvertently called by the init
 	 * thread.
 	 */
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+	init_task.thread_info.ttbr0 = virt_to_phys(empty_zero_page);
+#else
 	init_thread_info.ttbr0 = virt_to_phys(empty_zero_page);
+#endif
 #endif
 
 #ifdef CONFIG_VT

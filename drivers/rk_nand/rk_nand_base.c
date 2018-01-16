@@ -18,6 +18,8 @@
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/uaccess.h>
+#include <linux/miscdevice.h>
+#include <linux/debugfs.h>
 #ifdef CONFIG_OF
 #include <linux/of.h>
 #endif
@@ -28,7 +30,7 @@
 
 struct rk_nandc_info {
 	int	id;
-	void __iomem	*reg_base;
+	void __iomem     *reg_base;
 	int	irq;
 	int	clk_rate;
 	struct clk	*clk;	/* flash clk*/
@@ -151,6 +153,38 @@ unsigned long rk_copy_to_user(void __user *to, const void *from,
 			      unsigned long n)
 {
 	return copy_to_user(to, from, n);
+}
+
+static const struct file_operations rknand_sys_storage_fops = {
+	.compat_ioctl = rknand_sys_storage_ioctl,
+	.unlocked_ioctl = rknand_sys_storage_ioctl,
+};
+
+static struct miscdevice rknand_sys_storage_dev = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name  = "rknand_sys_storage",
+	.fops  = &rknand_sys_storage_fops,
+};
+
+int rknand_sys_storage_init(void)
+{
+	return misc_register(&rknand_sys_storage_dev);
+}
+
+static const struct file_operations rknand_vendor_storage_fops = {
+	.compat_ioctl	= rk_ftl_vendor_storage_ioctl,
+	.unlocked_ioctl = rk_ftl_vendor_storage_ioctl,
+};
+
+static struct miscdevice rknand_vender_storage_dev = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name  = "vendor_storage",
+	.fops  = &rknand_vendor_storage_fops,
+};
+
+int rknand_vendor_storage_init(void)
+{
+	return misc_register(&rknand_vender_storage_dev);
 }
 
 int rk_nand_schedule_enable_config(int en)
@@ -345,22 +379,24 @@ static int rknand_probe(struct platform_device *pdev)
 	g_nandc_info[id].clk = devm_clk_get(&pdev->dev, "clk_nandc");
 	g_nandc_info[id].gclk = devm_clk_get(&pdev->dev, "g_clk_nandc");
 
-	if (unlikely(IS_ERR(g_nandc_info[id].clk)) ||
-	    unlikely(IS_ERR(g_nandc_info[id].hclk))) {
-		dev_err(&pdev->dev, "rknand_probe get clk error\n");
-		return -1;
+	if (unlikely(IS_ERR(g_nandc_info[id].hclk))) {
+		dev_err(&pdev->dev, "rknand_probe get hclk error\n");
+		return PTR_ERR(g_nandc_info[id].hclk);
 	}
 
-	clk_set_rate(g_nandc_info[id].clk, 150 * 1000 * 1000);
-	g_nandc_info[id].clk_rate = clk_get_rate(g_nandc_info[id].clk);
-	clk_prepare_enable(g_nandc_info[id].clk);
+	if (!(IS_ERR(g_nandc_info[id].clk))) {
+		clk_set_rate(g_nandc_info[id].clk, 150 * 1000 * 1000);
+		g_nandc_info[id].clk_rate = clk_get_rate(g_nandc_info[id].clk);
+		clk_prepare_enable(g_nandc_info[id].clk);
+		dev_info(&pdev->dev,
+			 "rknand_probe clk rate = %d\n",
+			 g_nandc_info[id].clk_rate);
+	}
+
 	clk_prepare_enable(g_nandc_info[id].hclk);
 	if (!(IS_ERR(g_nandc_info[id].gclk)))
 		clk_prepare_enable(g_nandc_info[id].gclk);
 
-	dev_info(&pdev->dev,
-		 "rknand_probe clk rate = %d\n",
-		 g_nandc_info[id].clk_rate);
 	return 0;
 }
 

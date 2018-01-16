@@ -142,6 +142,8 @@
 		vcc7-supply = <&vcc_sys>;
 		vcc8-supply = <&vcc_sys>;
 		vcc9-supply = <&vcc_io>;
+		boost-supply = <&vcc_sys>;
+		h_5v-supply = <&boost>;
 
 		regulators {
 			vdd_logic: DCDC_REG1 {
@@ -187,6 +189,17 @@
 				regulator-name = "vcc_io";
 				regulator-state-mem {
 					regulator-off-in-suspend;
+				};
+			};
+
+			boost: DCDC_BOOST {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <5000000>;
+				regulator-max-microvolt = <5000000>;
+				regulator-name = "boost";
+				regulator-state-mem {
+					regulator-on-in-suspend;
 				};
 			};
 
@@ -302,6 +315,15 @@
 					regulator-on-in-suspend;
 				};
 			};
+
+			h_5v: HDMI_SWITCH {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-name = "h_5v";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+				};
+			};
 		};
 	};
 };
@@ -334,6 +356,7 @@
 
 &dsi0 {
 	status = "okay";
+	rockchip,lane-rate = <1000>;
 
 	panel: panel {
 		compatible = "simple-panel-dsi";
@@ -344,10 +367,10 @@
 		dsi,flags = <(MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST)>;
 		dsi,format = <MIPI_DSI_FMT_RGB888>;
 		dsi,lanes = <4>;
-		delay,prepare = <120>;
-		delay,enable = <120>;
-		delay,reset = <20>;
-		delay,init = <20>;
+		reset-delay-ms = <20>;
+		init-delay-ms = <20>;
+		enable-delay-ms = <120>;
+		prepare-delay-ms = <120>;
 		status = "okay";
 
 		disp_timings: display-timings {

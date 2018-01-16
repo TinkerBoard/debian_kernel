@@ -57,7 +57,7 @@
 		power-supply = <&vcc3v3_s0>;
 		enable-gpios = <&gpio3 GPIO_A0 GPIO_ACTIVE_HIGH>;
 		bus-format = <MEDIA_BUS_FMT_RGB666_1X18>;
-		delay,prepare = <50>;
+		prepare-delay-ms = <50>;
 		ports {
 			panel_in_edp: endpoint {
 				remote-endpoint = <&edp_out_panel>;
@@ -619,11 +619,11 @@
 				regulator-always-on;
 				regulator-boot-on;
 				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <3300000>;
+				regulator-max-microvolt = <3000000>;
 				regulator-name = "vcc_sd";
 				regulator-state-mem {
 					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <3300000>;
+					regulator-suspend-microvolt = <3000000>;
 				};
 			};
 
@@ -706,6 +706,8 @@
 		reg = <0x33>;
 		clocks = <&cru SCLK_I2S_8CH_OUT>;
 		clock-names = "mclk";
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2s_8ch_mclk>;
 		spk-con-gpio = <&gpio0 11 GPIO_ACTIVE_HIGH>;
 	};
 };
@@ -830,7 +832,7 @@
 	gpio1830-supply = <&vcc_3v0>;
 };
 
-&mipi_dsi {
+&dsi {
 	status = "disabled";
 };
 

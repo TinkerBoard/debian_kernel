@@ -22,6 +22,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of_device.h>
+#include <linux/regmap.h>
 
 #include <drm/drm_of.h>
 #include <drm/drmP.h>
@@ -68,8 +69,10 @@ struct inno_hdmi {
 	struct drm_device *drm_dev;
 
 	int irq;
+	struct clk *aclk;
 	struct clk *pclk;
 	void __iomem *regs;
+	struct regmap *regmap;
 
 	struct drm_connector	connector;
 	struct drm_encoder	encoder;
@@ -208,11 +211,16 @@ static void inno_hdmi_sys_power(struct inno_hdmi *hdmi, bool enable)
 
 static void inno_hdmi_set_pwr_mode(struct inno_hdmi *hdmi, int mode)
 {
+	u8 value;
+
 	switch (mode) {
 	case NORMAL:
 		inno_hdmi_sys_power(hdmi, false);
-
-		hdmi_writeb(hdmi, HDMI_PHY_PRE_EMPHASIS, 0x6f);
+		if (hdmi->tmds_rate > 140000000)
+			value = 0x6f;
+		else
+			value = 0x3f;
+		hdmi_writeb(hdmi, HDMI_PHY_PRE_EMPHASIS, value);
 		hdmi_writeb(hdmi, HDMI_PHY_DRIVER, 0xbb);
 
 		hdmi_writeb(hdmi, HDMI_PHY_SYS_CTL, 0x15);
@@ -314,6 +322,11 @@ static int inno_hdmi_config_video_avi(struct inno_hdmi *hdmi,
 	else
 		frame.avi.colorspace = HDMI_COLORSPACE_RGB;
 
+	if (frame.avi.colorspace != HDMI_COLORSPACE_RGB)
+		frame.avi.colorimetry = hdmi->hdmi_data.colorimetry;
+
+	frame.avi.scan_mode = HDMI_SCAN_MODE_NONE;
+
 	return inno_hdmi_upload_frame(hdmi, rc, &frame, INFOFRAME_AVI, 0, 0, 0);
 }
 
@@ -328,42 +341,6 @@ static int inno_hdmi_config_audio_aai(struct inno_hdmi *hdmi,
 	faudio = (struct hdmi_audio_infoframe *)&frame;
 
 	faudio->channels = audio->channels;
-
-	switch (audio->sample_width) {
-	case 16:
-		faudio->sample_size = HDMI_AUDIO_SAMPLE_SIZE_16;
-		break;
-	case 20:
-		faudio->sample_size = HDMI_AUDIO_SAMPLE_SIZE_20;
-		break;
-	case 24:
-		faudio->sample_size = HDMI_AUDIO_SAMPLE_SIZE_24;
-		break;
-	}
-
-	switch (audio->sample_rate) {
-	case 32000:
-		faudio->sample_frequency = HDMI_AUDIO_SAMPLE_FREQUENCY_32000;
-		break;
-	case 44100:
-		faudio->sample_frequency = HDMI_AUDIO_SAMPLE_FREQUENCY_44100;
-		break;
-	case 48000:
-		faudio->sample_frequency = HDMI_AUDIO_SAMPLE_FREQUENCY_48000;
-		break;
-	case 88200:
-		faudio->sample_frequency = HDMI_AUDIO_SAMPLE_FREQUENCY_88200;
-		break;
-	case 96000:
-		faudio->sample_frequency = HDMI_AUDIO_SAMPLE_FREQUENCY_96000;
-		break;
-	case 176400:
-		faudio->sample_frequency = HDMI_AUDIO_SAMPLE_FREQUENCY_176400;
-		break;
-	case 192000:
-		faudio->sample_frequency = HDMI_AUDIO_SAMPLE_FREQUENCY_192000;
-		break;
-	}
 
 	return inno_hdmi_upload_frame(hdmi, rc, &frame, INFOFRAME_AAI, 0, 0, 0);
 }
@@ -450,6 +427,11 @@ static int inno_hdmi_config_video_timing(struct inno_hdmi *hdmi,
 {
 	int value;
 
+	value = BIT(20) | BIT(21);
+	value |= mode->flags & DRM_MODE_FLAG_PHSYNC ? BIT(4) : 0;
+	value |= mode->flags & DRM_MODE_FLAG_PVSYNC ? BIT(5) : 0;
+	regmap_write(hdmi->regmap, 0x148, value);
+
 	/* Set detail external video timing polarity and interlace mode */
 	value = v_EXTERANL_VIDEO(1);
 	value |= mode->flags & DRM_MODE_FLAG_PHSYNC ?
@@ -469,7 +451,7 @@ static int inno_hdmi_config_video_timing(struct inno_hdmi *hdmi,
 	hdmi_writeb(hdmi, HDMI_VIDEO_EXT_HBLANK_L, value & 0xFF);
 	hdmi_writeb(hdmi, HDMI_VIDEO_EXT_HBLANK_H, (value >> 8) & 0xFF);
 
-	value = mode->hsync_start - mode->hdisplay;
+	value = mode->htotal - mode->hsync_start;
 	hdmi_writeb(hdmi, HDMI_VIDEO_EXT_HDELAY_L, value & 0xFF);
 	hdmi_writeb(hdmi, HDMI_VIDEO_EXT_HDELAY_H, (value >> 8) & 0xFF);
 
@@ -484,7 +466,7 @@ static int inno_hdmi_config_video_timing(struct inno_hdmi *hdmi,
 	value = mode->vtotal - mode->vdisplay;
 	hdmi_writeb(hdmi, HDMI_VIDEO_EXT_VBLANK, value & 0xFF);
 
-	value = mode->vsync_start - mode->vdisplay;
+	value = mode->vtotal - mode->vsync_start;
 	hdmi_writeb(hdmi, HDMI_VIDEO_EXT_VDELAY, value & 0xFF);
 
 	value = mode->vsync_end - mode->vsync_start;
@@ -1082,21 +1064,42 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 	if (IS_ERR(hdmi->regs))
 		return PTR_ERR(hdmi->regs);
 
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0)
+		return irq;
+
+	hdmi->aclk = devm_clk_get(hdmi->dev, "aclk");
+	if (IS_ERR(hdmi->aclk)) {
+		dev_err(hdmi->dev, "Unable to get HDMI aclk clk\n");
+		return PTR_ERR(hdmi->aclk);
+	}
+
 	hdmi->pclk = devm_clk_get(hdmi->dev, "pclk");
 	if (IS_ERR(hdmi->pclk)) {
 		dev_err(hdmi->dev, "Unable to get HDMI pclk clk\n");
 		return PTR_ERR(hdmi->pclk);
 	}
 
-	ret = clk_prepare_enable(hdmi->pclk);
+	ret = clk_prepare_enable(hdmi->aclk);
 	if (ret) {
-		dev_err(hdmi->dev, "Cannot enable HDMI pclk clock: %d\n", ret);
+		dev_err(hdmi->dev, "Cannot enable HDMI aclk clock: %d\n", ret);
 		return ret;
 	}
 
-	irq = platform_get_irq(pdev, 0);
-	if (irq < 0)
-		return irq;
+	ret = clk_prepare_enable(hdmi->pclk);
+	if (ret) {
+		dev_err(hdmi->dev, "Cannot enable HDMI pclk clock: %d\n", ret);
+		goto err_disable_aclk;
+	}
+
+	hdmi->regmap =
+		syscon_regmap_lookup_by_phandle(hdmi->dev->of_node,
+						"rockchip,grf");
+	if (IS_ERR(hdmi->regmap)) {
+		dev_err(hdmi->dev, "Unable to get rockchip,grf\n");
+		ret = PTR_ERR(hdmi->regmap);
+		goto err_disable_aclk;
+	}
 
 	inno_hdmi_reset(hdmi);
 
@@ -1104,7 +1107,7 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 	if (IS_ERR(hdmi->ddc)) {
 		ret = PTR_ERR(hdmi->ddc);
 		hdmi->ddc = NULL;
-		return ret;
+		goto err_disable_pclk;
 	}
 
 	/*
@@ -1118,7 +1121,7 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 
 	ret = inno_hdmi_register(drm, hdmi);
 	if (ret)
-		return ret;
+		goto err_disable_pclk;
 
 	dev_set_drvdata(dev, hdmi);
 
@@ -1128,6 +1131,18 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 	ret = devm_request_threaded_irq(dev, irq, inno_hdmi_hardirq,
 					inno_hdmi_irq, IRQF_SHARED,
 					dev_name(dev), hdmi);
+	if (ret) {
+		dev_err(hdmi->dev,
+			"failed to request hdmi irq: %d\n", ret);
+		goto err_disable_pclk;
+	}
+
+	return 0;
+
+err_disable_pclk:
+	clk_disable_unprepare(hdmi->pclk);
+err_disable_aclk:
+	clk_disable_unprepare(hdmi->aclk);
 
 	return ret;
 }
@@ -1141,6 +1156,7 @@ static void inno_hdmi_unbind(struct device *dev, struct device *master,
 	hdmi->encoder.funcs->destroy(&hdmi->encoder);
 
 	clk_disable_unprepare(hdmi->pclk);
+	clk_disable_unprepare(hdmi->aclk);
 	i2c_put_adapter(hdmi->ddc);
 }
 

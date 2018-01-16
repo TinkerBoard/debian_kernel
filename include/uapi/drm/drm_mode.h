@@ -87,13 +87,6 @@
 #define  DRM_MODE_FLAG_PIC_AR_16_9 \
 			(DRM_MODE_PICTURE_ASPECT_16_9<<19)
 
-/*
- * HDMI 2.0
- */
-#define DRM_MODE_FLAG_420_MASK			(0x03<<23)
-#define  DRM_MODE_FLAG_420			(1<<23)
-#define  DRM_MODE_FLAG_420_ONLY			(1<<24)
-
 /* DPMS flags */
 /* bit compatible with the xorg definitions. */
 #define DRM_MODE_DPMS_ON	0
@@ -230,14 +223,16 @@ struct drm_mode_get_encoder {
 
 /* This is for connectors with multiple signal types. */
 /* Try to match DRM_MODE_CONNECTOR_X as closely as possible. */
-#define DRM_MODE_SUBCONNECTOR_Automatic	0
-#define DRM_MODE_SUBCONNECTOR_Unknown	0
-#define DRM_MODE_SUBCONNECTOR_DVID	3
-#define DRM_MODE_SUBCONNECTOR_DVIA	4
-#define DRM_MODE_SUBCONNECTOR_Composite	5
-#define DRM_MODE_SUBCONNECTOR_SVIDEO	6
-#define DRM_MODE_SUBCONNECTOR_Component	8
-#define DRM_MODE_SUBCONNECTOR_SCART	9
+enum drm_mode_subconnector {
+	DRM_MODE_SUBCONNECTOR_Automatic = 0,
+	DRM_MODE_SUBCONNECTOR_Unknown = 0,
+	DRM_MODE_SUBCONNECTOR_DVID = 3,
+	DRM_MODE_SUBCONNECTOR_DVIA = 4,
+	DRM_MODE_SUBCONNECTOR_Composite = 5,
+	DRM_MODE_SUBCONNECTOR_SVIDEO = 6,
+	DRM_MODE_SUBCONNECTOR_Component = 8,
+	DRM_MODE_SUBCONNECTOR_SCART = 9,
+};
 
 #define DRM_MODE_CONNECTOR_Unknown	0
 #define DRM_MODE_CONNECTOR_VGA		1
@@ -515,6 +510,29 @@ struct drm_color_lut {
 	__u16 green;
 	__u16 blue;
 	__u16 reserved;
+};
+
+enum supported_eotf_type {
+	TRADITIONAL_GAMMA_SDR = 0,
+	TRADITIONAL_GAMMA_HDR,
+	SMPTE_ST2084,
+	HLG,
+	FUTURE_EOTF
+};
+
+/* HDR Metadata */
+struct hdr_static_metadata {
+	uint16_t eotf;
+	uint16_t type;
+	uint16_t display_primaries_x[3];
+	uint16_t display_primaries_y[3];
+	uint16_t white_point_x;
+	uint16_t white_point_y;
+	uint16_t max_mastering_display_luminance;
+	uint16_t min_mastering_display_luminance;
+	uint16_t max_fall;
+	uint16_t max_cll;
+	uint16_t min_cll;
 };
 
 #define DRM_MODE_PAGE_FLIP_EVENT 0x01

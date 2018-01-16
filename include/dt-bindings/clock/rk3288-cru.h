@@ -90,7 +90,9 @@
 #define SCLK_MIPIDSI_24M	126
 #define SCLK_VIP_OUT		127
 #define SCLK_DDRCLK		128
+#define SCLK_I2S_SRC		129
 
+#define SCLK_MAC_PLL		150
 #define SCLK_MAC		151
 #define SCLK_MACREF_OUT		152
 
@@ -173,6 +175,8 @@
 #define PCLK_EFUSE256		369
 #define PCLK_EFUSE1024		370
 #define PCLK_ISP_IN		371
+#define PCLK_VIP                372
+#define PCLK_VIP_IN             373
 
 /* hclk gates */
 #define HCLK_GPS		448

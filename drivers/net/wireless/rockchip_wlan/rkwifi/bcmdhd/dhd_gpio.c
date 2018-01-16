@@ -26,7 +26,7 @@ static int gpio_wl_host_wake = -1; // WL_HOST_WAKE is output pin of WLAN module
 #endif
 
 static int
-dhd_wlan_set_power(bool on
+dhd_wlan_set_power(int on
 #ifdef BUS_POWER_RESTORE
 , wifi_adapter_info_t *adapter
 #endif /* BUS_POWER_RESTORE */
@@ -65,6 +65,8 @@ dhd_wlan_set_power(bool on
 		}
 #endif /* BCMPCIE */
 #endif /* BUS_POWER_RESTORE */
+		/* Lets customer power to get stable */
+		mdelay(100);
 	} else {
 #if defined(BUS_POWER_RESTORE)
 #if defined(BCMSDIO)
@@ -102,7 +104,7 @@ static int dhd_wlan_set_reset(int onoff)
 	return 0;
 }
 
-static int dhd_wlan_set_carddetect(bool present)
+static int dhd_wlan_set_carddetect(int present)
 {
 	int err = 0;
 
@@ -145,29 +147,41 @@ static int dhd_wlan_get_mac_addr(unsigned char *buf)
 		bcopy((char *)&ea_example, buf, sizeof(struct ether_addr));
 	}
 #endif /* EXAMPLE_GET_MAC */
+#ifdef EXAMPLE_GET_MAC_VER2
+	/* EXAMPLE code */
+	{
+		char mac[6] = {0x00,0x11,0x22,0x33,0x44,0xFF};
+		char macpad[56]= {
+		0x00,0xaa,0x9c,0x84,0xc7,0xbc,0x9b,0xf6,
+		0x02,0x33,0xa9,0x4d,0x5c,0xb4,0x0a,0x5d,
+		0xa8,0xef,0xb0,0xcf,0x8e,0xbf,0x24,0x8a,
+		0x87,0x0f,0x6f,0x0d,0xeb,0x83,0x6a,0x70,
+		0x4a,0xeb,0xf6,0xe6,0x3c,0xe7,0x5f,0xfc,
+		0x0e,0xa7,0xb3,0x0f,0x00,0xe4,0x4a,0xaf,
+		0x87,0x08,0x16,0x6d,0x3a,0xe3,0xc7,0x80};
+		bcopy(mac, buf, sizeof(mac));
+		bcopy(macpad, buf+6, sizeof(macpad));
+	}
+#endif /* EXAMPLE_GET_MAC_VER2 */
 	err = rockchip_wifi_mac_addr(buf);
 
 	return err;
 }
 
-#if !defined(WL_WIRELESS_EXT)
-struct cntry_locales_custom {
-	char iso_abbrev[WLC_CNTRY_BUF_SZ];	/* ISO 3166-1 country abbreviation */
-	char custom_locale[WLC_CNTRY_BUF_SZ];	/* Custom firmware locale */
-	int32 custom_locale_rev;		/* Custom local revisin default -1 */
-};
-#endif
-
 static struct cntry_locales_custom brcm_wlan_translate_custom_table[] = {
 	/* Table should be filled out based on custom platform regulatory requirement */
+#ifdef EXAMPLE_TABLE
 	{"",   "XT", 49},  /* Universal if Country code is unknown or empty */
 	{"US", "US", 0},
+#endif /* EXMAPLE_TABLE */
 };
 
 #ifdef CUSTOM_FORCE_NODFS_FLAG
 struct cntry_locales_custom brcm_wlan_translate_nodfs_table[] = {
+#ifdef EXAMPLE_TABLE
 	{"",   "XT", 50},  /* Universal if Country code is unknown or empty */
 	{"US", "US", 0},
+#endif /* EXMAPLE_TABLE */
 };
 #endif
 

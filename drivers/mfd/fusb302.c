@@ -220,7 +220,8 @@ void fusb_irq_enable(struct fusb30x_chip *chip)
 
 static void platform_fusb_notify(struct fusb30x_chip *chip)
 {
-	bool plugged = 0, flip = 0, dfp = 0, ufp = 0, dp = 0, usb_ss = 0;
+	bool plugged = 0, flip = 0, dfp = 0, ufp = 0, dp = 0, usb_ss = 0,
+	     hpd = 0;
 	union extcon_property_value property;
 
 	if (chip->notify.is_cc_connected)
@@ -244,6 +245,7 @@ static void platform_fusb_notify(struct fusb30x_chip *chip)
 			dfp = 1;
 			usb_ss = (chip->notify.pin_assignment_def &
 				(PIN_MAP_B | PIN_MAP_D | PIN_MAP_F)) ? 1 : 0;
+			hpd = GET_DP_STATUS_HPD(chip->notify.dp_status);
 		} else if (chip->notify.data_role) {
 			dfp = 1;
 			usb_ss = 1;
@@ -269,7 +271,7 @@ static void platform_fusb_notify(struct fusb30x_chip *chip)
 				    EXTCON_PROP_USB_SS, property);
 		extcon_set_state(chip->extcon, EXTCON_USB, ufp);
 		extcon_set_state(chip->extcon, EXTCON_USB_HOST, dfp);
-		extcon_set_state(chip->extcon, EXTCON_DISP_DP, dp);
+		extcon_set_state(chip->extcon, EXTCON_DISP_DP, dp && hpd);
 		extcon_sync(chip->extcon, EXTCON_USB);
 		extcon_sync(chip->extcon, EXTCON_USB_HOST);
 		extcon_sync(chip->extcon, EXTCON_DISP_DP);
@@ -637,6 +639,16 @@ static void tcpm_select_rp_value(struct fusb30x_chip *chip, u32 rp)
 	regmap_write(chip->regmap, FUSB_REG_CONTROL0, control0_reg);
 }
 
+static int tcpm_check_vbus(struct fusb30x_chip *chip)
+{
+	u32 val;
+
+	/* Read status register */
+	regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
+
+	return (val & STATUS0_VBUSOK) ? 1 : 0;
+}
+
 static void tcpm_init(struct fusb30x_chip *chip)
 {
 	u8 val;
@@ -691,6 +703,7 @@ static void tcpm_init(struct fusb30x_chip *chip)
 	tcpm_set_vconn(chip, 0);
 
 	regmap_write(chip->regmap, FUSB_REG_POWER, 0xf);
+	chip->vbus_begin = tcpm_check_vbus(chip);
 }
 
 static void pd_execute_hard_reset(struct fusb30x_chip *chip)
@@ -819,16 +832,6 @@ static void set_state_unattached(struct fusb30x_chip *chip)
 	msleep(100);
 	if (chip->gpio_discharge)
 		gpiod_set_value(chip->gpio_discharge, 0);
-}
-
-static int tcpm_check_vbus(struct fusb30x_chip *chip)
-{
-	u32 val;
-
-	/* Read status register */
-	regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
-
-	return (val & STATUS0_VBUSOK) ? 1 : 0;
 }
 
 static void set_mesg(struct fusb30x_chip *chip, int cmd, int is_DMT)
@@ -1020,10 +1023,12 @@ static void process_vdm_msg(struct fusb30x_chip *chip)
 	case VDM_TYPE_INIT:
 		switch (GET_VDMHEAD_CMD(vdm_header)) {
 		case VDM_ATTENTION:
+			chip->notify.dp_status = GET_DP_STATUS(chip->rec_load[1]);
 			dev_info(chip->dev, "attention, dp_status %x\n",
 				 chip->rec_load[1]);
 			chip->notify.attention = 1;
 			chip->vdm_state = 6;
+			platform_fusb_notify(chip);
 			break;
 		default:
 			dev_warn(chip->dev, "rec unknown init vdm msg\n");
@@ -1085,6 +1090,7 @@ static void process_vdm_msg(struct fusb30x_chip *chip)
 			chip->val_tmp = 1;
 			break;
 		case VDM_DP_STATUS_UPDATE:
+			chip->notify.dp_status = GET_DP_STATUS(chip->rec_load[1]);
 			dev_dbg(chip->dev, "dp_status 0x%x\n",
 				chip->rec_load[1]);
 			chip->val_tmp = 1;
@@ -1515,15 +1521,21 @@ static void fusb_state_attached_sink(struct fusb30x_chip *chip, int evt)
 	dev_info(chip->dev, "CC connected in %d as UFP\n", chip->cc_polarity);
 }
 
-static void fusb_state_src_startup(struct fusb30x_chip *chip, int evt)
+static void fusb_soft_reset_parameter(struct fusb30x_chip *chip)
 {
 	chip->caps_counter = 0;
-	chip->notify.is_pd_connected = 0;
 	chip->msg_id = 0;
 	chip->vdm_state = 0;
 	chip->vdm_substate = 0;
 	chip->vdm_send_state = 0;
 	chip->val_tmp = 0;
+	chip->pos_power = 0;
+}
+
+static void fusb_state_src_startup(struct fusb30x_chip *chip, int evt)
+{
+	chip->notify.is_pd_connected = 0;
+	fusb_soft_reset_parameter(chip);
 
 	memset(chip->partner_cap, 0, sizeof(chip->partner_cap));
 
@@ -1827,6 +1839,28 @@ static void fusb_state_src_send_hardreset(struct fusb30x_chip *chip, int evt)
 	}
 }
 
+static void fusb_state_src_softreset(struct fusb30x_chip *chip)
+{
+	u32 tmp;
+
+	switch (chip->sub_state) {
+	case 0:
+		set_mesg(chip, CMT_ACCEPT, CONTROLMESSAGE);
+		chip->tx_state = tx_idle;
+		chip->sub_state++;
+		/* without break */
+	default:
+		tmp = policy_send_data(chip);
+		if (tmp == tx_success) {
+			fusb_soft_reset_parameter(chip);
+			set_state(chip, policy_src_send_caps);
+		} else if (tmp == tx_failed) {
+			set_state(chip, policy_src_send_hardrst);
+		}
+		break;
+	}
+}
+
 static void fusb_state_src_send_softreset(struct fusb30x_chip *chip, int evt)
 {
 	u32 tmp;
@@ -1853,8 +1887,10 @@ static void fusb_state_src_send_softreset(struct fusb30x_chip *chip, int evt)
 	default:
 		if (evt & EVENT_RX) {
 			if ((!PD_HEADER_CNT(chip->rec_head)) &&
-			    (PD_HEADER_TYPE(chip->rec_head) == CMT_ACCEPT))
+			    (PD_HEADER_TYPE(chip->rec_head) == CMT_ACCEPT)) {
+				fusb_soft_reset_parameter(chip);
 				set_state(chip, policy_src_send_caps);
+			}
 		} else if (evt & EVENT_TIMER_STATE) {
 			set_state(chip, policy_src_send_hardrst);
 		}
@@ -1865,12 +1901,7 @@ static void fusb_state_src_send_softreset(struct fusb30x_chip *chip, int evt)
 static void fusb_state_snk_startup(struct fusb30x_chip *chip, int evt)
 {
 	chip->notify.is_pd_connected = 0;
-	chip->msg_id = 0;
-	chip->vdm_state = 0;
-	chip->vdm_substate = 0;
-	chip->vdm_send_state = 0;
-	chip->val_tmp = 0;
-	chip->pos_power = 0;
+	fusb_soft_reset_parameter(chip);
 
 	memset(chip->partner_cap, 0, sizeof(chip->partner_cap));
 
@@ -1900,7 +1931,12 @@ static void fusb_state_snk_wait_caps(struct fusb30x_chip *chip, int evt)
 		}
 	} else if (evt & EVENT_TIMER_STATE) {
 		if (chip->hardrst_count <= N_HARDRESET_COUNT) {
-			set_state(chip, policy_snk_send_hardrst);
+			if (chip->vbus_begin) {
+				chip->vbus_begin = false;
+				set_state(chip, policy_snk_send_softrst);
+			} else {
+				set_state(chip, policy_snk_send_hardrst);
+			}
 		} else {
 			if (chip->is_pd_support)
 				set_state(chip, error_recovery);
@@ -2098,6 +2134,31 @@ static void fusb_state_snk_send_hardreset(struct fusb30x_chip *chip, int evt)
 	}
 }
 
+static void fusb_state_snk_softreset(struct fusb30x_chip *chip)
+{
+	u32 tmp;
+
+	switch (chip->sub_state) {
+	case 0:
+		set_mesg(chip, CMT_ACCEPT, CONTROLMESSAGE);
+		chip->tx_state = tx_idle;
+		chip->sub_state++;
+		/* without break */
+	default:
+		tmp = policy_send_data(chip);
+		if (tmp == tx_success) {
+			fusb_soft_reset_parameter(chip);
+			chip->timer_state = T_TYPEC_SINK_WAIT_CAP;
+			fusb_timer_start(&chip->timer_state_machine,
+					 chip->timer_state);
+			set_state(chip, policy_snk_wait_caps);
+		} else if (tmp == tx_failed) {
+			set_state(chip, policy_snk_send_hardrst);
+		}
+		break;
+	}
+}
+
 static void fusb_state_snk_send_softreset(struct fusb30x_chip *chip, int evt)
 {
 	u32 tmp;
@@ -2124,8 +2185,13 @@ static void fusb_state_snk_send_softreset(struct fusb30x_chip *chip, int evt)
 	default:
 		if (evt & EVENT_RX) {
 			if ((!PD_HEADER_CNT(chip->rec_head)) &&
-			    (PD_HEADER_TYPE(chip->rec_head) == CMT_ACCEPT))
+			    (PD_HEADER_TYPE(chip->rec_head) == CMT_ACCEPT)) {
+				fusb_soft_reset_parameter(chip);
+				chip->timer_state = T_TYPEC_SINK_WAIT_CAP;
+				fusb_timer_start(&chip->timer_state_machine,
+						 chip->timer_state);
 				set_state(chip, policy_snk_wait_caps);
+			}
 		} else if (evt & EVENT_TIMER_STATE) {
 			set_state(chip, policy_snk_send_hardrst);
 		}
@@ -2166,9 +2232,9 @@ static void state_machine_typec(struct fusb30x_chip *chip)
 		if ((!PD_HEADER_CNT(chip->rec_head)) &&
 		    (PD_HEADER_TYPE(chip->rec_head) == CMT_SOFTRESET)) {
 			if (chip->notify.power_role)
-				set_state(chip, policy_src_send_softrst);
+				set_state(chip, policy_src_softrst);
 			else
-				set_state(chip, policy_snk_send_softrst);
+				set_state(chip, policy_snk_softrst);
 		}
 	}
 
@@ -2234,6 +2300,9 @@ static void state_machine_typec(struct fusb30x_chip *chip)
 	case policy_src_send_softrst:
 		fusb_state_src_send_softreset(chip, evt);
 		break;
+	case policy_src_softrst:
+		fusb_state_src_softreset(chip);
+		break;
 
 	/* UFP */
 	case policy_snk_startup:
@@ -2265,6 +2334,9 @@ static void state_machine_typec(struct fusb30x_chip *chip)
 		break;
 	case policy_snk_send_softrst:
 		fusb_state_snk_send_softreset(chip, evt);
+		break;
+	case policy_snk_softrst:
+		fusb_state_snk_softreset(chip);
 		break;
 
 	default:

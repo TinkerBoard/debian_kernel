@@ -15,6 +15,9 @@
 #include <linux/io.h>
 #include <linux/rockchip/rockchip_sip.h>
 #include <asm/cputype.h>
+#ifdef CONFIG_ARM
+#include <asm/psci.h>
+#endif
 #include <asm/smp_plat.h>
 #include <uapi/linux/psci.h>
 #include <linux/ptrace.h>
@@ -66,6 +69,15 @@ int sip_smc_virtual_poweroff(void)
 	struct arm_smccc_res res;
 
 	res = __invoke_sip_fn_smc(PSCI_FN_NATIVE(1_0, SYSTEM_SUSPEND), 0, 0, 0);
+	return res.a0;
+}
+
+int sip_smc_remotectl_config(u32 func, u32 data)
+{
+	struct arm_smccc_res res;
+
+	res = __invoke_sip_fn_smc(SIP_REMOTECTL_CFG, func, data, 0);
+
 	return res.a0;
 }
 
@@ -298,6 +310,9 @@ void sip_fiq_debugger_enable_fiq(bool enable, uint32_t tgt_cpu)
 static __init int sip_implement_version_init(void)
 {
 	struct arm_smccc_res res;
+
+	if (!psci_smp_available())
+		return 0;
 
 	res = __invoke_sip_fn_smc(SIP_SIP_VERSION, SIP_IMPLEMENT_V2,
 				  SECURE_REG_WR, 0);

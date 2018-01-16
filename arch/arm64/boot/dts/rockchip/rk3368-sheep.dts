@@ -495,6 +495,15 @@
 	cpu-supply = <&syr827>;
 };
 
+&dfi {
+	status = "okay";
+};
+
+&dmc {
+	center-supply = <&vdd_logic>;
+	status = "okay";
+};
+
 &gpu {
 	logic-supply = <&vdd_logic>;
 };
@@ -512,6 +521,8 @@
 		#sound-dai-cells = <0>;
 		clocks = <&cru SCLK_I2S_8CH_OUT>;
 		clock-names = "mclk";
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2s_8ch_mclk>;
 		realtek,in1-differential;
 		status = "okay";
 	};
@@ -590,7 +601,7 @@
 &dsi {
 	status = "okay";
 
-	dsi_panel: panel@0 {
+	panel@0 {
 		compatible = "simple-panel-dsi";
 		reg = <0>;
 		backlight = <&backlight>;
@@ -600,7 +611,7 @@
 		dsi,format = <MIPI_DSI_FMT_RGB888>;
 		dsi,lanes = <4>;
 
-		delay,prepare = <120>;
+		prepare-delay-ms = <120>;
 
 		display-timings {
 			native-mode = <&timing0>;
@@ -625,7 +636,6 @@
 };
 
 &mipi_dphy {
-	rockchip,dsi-panel = <&dsi_panel>;
 	status = "okay";
 };
 

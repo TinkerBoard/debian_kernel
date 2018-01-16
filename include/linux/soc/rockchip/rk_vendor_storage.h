@@ -15,9 +15,11 @@
 #define WIFI_MAC_ID	2
 #define LAN_MAC_ID	3
 #define BT_MAC_ID	4
+#define SENSOR_CALIBRATION_ID 7
 
 int rk_vendor_read(u32 id, void *pbuf, u32 size);
 int rk_vendor_write(u32 id, void *pbuf, u32 size);
 int rk_vendor_register(void *read, void *write);
+bool is_rk_vendor_ready(void);
 
 #endif
