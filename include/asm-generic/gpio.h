@@ -25,7 +25,7 @@
  * actually an estimate of a board-specific value.
  */
 
-#define ARCH_GPIO_BASE		1000
+#define ARCH_GPIO_BASE		0
 
 #ifndef ARCH_NR_GPIOS
 #define ARCH_NR_GPIOS		512
