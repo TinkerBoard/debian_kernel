@@ -19,6 +19,8 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	ds1307.dtbo \
 	lirc-rpi.dtbo \
 	lirc-toshiba.dtbo \
+	mcp2515-can0.dtbo \
+
 
 targets += dtbs dtbs_install
 targets += $(dtbo-y)

@@ -1,0 +1,71 @@
+/*
+ * Device tree overlay for mcp251x/can0 on spi0.0
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
+    /* disable spi-dev for spi0.0 */
+    fragment@0 {
+        target = <&spi2>;
+        __overlay__ {
+            status = "okay";
+            spidev@0{
+                status = "disabled";
+            };
+            spidev@1{
+                status = "disabled";
+            };
+        };
+    };
+
+    /* the interrupt pin of the can-controller */
+    fragment@1 {
+        target = <&gpio5>;
+        __overlay__ {
+            can0_pins: can0_pins {
+		rockchip,pins = <5 19 0 &pcfg_pull_none>;
+            };
+        };
+    };
+
+    /* the clock/oscillator of the can-controller */
+    fragment@2 {
+        target-path = "/";
+        __overlay__ {
+            /* external oscillator of mcp2515 on SPI0.0 */
+            can0_osc: can0_osc {
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency  = <16000000>;
+            };
+        };
+    };
+
+    /* the spi config of the can-controller itself binding everything together */
+    fragment@3 {
+        target = <&spi2>;
+        __overlay__ {
+            /* needed to avoid dtc warning */
+            #address-cells = <2>;
+            #size-cells = <0>;
+            can0: mcp2515@0 {
+                reg = <0>;
+                compatible = "microchip,mcp2515";
+                pinctrl-names = "default";
+                pinctrl-0 = <&can0_pins>;
+                spi-max-frequency = <10000000>;
+                interrupt-parent = <&gpio5>;
+                interrupts = <19 0x2>;
+                clocks = <&can0_osc>;
+            };
+        };
+    };
+    //__overrides__ {
+    //    oscillator = <&can0_osc>,"clock-frequency:0";
+    //    spimaxfrequency = <&can0>,"spi-max-frequency:0";
+    //    interrupt = <&can0_pins>,"brcm,pins:0",<&can0>,"interrupts:0";
+    //};
+};
