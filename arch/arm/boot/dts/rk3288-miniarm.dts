@@ -638,7 +638,7 @@
 	status = "okay";
 	max-freq = <50000000>;
 	pinctrl-names = "default";
-	pinctrl-0 = <&spi0_clk &spi0_tx &spi0_rx &spi0_cs0>;
+	pinctrl-0 = <&spi0_clk &spi0_tx &spi0_rx &spi0_cs0 &spi0_cs1>;
 	#address-cells = <2>;
 
 	spidev@0 {
