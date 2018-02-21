@@ -143,3 +143,9 @@ config SND_SOC_JUSTBOOM_DIGI
 	select SND_SOC_WM8804_I2C
 	help
 	  Say Y or M if you want to add support for JustBoom Digi.
+
+config SND_SOC_GOOGLEVOICEHAT_CARD
+        tristate "Support for Google voice HAT sound card"
+        select SND_SOC_VOICEHAT
+        help
+          Say Y or M if you want to add support for Google voice HAT sound card.

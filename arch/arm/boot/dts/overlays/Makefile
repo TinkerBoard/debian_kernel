@@ -20,6 +20,7 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	lirc-rpi.dtbo \
 	lirc-toshiba.dtbo \
 	mcp2515-can0.dtbo \
+	googlevoicehat-soundcard.dtbo \
 
 
 targets += dtbs dtbs_install

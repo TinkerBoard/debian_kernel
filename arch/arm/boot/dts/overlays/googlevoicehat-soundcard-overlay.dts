@@ -1,0 +1,62 @@
+// Definitions for Google voiceHAT v1 soundcard overlay
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
+
+	fragment@0 {
+		target = <&i2s>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio7>;
+		__overlay__ {
+			googlevoicehat_pins: googlevoicehat_pins {
+				rockchip,pins = <7 7 1 &pcfg_pull_up>;
+			};
+		};
+	};
+
+
+	fragment@2 {
+		target-path = "/";
+		__overlay__ {
+			voicehat-codec {
+				#sound-dai-cells = <0>;
+				compatible = "google,voicehat";
+				pinctrl-names = "default";
+				pinctrl-0 = <&googlevoicehat_pins>;
+				sdmode-gpios= <&gpio7 7 0>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/sound-ext-card";
+		__overlay__ {
+			compatible = "googlevoicehat,googlevoicehat-soundcard";
+			i2s-controller = <&i2s>;
+			status = "okay";
+		};
+	};
+
+	/* Must disable other i2s device(s) first  */
+	fragment@4 {
+                target-path ="/sound-simple-card";
+                __overlay__ {
+                        status = "disabled";
+                };
+        };
+
+	fragment@5 {
+		target = <&hdmi>;
+		__overlay__ {
+			hdmi-i2s-audio-disable;
+		};
+	};
+};

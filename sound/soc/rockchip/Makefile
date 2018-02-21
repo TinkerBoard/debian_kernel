@@ -24,6 +24,8 @@ snd-soc-iqaudio-dac-objs := iqaudio-dac.o
 snd-soc-iqaudio-digi-objs := iqaudio-digi.o
 snd-soc-justboom-dac-objs := justboom-dac.o
 snd-soc-justboom-digi-objs := justboom-digi.o
+snd-soc-googlevoicehat-soundcard-objs := googlevoicehat-soundcard.o
+snd-soc-googlevoicehat-codec-objs := googlevoicehat-codec.o
 
 obj-$(CONFIG_SND_SOC_ROCKCHIP_DA7219) += snd-soc-rockchip-da7219.o
 obj-$(CONFIG_SND_SOC_ROCKCHIP_HDMI_ANALOG) += snd-soc-rockchip-hdmi-analog.o
@@ -40,3 +42,5 @@ obj-$(CONFIG_SND_SOC_IQAUDIO_DAC) += snd-soc-iqaudio-dac.o
 obj-$(CONFIG_SND_SOC_IQAUDIO_DIGI) += snd-soc-iqaudio-digi.o
 obj-$(CONFIG_SND_SOC_JUSTBOOM_DAC) += snd-soc-justboom-dac.o
 obj-$(CONFIG_SND_SOC_JUSTBOOM_DIGI) += snd-soc-justboom-digi.o
+obj-$(CONFIG_SND_SOC_GOOGLEVOICEHAT_CARD) += snd-soc-googlevoicehat-soundcard.o
+obj-$(CONFIG_SND_SOC_GOOGLEVOICEHAT_CARD) += snd-soc-googlevoicehat-codec.o
