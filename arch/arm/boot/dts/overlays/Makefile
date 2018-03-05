@@ -21,7 +21,7 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	lirc-toshiba.dtbo \
 	mcp2515-can0.dtbo \
 	googlevoicehat-soundcard.dtbo \
-
+	ads7846-tinker.dtbo \
 
 targets += dtbs dtbs_install
 targets += $(dtbo-y)
