@@ -328,7 +328,8 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 	mask = 0xff << shift;
 	bit = gic_cpu_map[cpu] << shift;
 	val = readl_relaxed(reg) & ~mask;
-	writel_relaxed(val | bit, reg);
+	if((gic_irq(d)!=57))
+		writel_relaxed(val | bit, reg);
 	raw_spin_unlock_irqrestore(&irq_controller_lock, flags);
 
 	return IRQ_SET_MASK_OK;
@@ -504,6 +505,9 @@ static void __init gic_dist_init(struct gic_chip_data *gic)
 
 	gic_dist_config(base, gic_irqs, NULL);
 
+	// Set  usb host IRQ 57 for N cpu
+	writel_relaxed(0x01010e01, base + GIC_DIST_TARGET + 0x38);
+	writel_relaxed(0xa0a090a0, base + GIC_DIST_PRI + 0x38);
 	writel_relaxed(GICD_ENABLE, base + GIC_DIST_CTRL);
 }
 

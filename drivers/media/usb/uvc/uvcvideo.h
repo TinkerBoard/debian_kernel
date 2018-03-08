@@ -139,7 +139,7 @@
 #define DRIVER_VERSION		"1.1.1"
 
 /* Number of isochronous URBs. */
-#define UVC_URBS		5
+#define UVC_URBS		20
 /* Maximum number of packets per URB. */
 #define UVC_MAX_PACKETS		32
 /* Maximum status buffer size in bytes of interrupt URB. */
