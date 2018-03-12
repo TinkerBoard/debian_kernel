@@ -220,6 +220,9 @@ static void drm_gem_object_exported_dma_buf_free(struct drm_gem_object *obj)
 static void
 drm_gem_object_handle_unreference_unlocked(struct drm_gem_object *obj)
 {
+	struct drm_device *dev = obj->dev;
+	bool final = false;
+
 	if (WARN_ON(obj->handle_count == 0))
 		return;
 
@@ -229,14 +232,39 @@ drm_gem_object_handle_unreference_unlocked(struct drm_gem_object *obj)
 	* checked for a name
 	*/
 
-	mutex_lock(&obj->dev->object_name_lock);
+	mutex_lock(&dev->object_name_lock);
 	if (--obj->handle_count == 0) {
 		drm_gem_object_handle_free(obj);
 		drm_gem_object_exported_dma_buf_free(obj);
+		final = true;
 	}
-	mutex_unlock(&obj->dev->object_name_lock);
+	mutex_unlock(&dev->object_name_lock);
 
-	drm_gem_object_unreference_unlocked(obj);
+	if (final)
+		drm_gem_object_unreference_unlocked(obj);
+}
+
+/*
+ * Called at device or object close to release the file's
+ * handle references on objects.
+ */
+static int
+drm_gem_object_release_handle(int id, void *ptr, void *data)
+{
+	struct drm_file *file_priv = data;
+	struct drm_gem_object *obj = ptr;
+	struct drm_device *dev = obj->dev;
+
+	if (drm_core_check_feature(dev, DRIVER_PRIME))
+		drm_gem_remove_prime_handles(obj, file_priv);
+	drm_vma_node_revoke(&obj->vma_node, file_priv->filp);
+
+	if (dev->driver->gem_close_object)
+		dev->driver->gem_close_object(obj, file_priv);
+
+	drm_gem_object_handle_unreference_unlocked(obj);
+
+	return 0;
 }
 
 /**
@@ -250,7 +278,6 @@ drm_gem_object_handle_unreference_unlocked(struct drm_gem_object *obj)
 int
 drm_gem_handle_delete(struct drm_file *filp, u32 handle)
 {
-	struct drm_device *dev;
 	struct drm_gem_object *obj;
 
 	/* This is gross. The idr system doesn't let us try a delete and
@@ -265,24 +292,18 @@ drm_gem_handle_delete(struct drm_file *filp, u32 handle)
 	spin_lock(&filp->table_lock);
 
 	/* Check if we currently have a reference on the object */
-	obj = idr_find(&filp->object_idr, handle);
-	if (obj == NULL) {
-		spin_unlock(&filp->table_lock);
+	obj = idr_replace(&filp->object_idr, NULL, handle);
+	spin_unlock(&filp->table_lock);
+	if (IS_ERR_OR_NULL(obj))
 		return -EINVAL;
-	}
-	dev = obj->dev;
 
-	/* Release reference and decrement refcount. */
+	/* Release driver's reference and decrement refcount. */
+	drm_gem_object_release_handle(handle, obj, filp);
+
+	/* And finally make the handle available for future allocations. */
+	spin_lock(&filp->table_lock);
 	idr_remove(&filp->object_idr, handle);
 	spin_unlock(&filp->table_lock);
-
-	if (drm_core_check_feature(dev, DRIVER_PRIME))
-		drm_gem_remove_prime_handles(obj, filp);
-	drm_vma_node_revoke(&obj->vma_node, filp->filp);
-
-	if (dev->driver->gem_close_object)
-		dev->driver->gem_close_object(obj, filp);
-	drm_gem_object_handle_unreference_unlocked(obj);
 
 	return 0;
 }
@@ -321,9 +342,12 @@ drm_gem_handle_create_tail(struct drm_file *file_priv,
 			   u32 *handlep)
 {
 	struct drm_device *dev = obj->dev;
+	u32 handle;
 	int ret;
 
 	WARN_ON(!mutex_is_locked(&dev->object_name_lock));
+	if (obj->handle_count++ == 0)
+		drm_gem_object_reference(obj);
 
 	/*
 	 * Get the user-visible handle using idr.  Preload and perform
@@ -333,15 +357,15 @@ drm_gem_handle_create_tail(struct drm_file *file_priv,
 	spin_lock(&file_priv->table_lock);
 
 	ret = idr_alloc(&file_priv->object_idr, obj, 1, 0, GFP_NOWAIT);
-	drm_gem_object_reference(obj);
-	obj->handle_count++;
+
 	spin_unlock(&file_priv->table_lock);
 	idr_preload_end();
+
 	mutex_unlock(&dev->object_name_lock);
 	if (ret < 0)
 		goto err_unref;
 
-	*handlep = ret;
+	handle = ret;
 
 	ret = drm_vma_node_allow(&obj->vma_node, file_priv->filp);
 	if (ret)
@@ -353,13 +377,14 @@ drm_gem_handle_create_tail(struct drm_file *file_priv,
 			goto err_revoke;
 	}
 
+	*handlep = handle;
 	return 0;
 
 err_revoke:
 	drm_vma_node_revoke(&obj->vma_node, file_priv->filp);
 err_remove:
 	spin_lock(&file_priv->table_lock);
-	idr_remove(&file_priv->object_idr, *handlep);
+	idr_remove(&file_priv->object_idr, handle);
 	spin_unlock(&file_priv->table_lock);
 err_unref:
 	drm_gem_object_handle_unreference_unlocked(obj);
@@ -620,7 +645,6 @@ drm_gem_flink_ioctl(struct drm_device *dev, void *data,
 		return -ENOENT;
 
 	mutex_lock(&dev->object_name_lock);
-	idr_preload(GFP_KERNEL);
 	/* prevent races with concurrent gem_close. */
 	if (obj->handle_count == 0) {
 		ret = -ENOENT;
@@ -628,7 +652,7 @@ drm_gem_flink_ioctl(struct drm_device *dev, void *data,
 	}
 
 	if (!obj->name) {
-		ret = idr_alloc(&dev->object_name_idr, obj, 1, 0, GFP_NOWAIT);
+		ret = idr_alloc(&dev->object_name_idr, obj, 1, 0, GFP_KERNEL);
 		if (ret < 0)
 			goto err;
 
@@ -639,7 +663,6 @@ drm_gem_flink_ioctl(struct drm_device *dev, void *data,
 	ret = 0;
 
 err:
-	idr_preload_end();
 	mutex_unlock(&dev->object_name_lock);
 	drm_gem_object_unreference_unlocked(obj);
 	return ret;
@@ -702,29 +725,6 @@ drm_gem_open(struct drm_device *dev, struct drm_file *file_private)
 {
 	idr_init(&file_private->object_idr);
 	spin_lock_init(&file_private->table_lock);
-}
-
-/*
- * Called at device close to release the file's
- * handle references on objects.
- */
-static int
-drm_gem_object_release_handle(int id, void *ptr, void *data)
-{
-	struct drm_file *file_priv = data;
-	struct drm_gem_object *obj = ptr;
-	struct drm_device *dev = obj->dev;
-
-	if (dev->driver->gem_close_object)
-		dev->driver->gem_close_object(obj, file_priv);
-
-	if (drm_core_check_feature(dev, DRIVER_PRIME))
-		drm_gem_remove_prime_handles(obj, file_priv);
-	drm_vma_node_revoke(&obj->vma_node, file_priv->filp);
-
-	drm_gem_object_handle_unreference_unlocked(obj);
-
-	return 0;
 }
 
 /**

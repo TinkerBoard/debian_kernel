@@ -1,8 +1,9 @@
-Rockchip RK3288 LVDS interface
+Rockchip SoCs LVDS interface
 ================================
 
 Required properties:
 - compatible: matching the soc type, one of
+	- "rockchip,px30-lvds";
 	- "rockchip,rk3126-lvds";
 	- "rockchip,rk3288-lvds";
 	- "rockchip,rk3366-lvds";
@@ -24,8 +25,8 @@ Required properties:
 
 - rockchip,grf: phandle to the general register files syscon
 
-Optional properties
-- pinctrl-names: must contain a "lcdc" entry.
+For px30 rgb output:
+- pinctrl-names: must contain a "m0" or "m1" entry.
 - pinctrl-0: pin control group to be used for this controller.
 
 Required nodes:
@@ -66,6 +67,21 @@ lvds_panel: lvds-panel {
 	};
 };
 
+For Rockchip PX30:
+
+RGB Output Pinctrl Example:
+
+&lvds {
+	pinctrl-names = "m0";
+	pinctrl-0 = <&lcdc_rgb_dclk_pin &lcdc_rgb_m0_den_pin &lcdc_rgb_m0_hsync_pin &lcdc_rgb_m0_vsync_pin &lcdc_rgb666_m0_data_pins>;
+};
+
+Or
+
+&lvds {
+	pinctrl-names = "m1";
+	pinctrl-0 = <&lcdc_rgb_dclk_pin &lcdc_rgb666_m1_data_pins>;
+};
 
 For Rockchip RK3288:
 
@@ -75,8 +91,6 @@ For Rockchip RK3288:
 		reg = <0xff96c000 0x4000>;
 		clocks = <&cru PCLK_LVDS_PHY>;
 		clock-names = "pclk_lvds";
-		pinctrl-names = "lcdc";
-		pinctrl-0 = <&lcdc_ctl>;
 		avdd1v0-supply = <&vdd10_lcd>;
 		avdd1v8-supply = <&vcc18_lcd>;
 		avdd3v3-supply = <&vcca_33>;
@@ -120,8 +134,6 @@ For Rockchip RK3368:
 		clock-names = "pclk_lvds", "pclk_lvds_ctl";
 		power-domains = <&power RK3368_PD_VIO>;
 		rockchip,grf = <&grf>;
-		pinctrl-names = "lcdc";
-		pinctrl-0 = <&lcdc_lcdc>;
 
 		ports {
 

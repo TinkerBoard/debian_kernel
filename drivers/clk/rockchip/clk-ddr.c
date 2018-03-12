@@ -255,6 +255,8 @@ static int rockchip_ddrclk_sip_set_rate_v2(struct clk_hw *hw,
 
 	p->hz = drate;
 	p->lcdc_type = rk_drm_get_lcdc_type();
+	p->wait_flag1 = 1;
+	p->wait_flag0 = 1;
 
 	res = sip_smc_dram(SHARE_PAGE_TYPE_DDR, 0,
 			   ROCKCHIP_SIP_CONFIG_DRAM_SET_RATE);
@@ -304,12 +306,13 @@ static const struct clk_ops rockchip_ddrclk_sip_ops_v2 = {
 	.get_parent = rockchip_ddrclk_get_parent,
 };
 
-struct clk *rockchip_clk_register_ddrclk(const char *name, int flags,
-					 const char *const *parent_names,
-					 u8 num_parents, int mux_offset,
-					 int mux_shift, int mux_width,
-					 int div_shift, int div_width,
-					 int ddr_flag, void __iomem *reg_base)
+struct clk * __init
+rockchip_clk_register_ddrclk(const char *name, int flags,
+			     const char *const *parent_names,
+			     u8 num_parents, int mux_offset,
+			     int mux_shift, int mux_width,
+			     int div_shift, int div_width,
+			     int ddr_flag, void __iomem *reg_base)
 {
 	struct rockchip_ddrclk *ddrclk;
 	struct clk_init_data init;

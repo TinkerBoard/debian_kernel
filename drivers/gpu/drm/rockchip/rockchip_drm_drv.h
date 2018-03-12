@@ -110,6 +110,9 @@ struct rockchip_crtc_state {
 	int afbdc_win_ptr;
 	int afbdc_win_id;
 	int afbdc_en;
+	int afbdc_win_vir_width;
+	int afbdc_win_xoffset;
+	int afbdc_win_yoffset;
 	int cabc_mode;
 	int cabc_stage_up;
 	int cabc_stage_down;
@@ -172,6 +175,8 @@ struct rockchip_drm_private {
 	struct drm_property *cabc_calc_pixel_num_property;
 	struct drm_property *eotf_prop;
 	struct drm_property *color_space_prop;
+	struct drm_property *global_alpha_prop;
+	struct drm_property *blend_mode_prop;
 	void *backlight;
 	struct drm_fb_helper *fbdev_helper;
 	struct drm_gem_object *fbdev_bo;
@@ -193,6 +198,8 @@ struct rockchip_drm_private {
 	struct drm_mm mm;
 	struct rockchip_dclk_pll default_pll;
 	struct rockchip_dclk_pll hdmi_pll;
+	struct devfreq *devfreq;
+	bool dmc_support;
 };
 
 #ifndef MODULE

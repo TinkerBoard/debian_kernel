@@ -285,7 +285,7 @@
 	num-slots = <1>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc_clk &sdmmc_cmd &sdmmc_cd &sdmmc_bus4>;
-	status = "okay";
+	status = "disabled";
 };
 
 &sdio0 {
@@ -529,6 +529,15 @@
 
 			otg_switch: OTG_SWITCH {
 				regulator-name = "otg_switch";
+			};
+
+			hdmi_switch: HDMI_SWITCH {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-name = "hdmi_switch";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
 			};
 		};
 

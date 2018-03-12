@@ -594,7 +594,7 @@ static irqreturn_t rk_iommu_irq(int irq, void *dev_id)
 			 */
 			if (iommu->domain)
 				report_iommu_fault(iommu->domain, iommu->dev, iova,
-						   flags);
+						   status);
 			else
 				dev_err(iommu->dev, "Page fault while iommu not attached to domain?\n");
 
@@ -1105,7 +1105,7 @@ static int rk_iommu_group_set_iommudata(struct iommu_group *group,
 	of_node_put(args.np);
 	if (!pd) {
 		dev_err(dev, "iommu %s not found\n", args.np->full_name);
-		return -EPROBE_DEFER;
+		return -ENODEV;
 	}
 
 	/* TODO(djkurtz): handle multiple slave iommus for a single master */

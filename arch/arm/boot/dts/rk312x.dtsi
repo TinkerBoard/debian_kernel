@@ -214,7 +214,9 @@
 	timer {
 		compatible = "arm,armv7-timer";
 		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>,
-			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>;
+			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>,
+			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>,
+			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>;
 		clock-frequency = <24000000>;
 	};
 
@@ -817,6 +819,7 @@
 		resets = <&cru SRST_MIPIPHY_P>;
 		reset-names = "apb";
 		power-domains = <&power RK3128_PD_VIO>;
+		rockchip,grf = <&grf>;
 		#phy-cells = <0>;
 		status = "disabled";
 	};
@@ -1246,7 +1249,7 @@
 			};
 
 			sdmmc_cmd: sdmmc-cmd {
-				rockchip,pins = <1 RK_PC1 1 &pcfg_pull_default>;
+				rockchip,pins = <1 RK_PB7 1 &pcfg_pull_default>;
 			};
 
 			sdmmc_wp: sdmmc-wp {

@@ -13674,19 +13674,11 @@ dhd_os_sdunlock_txq(dhd_pub_t *pub)
 void
 dhd_os_sdlock_rxq(dhd_pub_t *pub)
 {
-	dhd_info_t *dhd;
-
-	dhd = (dhd_info_t *)(pub->info);
-	spin_lock_bh(&dhd->rxqlock);
 }
 
 void
 dhd_os_sdunlock_rxq(dhd_pub_t *pub)
 {
-	dhd_info_t *dhd;
-
-	dhd = (dhd_info_t *)(pub->info);
-	spin_unlock_bh(&dhd->rxqlock);
 }
 
 static void
@@ -14156,8 +14148,10 @@ dhd_dev_get_feature_set(struct net_device *dev)
 			feature_set |= WIFI_FEATURE_D2D_RTT;
 	}
 #ifdef RTT_SUPPORT
-	feature_set |= WIFI_FEATURE_D2D_RTT;
-	feature_set |= WIFI_FEATURE_D2AP_RTT;
+	if (dhd->rtt_supported) {
+		feature_set |= WIFI_FEATURE_D2D_RTT;
+		feature_set |= WIFI_FEATURE_D2AP_RTT;
+	}
 #endif /* RTT_SUPPORT */
 #ifdef LINKSTAT_SUPPORT
 	feature_set |= WIFI_FEATURE_LINKSTAT;
@@ -14167,8 +14161,8 @@ dhd_dev_get_feature_set(struct net_device *dev)
 	if (dhd_is_pno_supported(dhd)) {
 		feature_set |= WIFI_FEATURE_PNO;
 #ifdef GSCAN_SUPPORT
-		feature_set |= WIFI_FEATURE_GSCAN;
-		feature_set |= WIFI_FEATURE_HAL_EPNO;
+//		feature_set |= WIFI_FEATURE_GSCAN;
+//		feature_set |= WIFI_FEATURE_HAL_EPNO;
 #endif /* GSCAN_SUPPORT */
 	}
 #endif /* PNO_SUPPORT */

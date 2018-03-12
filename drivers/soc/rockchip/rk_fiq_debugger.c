@@ -125,8 +125,8 @@ static int debug_port_init(struct platform_device *pdev)
 	rk_fiq_write(t, dlm, UART_DLM);
 	rk_fiq_write(t, 0x03, UART_LCR);
 
-	/* enable rx and lsr interrupt */
-	rk_fiq_write(t, UART_IER_RLSI | UART_IER_RDI, UART_IER);
+	/* enable rx interrupt */
+	rk_fiq_write(t, UART_IER_RDI, UART_IER);
 
 	/*
 	 * Interrupt on every character when received, but we can enable fifo for TX
@@ -152,13 +152,11 @@ static int debug_getc(struct platform_device *pdev)
 	static char buf[32];
 
 	t = container_of(dev_get_platdata(&pdev->dev), typeof(*t), pdata);
-
+	/*
+	 * Clear uart interrupt status
+	 */
+	rk_fiq_read(t, UART_USR);
 	lsr = rk_fiq_read_lsr(t);
-
-	if (lsr & UART_LSR_BI || t->break_seen) {
-		t->break_seen = false;
-		return FIQ_DEBUGGER_NO_CHAR;
-	}
 
 	if (lsr & UART_LSR_DR) {
 		temp = rk_fiq_read(t, UART_RX);
@@ -466,8 +464,10 @@ void rk_serial_debug_init(void __iomem *base, phys_addr_t phy_base,
 	if (!pdev) {
 		pr_err("Failed to alloc fiq debugger platform device\n");
 		goto out3;
-	};
+	}
 
+	/* clear busy interrupt, make sure all interrupts are disabled */
+	rk_fiq_read(t, UART_USR);
 #ifdef CONFIG_FIQ_DEBUGGER_TRUST_ZONE
 	if ((signal_irq > 0) && (serial_hwirq > 0)) {
 		ret = fiq_debugger_bind_sip_smc(t, phy_base, serial_hwirq,
@@ -540,15 +540,18 @@ out2:
 	kfree(t);
 }
 
-static const struct of_device_id ids[] __initconst = {
-	{ .compatible = "rockchip,fiq-debugger" },
-	{}
+#if defined(CONFIG_OF)
+static const struct of_device_id rk_fiqdbg_of_match[] = {
+	{ .compatible = "rockchip,fiq-debugger", },
+	{},
 };
+MODULE_DEVICE_TABLE(of, rk_fiqdbg_of_match);
+#endif
 
-static int __init rk_fiq_debugger_init(void) {
-
+static int __init rk_fiqdbg_probe(struct platform_device *pdev)
+{
 	void __iomem *base;
-	struct device_node *np;
+	struct device_node *np = pdev->dev.of_node;
 	unsigned int id, ok = 0;
 	int irq, signal_irq = -1, wake_irq = -1;
 	unsigned int baudrate = 0, irq_mode = 0;
@@ -558,13 +561,6 @@ static int __init rk_fiq_debugger_init(void) {
 	struct clk *pclk;
 	struct of_phandle_args oirq;
 	struct resource res;
-
-	np = of_find_matching_node(NULL, ids);
-
-	if (!np) {
-		pr_err("fiq-debugger is missing in device tree!\n");
-		return -ENODEV;
-	}
 
 	if (!of_device_is_available(np)) {
 		pr_err("fiq-debugger is disabled in device tree\n");
@@ -635,8 +631,22 @@ static int __init rk_fiq_debugger_init(void) {
 				     irq, signal_irq, wake_irq, baudrate);
 	return 0;
 }
-#ifdef CONFIG_FIQ_GLUE
-postcore_initcall_sync(rk_fiq_debugger_init);
-#else
-arch_initcall_sync(rk_fiq_debugger_init);
-#endif
+
+static struct platform_driver rk_fiqdbg_driver = {
+	.driver = {
+		.name   = "rk-fiq-debugger",
+		.of_match_table = of_match_ptr(rk_fiqdbg_of_match),
+	},
+};
+
+static int __init rk_fiqdbg_init(void)
+{
+	return platform_driver_probe(&rk_fiqdbg_driver,
+				     rk_fiqdbg_probe);
+}
+arch_initcall_sync(rk_fiqdbg_init);
+
+MODULE_AUTHOR("Huibin Hong <huibin.hong@rock-chips.com>");
+MODULE_DESCRIPTION("Rockchip FIQ Debugger");
+MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:rk-fiq-debugger");

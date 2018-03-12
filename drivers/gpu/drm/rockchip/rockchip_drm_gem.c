@@ -480,7 +480,7 @@ static int rockchip_drm_gem_object_mmap_shm(struct drm_gem_object *obj,
 {
 	struct rockchip_gem_object *rk_obj = to_rockchip_obj(obj);
 	unsigned int i, count = obj->size >> PAGE_SHIFT;
-	unsigned long user_count = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
+	unsigned long user_count = vma_pages(vma);
 	unsigned long uaddr = vma->vm_start;
 	unsigned long offset = vma->vm_pgoff;
 	unsigned long end = user_count + offset;
@@ -581,6 +581,11 @@ rockchip_gem_alloc_object(struct drm_device *drm, unsigned int size)
 	struct address_space *mapping;
 	struct rockchip_gem_object *rk_obj;
 	struct drm_gem_object *obj;
+#ifdef CONFIG_ARM_LPAE
+	gfp_t gfp_mask = GFP_HIGHUSER | __GFP_RECLAIMABLE | __GFP_DMA32;
+#else
+	gfp_t gfp_mask = GFP_HIGHUSER | __GFP_RECLAIMABLE;
+#endif
 
 	size = round_up(size, PAGE_SIZE);
 
@@ -593,7 +598,7 @@ rockchip_gem_alloc_object(struct drm_device *drm, unsigned int size)
 	drm_gem_object_init(drm, obj, size);
 
 	mapping = file_inode(obj->filp)->i_mapping;
-	mapping_set_gfp_mask(mapping, GFP_USER | __GFP_DMA32);
+	mapping_set_gfp_mask(mapping, gfp_mask);
 
 	return rk_obj;
 }

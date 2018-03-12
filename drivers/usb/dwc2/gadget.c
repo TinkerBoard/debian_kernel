@@ -388,7 +388,8 @@ static int dwc2_hsotg_write_fifo(struct dwc2_hsotg *hsotg,
 			return -ENOSPC;
 		}
 	} else if (hsotg->dedicated_fifos && hs_ep->index != 0) {
-		can_write = dwc2_readl(hsotg->regs + DTXFSTS(hs_ep->index));
+		can_write = dwc2_readl(hsotg->regs +
+				DTXFSTS(hs_ep->fifo_index));
 
 		can_write &= 0xffff;
 		can_write *= 4;
@@ -1098,10 +1099,8 @@ static int dwc2_hsotg_ep_sethalt(struct usb_ep *ep, int value, bool now);
  */
 static struct dwc2_hsotg_req *get_ep_head(struct dwc2_hsotg_ep *hs_ep)
 {
-	if (list_empty(&hs_ep->queue))
-		return NULL;
-
-	return list_first_entry(&hs_ep->queue, struct dwc2_hsotg_req, queue);
+	return list_first_entry_or_null(&hs_ep->queue, struct dwc2_hsotg_req,
+					queue);
 }
 
 /**
@@ -2432,7 +2431,7 @@ static void kill_all_requests(struct dwc2_hsotg *hsotg,
 
 	if (!hsotg->dedicated_fifos)
 		return;
-	size = (dwc2_readl(hsotg->regs + DTXFSTS(ep->index)) & 0xffff) * 4;
+	size = (dwc2_readl(hsotg->regs + DTXFSTS(ep->fifo_index)) & 0xffff) * 4;
 	if (size < ep->fifo_size)
 		dwc2_hsotg_txfifo_flush(hsotg, ep->fifo_index);
 }
@@ -2520,7 +2519,7 @@ void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *hsotg,
 	kill_all_requests(hsotg, hsotg->eps_out[0], -ECONNRESET);
 
 	if (!is_usb_reset)
-		if (dwc2_core_reset(hsotg))
+		if (dwc2_core_reset(hsotg, true))
 			return;
 
 	/*
@@ -2531,7 +2530,7 @@ void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *hsotg,
 	/* keep other bits untouched (so e.g. forced modes are not lost) */
 	usbcfg = dwc2_readl(hsotg->regs + GUSBCFG);
 	usbcfg &= ~(GUSBCFG_TOUTCAL_MASK | GUSBCFG_PHYIF16 | GUSBCFG_SRPCAP |
-		GUSBCFG_HNPCAP);
+		GUSBCFG_HNPCAP | GUSBCFG_USBTRDTIM_MASK);
 
 	/* set the PLL on, remove the HNP/SRP and set the PHY */
 	val = (hsotg->phyif == GUSBCFG_PHYIF8) ? 9 : 5;
@@ -3042,22 +3041,11 @@ static int dwc2_hsotg_ep_enable(struct usb_ep *ep,
 		break;
 	}
 
-	/* If fifo is already allocated for this ep */
-	if (hs_ep->fifo_index) {
-		size =  hs_ep->ep.maxpacket * hs_ep->mc;
-		/* If bigger fifo is required deallocate current one */
-		if (size > hs_ep->fifo_size) {
-			hsotg->fifo_map &= ~(1 << hs_ep->fifo_index);
-			hs_ep->fifo_index = 0;
-			hs_ep->fifo_size = 0;
-		}
-	}
-
 	/*
 	 * if the hardware has dedicated fifos, we must give each IN EP
 	 * a unique tx-fifo even if it is non-periodic.
 	 */
-	if (dir_in && hsotg->dedicated_fifos && !hs_ep->fifo_index) {
+	if (dir_in && hsotg->dedicated_fifos) {
 		u32 fifo_index = 0;
 		u32 fifo_size = UINT_MAX;
 		size = hs_ep->ep.maxpacket*hs_ep->mc;
@@ -3126,13 +3114,14 @@ static int dwc2_hsotg_ep_disable(struct usb_ep *ep)
 		return -EINVAL;
 	}
 
+	if (hsotg->op_state != OTG_STATE_B_PERIPHERAL) {
+		dev_err(hsotg->dev, "%s: called in host mode?\n", __func__);
+		return -EINVAL;
+	}
+
 	epctrl_reg = dir_in ? DIEPCTL(index) : DOEPCTL(index);
 
 	spin_lock_irqsave(&hsotg->lock, flags);
-
-	hsotg->fifo_map &= ~(1<<hs_ep->fifo_index);
-	hs_ep->fifo_index = 0;
-	hs_ep->fifo_size = 0;
 
 	ctrl = dwc2_readl(hsotg->regs + epctrl_reg);
 	ctrl &= ~DXEPCTL_EPENA;
@@ -3147,6 +3136,10 @@ static int dwc2_hsotg_ep_disable(struct usb_ep *ep)
 
 	/* terminate all requests with shutdown */
 	kill_all_requests(hsotg, hs_ep, -ESHUTDOWN);
+
+	hsotg->fifo_map &= ~(1 << hs_ep->fifo_index);
+	hs_ep->fifo_index = 0;
+	hs_ep->fifo_size = 0;
 
 	spin_unlock_irqrestore(&hsotg->lock, flags);
 	return 0;
@@ -3414,7 +3407,7 @@ static void dwc2_hsotg_init(struct dwc2_hsotg *hsotg)
 	/* keep other bits untouched (so e.g. forced modes are not lost) */
 	usbcfg = dwc2_readl(hsotg->regs + GUSBCFG);
 	usbcfg &= ~(GUSBCFG_TOUTCAL_MASK | GUSBCFG_PHYIF16 | GUSBCFG_SRPCAP |
-		GUSBCFG_HNPCAP);
+		GUSBCFG_HNPCAP | GUSBCFG_USBTRDTIM_MASK);
 
 	/* set the PLL on, remove the HNP/SRP and set the PHY */
 	trdtim = (hsotg->phyif == GUSBCFG_PHYIF8) ? 9 : 5;
@@ -3477,8 +3470,11 @@ static int dwc2_hsotg_udc_start(struct usb_gadget *gadget,
 		otg_set_peripheral(hsotg->uphy->otg, &hsotg->gadget);
 
 	spin_lock_irqsave(&hsotg->lock, flags);
-	dwc2_hsotg_init(hsotg);
-	dwc2_hsotg_core_init_disconnected(hsotg, false);
+	if (dwc2_hw_is_device(hsotg)) {
+		dwc2_hsotg_init(hsotg);
+		dwc2_hsotg_core_init_disconnected(hsotg, false);
+	}
+
 	hsotg->enabled = 0;
 	spin_unlock_irqrestore(&hsotg->lock, flags);
 
@@ -3911,17 +3907,13 @@ int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq)
 
 	hsotg->ctrl_buff = devm_kzalloc(hsotg->dev,
 			DWC2_CTRL_BUFF_SIZE, GFP_KERNEL);
-	if (!hsotg->ctrl_buff) {
-		dev_err(dev, "failed to allocate ctrl request buff\n");
+	if (!hsotg->ctrl_buff)
 		return -ENOMEM;
-	}
 
 	hsotg->ep0_buff = devm_kzalloc(hsotg->dev,
 			DWC2_CTRL_BUFF_SIZE, GFP_KERNEL);
-	if (!hsotg->ep0_buff) {
-		dev_err(dev, "failed to allocate ctrl reply buff\n");
+	if (!hsotg->ep0_buff)
 		return -ENOMEM;
-	}
 
 	ret = devm_request_irq(hsotg->dev, irq, dwc2_hsotg_irq, IRQF_SHARED,
 				dev_name(hsotg->dev), hsotg);

@@ -92,9 +92,9 @@
 			reg = <0x0 0x0 0x0 0x0>;
 		};
 
-		secure_memory: secure-memory@e7000000 {
+		secure_memory: secure-memory@20000000 {
 			compatible = "rockchip,secure-memory";
-			reg = <0x0 0xe7000000 0x0 0x10000000>;
+			reg = <0x0 0x20000000 0x0 0x10000000>;
 			status = "disabled";
 		};
 
@@ -257,6 +257,29 @@
 		compatible = "rockchip,rk3399-hdmi-dp";
 		rockchip,cpu = <&i2s2>;
 		rockchip,codec = <&hdmi>, <&cdn_dp>;
+	};
+
+	firmware {
+		android {
+			compatible = "android,firmware";
+			fstab {
+				compatible = "android,fstab";
+				system {
+					compatible = "android,system";
+					dev = "/dev/block/platform/fe330000.sdhci/by-name/system";
+					type = "ext4";
+					mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
+					fsmgr_flags = "wait,verify";
+				};
+				vendor {
+					compatible = "android,vendor";
+					dev = "/dev/block/platform/fe330000.sdhci/by-name/vendor";
+					type = "ext4";
+					mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
+					fsmgr_flags = "wait,verify";
+				};
+			};
+		};
 	};
 };
 

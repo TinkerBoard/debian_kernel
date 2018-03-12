@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __RKCAMSYS_INTERNAL_H__
 #define __RKCAMSYS_INTERNAL_H__
 
@@ -185,9 +186,19 @@
 	fs_id and fe_id into isp library.
 *v0.0x22.8:
 	1) 3399 power management is wrong, correct it.
+*v0.0x23.0:
+       1) replace current->pid with irqsta->pid.
+*v0.0x24.0:
+       1) function is the same as commit in v0.0x22.3 but now is better way.
+*v0.0x25.0:
+	1) support px30.
+*v0.0x26.0:
+       1) v0.0x21.9 may not fix all the case of iommu issue caused by the
+       unexpected termination of process cameraserver, so we force to release
+       all iommu resource in |.release| of fops aganin if needed.
 */
 
-#define CAMSYS_DRIVER_VERSION                   KERNEL_VERSION(0, 0x22, 8)
+#define CAMSYS_DRIVER_VERSION                   KERNEL_VERSION(0, 0x26, 0)
 
 #define CAMSYS_PLATFORM_DRV_NAME                "RockChip-CamSys"
 #define CAMSYS_PLATFORM_MARVIN_NAME             "Platform_MarvinDev"

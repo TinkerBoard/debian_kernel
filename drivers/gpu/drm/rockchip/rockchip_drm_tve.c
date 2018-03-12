@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/err.h>
@@ -11,19 +12,22 @@
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_of.h>
 
+#include <uapi/linux/videodev2.h>
+
 #include "rockchip_drm_drv.h"
 #include "rockchip_drm_tve.h"
 #include "rockchip_drm_vop.h"
 
 static const struct drm_display_mode cvbs_mode[] = {
 	{ DRM_MODE("720x576i", DRM_MODE_TYPE_DRIVER |
-		   DRM_MODE_TYPE_PREFERRED, 13500, 720, 732,
-		   795, 864, 0, 576, 580, 586, 625, 0,
+		   DRM_MODE_TYPE_PREFERRED, 13500, 720, 753,
+		   816, 864, 0, 576, 580, 586, 625, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC |
 		   DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
 		   .vrefresh = 50, 0, },
-	{ DRM_MODE("720x480i", DRM_MODE_TYPE_DRIVER, 13500, 720, 739,
-		   801, 858, 0, 480, 488, 494, 525, 0,
+
+	{ DRM_MODE("720x480i", DRM_MODE_TYPE_DRIVER, 13500, 720, 753,
+		   815, 858, 0, 480, 480, 486, 525, 0,
 		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC |
 		   DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK),
 		   .vrefresh = 60, 0, },
@@ -277,6 +281,9 @@ rockchip_tve_encoder_atomic_check(struct drm_encoder *encoder,
 	else
 		s->bus_format = MEDIA_BUS_FMT_YUV8_1X24;
 
+	s->color_space = V4L2_COLORSPACE_SMPTE170M;
+	s->tv_state = &conn_state->tv;
+
 	return 0;
 }
 
@@ -359,6 +366,31 @@ static int tve_parse_dt(struct device_node *np,
 	return 0;
 }
 
+static void check_uboot_logo(struct rockchip_tve *tve)
+{
+	int lumafilter0, lumafilter1, lumafilter2, vdac;
+
+	vdac = tve_dac_readl(VDAC_VDAC1);
+	/* Whether the dac power has been turned down. */
+	if (vdac & m_DR_PWR_DOWN)
+		return;
+
+	lumafilter0 = tve_readl(TV_LUMA_FILTER0);
+	lumafilter1 = tve_readl(TV_LUMA_FILTER1);
+	lumafilter2 = tve_readl(TV_LUMA_FILTER2);
+
+	/*
+	 * The default lumafilter value is 0. If lumafilter value
+	 * is equal to the dts value, uboot logo is enabled.
+	 */
+	if (lumafilter0 == tve->lumafilter0 &&
+	    lumafilter1 == tve->lumafilter1 &&
+	    lumafilter2 == tve->lumafilter2)
+		return;
+
+	dac_init(tve);
+}
+
 static const struct of_device_id rockchip_tve_dt_ids[] = {
 	{
 		.compatible = "rockchip,rk3328-tve",
@@ -427,10 +459,8 @@ static int rockchip_tve_bind(struct device *dev, struct device *master,
 		return PTR_ERR(tve->vdacbase);
 	}
 
-	dac_init(tve);
-
 	mutex_init(&tve->suspend_lock);
-
+	check_uboot_logo(tve);
 	tve->tv_format = TVOUT_CVBS_PAL;
 	encoder = &tve->encoder;
 	encoder->possible_crtcs = drm_of_find_possible_crtcs(drm_dev,
@@ -448,7 +478,7 @@ static int rockchip_tve_bind(struct device *dev, struct device *master,
 
 	connector = &tve->connector;
 	connector->dpms = DRM_MODE_DPMS_OFF;
-
+	connector->port = dev->of_node;
 	connector->interlace_allowed = 1;
 	ret = drm_connector_init(drm_dev, connector,
 				 &rockchip_tve_connector_funcs,

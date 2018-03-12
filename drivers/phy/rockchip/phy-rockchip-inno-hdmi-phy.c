@@ -169,6 +169,7 @@ struct inno_hdmi_phy {
 	struct clk_hw hw;
 	struct clk *pclk;
 	unsigned long pixclock;
+	unsigned long tmdsclock;
 };
 
 struct pre_pll_config {
@@ -283,7 +284,7 @@ static const struct phy_config rk3228_phy_cfg[] = {
 
 static const struct phy_config rk3328_phy_cfg[] = {
 	{	165000000, {
-			0x07, 0x08, 0x08, 0x08, 0x00, 0x00, 0x08, 0x08, 0x08,
+			0x07, 0x0a, 0x0a, 0x0a, 0x00, 0x00, 0x08, 0x08, 0x08,
 			0x00, 0xac, 0xcc, 0xcc, 0xcc,
 		},
 	}, {
@@ -336,22 +337,22 @@ static u32 inno_hdmi_phy_get_tmdsclk(struct inno_hdmi_phy *inno, int rate)
 
 	switch (bus_width) {
 	case 4:
-		tmdsclk = rate / 2;
+		tmdsclk = (u32)rate / 2;
 		break;
 	case 5:
-		tmdsclk = rate * 5 / 8;
+		tmdsclk = (u32)rate * 5 / 8;
 		break;
 	case 6:
-		tmdsclk = rate * 3 / 4;
+		tmdsclk = (u32)rate * 3 / 4;
 		break;
 	case 10:
-		tmdsclk = rate * 5 / 4;
+		tmdsclk = (u32)rate * 5 / 4;
 		break;
 	case 12:
-		tmdsclk = rate * 3 / 2;
+		tmdsclk = (u32)rate * 3 / 2;
 		break;
 	case 16:
-		tmdsclk = rate * 2;
+		tmdsclk = (u32)rate * 2;
 		break;
 	default:
 		tmdsclk = rate;
@@ -359,6 +360,9 @@ static u32 inno_hdmi_phy_get_tmdsclk(struct inno_hdmi_phy *inno, int rate)
 
 	return tmdsclk;
 }
+
+static int inno_hdmi_phy_clk_set_rate(struct clk_hw *hw, unsigned long rate,
+				      unsigned long parent_rate);
 
 static int inno_hdmi_phy_power_on(struct phy *phy)
 {
@@ -390,6 +394,7 @@ static int inno_hdmi_phy_power_on(struct phy *phy)
 		return -EINVAL;
 
 	dev_dbg(inno->dev, "Inno HDMI PHY Power On\n");
+	inno_hdmi_phy_clk_set_rate(&inno->hw, inno->pixclock, 0);
 
 	if (inno->plat_data->ops->power_on)
 		return inno->plat_data->ops->power_on(inno, cfg, phy_cfg);
@@ -404,6 +409,7 @@ static int inno_hdmi_phy_power_off(struct phy *phy)
 	if (inno->plat_data->ops->power_off)
 		inno->plat_data->ops->power_off(inno);
 
+	inno->tmdsclock = 0;
 	dev_dbg(inno->dev, "Inno HDMI PHY Power Off\n");
 
 	return 0;
@@ -492,6 +498,9 @@ static int inno_hdmi_phy_clk_set_rate(struct clk_hw *hw, unsigned long rate,
 	dev_dbg(inno->dev, "%s rate %lu tmdsclk %u\n",
 		__func__, rate, tmdsclock);
 
+	if (inno->tmdsclock == tmdsclock)
+		return 0;
+
 	for (; cfg->pixclock != ~0UL; cfg++)
 		if (cfg->pixclock == rate && cfg->tmdsclock == tmdsclock)
 			break;
@@ -505,6 +514,7 @@ static int inno_hdmi_phy_clk_set_rate(struct clk_hw *hw, unsigned long rate,
 		inno->plat_data->ops->pre_pll_update(inno, cfg);
 
 	inno->pixclock = rate;
+	inno->tmdsclock = tmdsclock;
 
 	return 0;
 }
@@ -716,16 +726,6 @@ inno_hdmi_phy_rk3228_pre_pll_update(struct inno_hdmi_phy *inno,
 	return 0;
 }
 
-static void inno_hdmi_phy_rk3328_init(struct inno_hdmi_phy *inno)
-{
-	/*
-	 * Use phy internal register control
-	 * rxsense/poweron/pllpd/pdataen signal.
-	 */
-	inno_write(inno, 0x01, 0x07);
-	inno_write(inno, 0x02, 0x91);
-}
-
 static int
 inno_hdmi_phy_rk3328_power_on(struct inno_hdmi_phy *inno,
 			      const struct post_pll_config *cfg,
@@ -774,17 +774,15 @@ inno_hdmi_phy_rk3328_power_on(struct inno_hdmi_phy *inno,
 		inno_write(inno, 0xc6, val & 0xff);
 		inno_write(inno, 0xc7, 3 << 1);
 		inno_write(inno, 0xc5, ((val >> 8) & 0xff));
-	} else if (phy_cfg->tmdsclock > 165000000) {
+	} else {
 		inno_write(inno, 0xc5, 0x81);
-		/* clk termination resistor is 50ohm
-		 * data termination resistor is 150ohm
-		 */
-		inno_write(inno, 0xc8, 0x30);
+		/* clk termination resistor is 50ohm */
+		if (phy_cfg->tmdsclock > 165000000)
+			inno_write(inno, 0xc8, 0x30);
+		/* data termination resistor is 150ohm */
 		inno_write(inno, 0xc9, 0x10);
 		inno_write(inno, 0xca, 0x10);
 		inno_write(inno, 0xcb, 0x10);
-	} else {
-		inno_write(inno, 0xc5, 0x81);
 	}
 
 	/* Power up post PLL */
@@ -819,6 +817,28 @@ static void inno_hdmi_phy_rk3328_power_off(struct inno_hdmi_phy *inno)
 	inno_update_bits(inno, 0xb0, 4, 0);
 	/* Power off post pll */
 	inno_update_bits(inno, 0xaa, 1, 1);
+}
+
+static void inno_hdmi_phy_rk3328_init(struct inno_hdmi_phy *inno)
+{
+	/*
+	 * Use phy internal register control
+	 * rxsense/poweron/pllpd/pdataen signal.
+	 */
+	inno_write(inno, 0x01, 0x07);
+	inno_write(inno, 0x02, 0x91);
+
+	/*
+	 * reg0xc8 default value is 0xc0, if phy had been set in uboot,
+	 * the value of bit[7:6] will be zero.
+	 */
+	if ((inno_read(inno, 0xc8) & 0xc0) == 0) {
+		dev_info(inno->dev, "phy had been powered up\n");
+		inno->phy->power_count = 1;
+	} else {
+		/* manual power down post-PLL */
+		inno_hdmi_phy_rk3328_power_off(inno);
+	}
 }
 
 static int

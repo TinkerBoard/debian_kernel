@@ -1303,7 +1303,7 @@
 		iommu_enabled = <1>;
 		iommus = <&iep_mmu>;
 		reg = <0x0 0xff900000 0x0 0x800>;
-		interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH 0>;
+		interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&cru ACLK_IEP>, <&cru HCLK_IEP>;
 		clock-names = "aclk_iep", "hclk_iep";
 		power-domains = <&power RK3368_PD_VIO>;
@@ -1315,7 +1315,7 @@
 	iep_mmu: iommu@ff900800 {
 		compatible = "rockchip,iommu";
 		reg = <0x0 0xff900800 0x0 0x100>;
-		interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH 0>;
+		interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "iep_mmu";
 		power-domains = <&power RK3368_PD_VIO>;
 		#iommu-cells = <0>;
@@ -1452,6 +1452,7 @@
 		pinctrl-0 = <&cif_clkout &isp_dvp_d2d9 &isp_dvp_d10d11>;
 		rockchip,grf = <&grf>;
 		power-domains = <&power RK3368_PD_VIO>;
+		iommus = <&vip_mmu>;
 		status = "disabled";
 	};
 
@@ -1476,6 +1477,9 @@
 		clock-names = "pclk", "hs_clk";
 		resets = <&cru SRST_MIPIDSI0>;
 		reset-names = "apb";
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&state_video_phy_mipi>;
+		pinctrl-1 = <&state_video_phy_idle>;
 		phys = <&mipi_dphy>;
 		phy-names = "mipi_dphy";
 		rockchip,grf = <&grf>;
@@ -1504,7 +1508,28 @@
 		reset-names = "apb";
 		power-domains = <&power RK3368_PD_VIO>;
 		#phy-cells = <0>;
+		rockchip,grf = <&grf>;
 		status = "disabled";
+
+		state_video_phy_mipi: pinmux-mipi {
+			groups = "video-phy-io";
+			function = "mipi";
+		};
+
+		state_video_phy_lvds: pinmux-lvds {
+			groups = "video-phy-io";
+			function = "lvds";
+		};
+
+		state_video_phy_ttl: pinmux-ttl {
+			groups = "video-phy-io";
+			function = "ttl";
+		};
+
+		state_video_phy_idle: pinmux-idle {
+			groups = "video-phy-io";
+			function = "idle";
+		};
 	};
 
 	lvds: lvds@ff968000 {
@@ -1515,9 +1540,6 @@
 		clock-names = "pclk_lvds", "pclk_lvds_ctl";
 		power-domains = <&power RK3368_PD_VIO>;
 		rockchip,grf = <&grf>;
-		pinctrl-names = "lcdc", "gpio";
-		pinctrl-0 = <&lcdc_lcdc>;
-		pinctrl-1 = <&lcdc_gpio>;
 		status = "disabled";
 
 		ports {

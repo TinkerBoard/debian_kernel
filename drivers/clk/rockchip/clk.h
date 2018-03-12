@@ -51,7 +51,7 @@ struct clk;
 
 #define PX30_PMU_PLL_CON(x)		((x) * 0x4)
 #define PX30_PMU_CLKSEL_CON(x)		((x) * 0x4 + 0x40)
-#define PX30_PMU_CLKGATE_CON(x)		((x) * 0x4 + 0x58)
+#define PX30_PMU_CLKGATE_CON(x)		((x) * 0x4 + 0x80)
 #define PX30_PMU_MODE			0x0020
 
 #define PX30_BOOST_PLL_H_CON(x)		((x) * 0x4 + 0x8000)
@@ -65,11 +65,11 @@ struct clk;
 #define PX30_BOOST_SWITCH_THRESHOLD	0x8024
 #define PX30_BOOST_FSM_STATUS		0x8028
 #define PX30_BOOST_PLL_L_CON(x)		((x) * 0x4 + 0x802c)
-#define PX30_BOOST_RECOVERY_MASK	0x2
+#define PX30_BOOST_RECOVERY_MASK	0x1
 #define PX30_BOOST_RECOVERY_SHIFT	1
-#define PX30_BOOST_SW_CTRL_MASK		0x4
+#define PX30_BOOST_SW_CTRL_MASK		0x1
 #define PX30_BOOST_SW_CTRL_SHIFT	2
-#define PX30_BOOST_LOW_FREQ_EN_MASK	0x8
+#define PX30_BOOST_LOW_FREQ_EN_MASK	0x1
 #define PX30_BOOST_LOW_FREQ_EN_SHIFT	3
 #define PX30_BOOST_BUSY_STATE		BIT(8)
 
@@ -302,6 +302,10 @@ struct clk *rockchip_clk_register_pll(struct rockchip_clk_provider *ctx,
 		int lock_shift, int mode_offset, int mode_shift,
 		struct rockchip_pll_rate_table *rate_table,
 		unsigned long flags, u8 clk_pll_flags, u8 id);
+
+void rockchip_boost_enable_recovery_sw_low(struct clk_hw *hw);
+
+void rockchip_boost_disable_recovery_sw(struct clk_hw *hw);
 
 struct rockchip_cpuclk_clksel {
 	int reg;

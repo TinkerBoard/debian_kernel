@@ -322,8 +322,8 @@ static ssize_t dwc3_rockchip_host_testmode_write(struct file *file,
 				    EXTCON_PROP_USB_TYPEC_POLARITY, property);
 		extcon_set_cable_state_(edev, EXTCON_USB_HOST, true);
 
-		/* Add a delay 1~1.5s to wait for XHCI HCD init */
-		usleep_range(1000000, 1500000);
+		/* Add a delay 1s to wait for XHCI HCD init */
+		msleep(1000);
 	}
 
 	dwc3_rockchip_set_test_mode(rockchip, testmode);
@@ -439,7 +439,7 @@ static void dwc3_rockchip_otg_extcon_evt_work(struct work_struct *work)
 		 */
 		if (!rockchip->skip_suspend) {
 			reset_control_assert(rockchip->otg_rst);
-			usleep_range(1000, 1200);
+			udelay(1);
 			reset_control_deassert(rockchip->otg_rst);
 
 			pm_runtime_get_sync(rockchip->dev);
@@ -487,7 +487,7 @@ static void dwc3_rockchip_otg_extcon_evt_work(struct work_struct *work)
 		 * registers while the reset is asserted, with unknown impact.
 		 */
 		reset_control_assert(rockchip->otg_rst);
-		usleep_range(1000, 1200);
+		udelay(1);
 		reset_control_deassert(rockchip->otg_rst);
 
 		/*
@@ -944,6 +944,10 @@ static int dwc3_rockchip_resume(struct device *dev)
 {
 	struct dwc3_rockchip *rockchip = dev_get_drvdata(dev);
 	struct dwc3 *dwc = rockchip->dwc;
+
+	reset_control_assert(rockchip->otg_rst);
+	udelay(1);
+	reset_control_deassert(rockchip->otg_rst);
 
 	rockchip->suspended = false;
 

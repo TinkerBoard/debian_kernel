@@ -106,10 +106,19 @@ struct rockchip_hdmi {
 
 	unsigned int colordepth;
 	unsigned int colorimetry;
+	unsigned int phy_bus_width;
 	enum drm_hdmi_output_type hdmi_output;
 };
 
 #define to_rockchip_hdmi(x)	container_of(x, struct rockchip_hdmi, x)
+
+static void inno_dw_hdmi_phy_disable(struct dw_hdmi *dw_hdmi, void *data)
+{
+	struct rockchip_hdmi *hdmi = (struct rockchip_hdmi *)data;
+
+	while (hdmi->phy->power_count > 0)
+		phy_power_off(hdmi->phy);
+}
 
 static int
 inno_dw_hdmi_phy_init(struct dw_hdmi *dw_hdmi, void *data,
@@ -117,14 +126,9 @@ inno_dw_hdmi_phy_init(struct dw_hdmi *dw_hdmi, void *data,
 {
 	struct rockchip_hdmi *hdmi = (struct rockchip_hdmi *)data;
 
+	inno_dw_hdmi_phy_disable(dw_hdmi, data);
+	dw_hdmi_set_high_tmds_clock_ratio(dw_hdmi);
 	return phy_power_on(hdmi->phy);
-}
-
-static void inno_dw_hdmi_phy_disable(struct dw_hdmi *dw_hdmi, void *data)
-{
-	struct rockchip_hdmi *hdmi = (struct rockchip_hdmi *)data;
-
-	phy_power_off(hdmi->phy);
 }
 
 static enum drm_connector_status
@@ -577,6 +581,12 @@ static void dw_hdmi_rockchip_encoder_disable(struct drm_encoder *encoder)
 {
 	struct rockchip_hdmi *hdmi = to_rockchip_hdmi(encoder);
 
+	/*
+	 * when plug out hdmi it will be switch cvbs and then phy bus width
+	 * must be set as 8
+	 */
+	if (hdmi->phy)
+		phy_set_bus_width(hdmi->phy, 8);
 	clk_disable_unprepare(hdmi->dclk);
 }
 
@@ -591,6 +601,9 @@ static void dw_hdmi_rockchip_encoder_enable(struct drm_encoder *encoder)
 
 	if (WARN_ON(!crtc || !crtc->state))
 		return;
+
+	if (hdmi->phy)
+		phy_set_bus_width(hdmi->phy, hdmi->phy_bus_width);
 
 	clk_set_rate(hdmi->vpll_clk,
 		     crtc->state->adjusted_mode.crtc_clock * 1000);
@@ -663,7 +676,7 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 	u32 vic = drm_match_cea_mode(mode);
 	unsigned long tmdsclock, pixclock = mode->crtc_clock;
 	bool support_dc = false;
-	u32 max_tmds_clock = info->max_tmds_clock;
+	int max_tmds_clock = info->max_tmds_clock;
 
 	*color_format = DRM_HDMI_OUTPUT_DEFAULT_RGB;
 
@@ -767,11 +780,30 @@ dw_hdmi_rockchip_select_output(struct drm_connector_state *conn_state,
 	if (!max_tmds_clock)
 		max_tmds_clock = 340000;
 
+	switch (hdmi->dev_type) {
+	case RK3368_HDMI:
+		max_tmds_clock = min(max_tmds_clock, 340000);
+		break;
+	case RK3328_HDMI:
+	case RK3228_HDMI:
+		max_tmds_clock = min(max_tmds_clock, 371250);
+		break;
+	default:
+		max_tmds_clock = min(max_tmds_clock, 594000);
+		break;
+	}
+
 	if (tmdsclock > max_tmds_clock) {
-		*color_depth = 8;
-		if (tmdsclock > 340000 && drm_mode_is_420(info, mode) &&
-		    (max_tmds_clock <= 340000 || hdmi->dev_type == RK3368_HDMI))
-			*color_format = DRM_HDMI_OUTPUT_YCBCR420;
+		if (max_tmds_clock >= 594000) {
+			*color_depth = 8;
+		} else if (max_tmds_clock > 340000) {
+			if (drm_mode_is_420(info, mode))
+				*color_format = DRM_HDMI_OUTPUT_YCBCR420;
+		} else {
+			*color_depth = 8;
+			if (drm_mode_is_420(info, mode))
+				*color_format = DRM_HDMI_OUTPUT_YCBCR420;
+		}
 	}
 }
 
@@ -782,7 +814,7 @@ dw_hdmi_rockchip_encoder_atomic_check(struct drm_encoder *encoder,
 {
 	struct rockchip_crtc_state *s = to_rockchip_crtc_state(crtc_state);
 	struct rockchip_hdmi *hdmi = to_rockchip_hdmi(encoder);
-	unsigned int colordepth, colorformat;
+	unsigned int colordepth, colorformat, bus_width;
 
 	dw_hdmi_rockchip_select_output(conn_state, crtc_state, hdmi,
 				       &colorformat, &colordepth,
@@ -794,8 +826,7 @@ dw_hdmi_rockchip_encoder_atomic_check(struct drm_encoder *encoder,
 			s->bus_format = MEDIA_BUS_FMT_UYYVYY10_0_5X30;
 		else
 			s->bus_format = MEDIA_BUS_FMT_UYYVYY8_0_5X24;
-		if (hdmi->phy)
-			phy_set_bus_width(hdmi->phy, colordepth / 2);
+		bus_width = colordepth / 2;
 	} else {
 		s->output_mode = ROCKCHIP_OUT_MODE_AAAA;
 		if (colordepth > 8) {
@@ -811,9 +842,16 @@ dw_hdmi_rockchip_encoder_atomic_check(struct drm_encoder *encoder,
 			else
 				s->bus_format = MEDIA_BUS_FMT_RGB888_1X24;
 		}
-		if (hdmi->phy)
-			phy_set_bus_width(hdmi->phy, colordepth);
+		if (colorformat == DRM_HDMI_OUTPUT_YCBCR422)
+			bus_width = 8;
+		else
+			bus_width = colordepth;
 	}
+
+	hdmi->phy_bus_width = bus_width;
+	if (hdmi->phy)
+		phy_set_bus_width(hdmi->phy, bus_width);
+
 	s->output_type = DRM_MODE_CONNECTOR_HDMIA;
 	s->tv_state = &conn_state->tv;
 
@@ -875,7 +913,7 @@ dw_hdmi_rockchip_get_enc_out_encoding(void *data)
 }
 
 static const struct drm_prop_enum_list color_depth_enum_list[] = {
-	{ 0, "Automatic" }, /* Prefer highest color depth */
+	{ 0, "Automatic" }, /* Same as 24bit */
 	{ 8, "24bit" },
 	{ 10, "30bit" },
 };
@@ -898,10 +936,45 @@ static const struct drm_prop_enum_list colorimetry_enum_list[] = {
 
 static void
 dw_hdmi_rockchip_attatch_properties(struct drm_connector *connector,
-				    int version, void *data)
+				    unsigned int color, int version,
+				    void *data)
 {
 	struct rockchip_hdmi *hdmi = (struct rockchip_hdmi *)data;
 	struct drm_property *prop;
+
+	switch (color) {
+	case MEDIA_BUS_FMT_RGB101010_1X30:
+		hdmi->hdmi_output = DRM_HDMI_OUTPUT_DEFAULT_RGB;
+		hdmi->colordepth = 10;
+		break;
+	case MEDIA_BUS_FMT_YUV8_1X24:
+		hdmi->hdmi_output = DRM_HDMI_OUTPUT_YCBCR444;
+		hdmi->colordepth = 8;
+		break;
+	case MEDIA_BUS_FMT_YUV10_1X30:
+		hdmi->hdmi_output = DRM_HDMI_OUTPUT_YCBCR444;
+		hdmi->colordepth = 10;
+		break;
+	case MEDIA_BUS_FMT_UYVY10_1X20:
+		hdmi->hdmi_output = DRM_HDMI_OUTPUT_YCBCR422;
+		hdmi->colordepth = 10;
+		break;
+	case MEDIA_BUS_FMT_UYVY8_1X16:
+		hdmi->hdmi_output = DRM_HDMI_OUTPUT_YCBCR422;
+		hdmi->colordepth = 8;
+		break;
+	case MEDIA_BUS_FMT_UYYVYY8_0_5X24:
+		hdmi->hdmi_output = DRM_HDMI_OUTPUT_YCBCR420;
+		hdmi->colordepth = 8;
+		break;
+	case MEDIA_BUS_FMT_UYYVYY10_0_5X30:
+		hdmi->hdmi_output = DRM_HDMI_OUTPUT_YCBCR420;
+		hdmi->colordepth = 10;
+		break;
+	default:
+		hdmi->hdmi_output = DRM_HDMI_OUTPUT_DEFAULT_RGB;
+		hdmi->colordepth = 8;
+	}
 
 	/* RK3368 does not support deep color mode */
 	if (!hdmi->color_depth_property && hdmi->dev_type != RK3368_HDMI) {
@@ -912,7 +985,6 @@ dw_hdmi_rockchip_attatch_properties(struct drm_connector *connector,
 		if (prop) {
 			hdmi->color_depth_property = prop;
 			drm_object_attach_property(&connector->base, prop, 0);
-			hdmi->colordepth = 8;
 		}
 	}
 

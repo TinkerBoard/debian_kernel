@@ -1775,15 +1775,19 @@ static void rk818_charger_shutdown(struct platform_device *pdev)
 		cancel_delayed_work_sync(&cg->discnt_work);
 	}
 
+	rk818_cg_set_otg_state(cg, USB_OTG_POWER_OFF);
+	disable_irq(cg->plugin_irq);
+	disable_irq(cg->plugout_irq);
+
 	cancel_delayed_work_sync(&cg->usb_work);
 	cancel_delayed_work_sync(&cg->dc_work);
 	cancel_delayed_work_sync(&cg->finish_sig_work);
 	cancel_delayed_work_sync(&cg->irq_work);
 	cancel_delayed_work_sync(&cg->ts2_vol_work);
-	destroy_workqueue(cg->ts2_wq);
-	destroy_workqueue(cg->usb_charger_wq);
-	destroy_workqueue(cg->dc_charger_wq);
-	destroy_workqueue(cg->finish_sig_wq);
+	flush_workqueue(cg->ts2_wq);
+	flush_workqueue(cg->usb_charger_wq);
+	flush_workqueue(cg->dc_charger_wq);
+	flush_workqueue(cg->finish_sig_wq);
 
 	if (cg->pdata->extcon) {
 		extcon_unregister_notifier(cg->cable_edev, EXTCON_CHG_USB_SDP,
@@ -1802,7 +1806,6 @@ static void rk818_charger_shutdown(struct platform_device *pdev)
 
 	rk818_bat_temp_notifier_unregister(&cg->temp_nb);
 
-	rk818_cg_set_otg_state(cg, USB_OTG_POWER_OFF);
 	rk818_cg_set_finish_sig(cg, CHRG_FINISH_ANA_SIGNAL);
 
 	CG_INFO("shutdown: ac=%d usb=%d dc=%d otg=%d\n",

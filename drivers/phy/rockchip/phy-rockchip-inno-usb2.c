@@ -1827,6 +1827,30 @@ static int rk3399_usb2phy_tuning(struct rockchip_usb2phy *rphy)
 	struct device_node *node = rphy->dev->of_node;
 	int ret = 0;
 
+	if (rphy->phy_cfg->reg == 0xe450) {
+		/*
+		 * Disable the pre-emphasize in eop state
+		 * and chirp state to avoid mis-trigger the
+		 * disconnect detection and also avoid hs
+		 * handshake fail for PHY0.
+		 */
+		ret |= regmap_write(rphy->grf, 0x4480,
+				    GENMASK(17, 16) | 0x0);
+		ret |= regmap_write(rphy->grf, 0x44b4,
+				    GENMASK(17, 16) | 0x0);
+	} else {
+		/*
+		 * Disable the pre-emphasize in eop state
+		 * and chirp state to avoid mis-trigger the
+		 * disconnect detection and also avoid hs
+		 * handshake fail for PHY1.
+		 */
+		ret |= regmap_write(rphy->grf, 0x4500,
+				    GENMASK(17, 16) | 0x0);
+		ret |= regmap_write(rphy->grf, 0x4534,
+				    GENMASK(17, 16) | 0x0);
+	}
+
 	if (!of_property_read_bool(node, "rockchip,u2phy-tuning"))
 		return ret;
 
@@ -1841,17 +1865,6 @@ static int rk3399_usb2phy_tuning(struct rockchip_usb2phy *rphy)
 		/* Set max pre-emphasis level for PHY0 */
 		ret |= regmap_write(rphy->grf, 0x44b0,
 				    GENMASK(18, 16) | 0x07);
-
-		/*
-		 * Disable the pre-emphasize in eop state
-		 * and chirp state to avoid mis-trigger the
-		 * disconnect detection and also avoid hs
-		 * handshake fail for PHY0.
-		 */
-		ret |= regmap_write(rphy->grf, 0x4480,
-				    GENMASK(17, 16) | 0x0);
-		ret |= regmap_write(rphy->grf, 0x44b4,
-				    GENMASK(17, 16) | 0x0);
 
 		/*
 		 * Set PHY0 A port squelch trigger point to 125mv
@@ -1869,17 +1882,6 @@ static int rk3399_usb2phy_tuning(struct rockchip_usb2phy *rphy)
 		/* Set max pre-emphasis level for PHY1 */
 		ret |= regmap_write(rphy->grf, 0x4530,
 				    GENMASK(18, 16) | 0x07);
-
-		/*
-		 * Disable the pre-emphasize in eop state
-		 * and chirp state to avoid mis-trigger the
-		 * disconnect detection and also avoid hs
-		 * handshake fail for PHY1.
-		 */
-		ret |= regmap_write(rphy->grf, 0x4500,
-				    GENMASK(17, 16) | 0x0);
-		ret |= regmap_write(rphy->grf, 0x4534,
-				    GENMASK(17, 16) | 0x0);
 
 		/*
 		 * Set PHY1 A port squelch trigger point to 125mv
@@ -1955,6 +1957,20 @@ static int rockchip_usb2phy_pm_resume(struct device *dev)
 				dev_err(rphy->dev,
 					"failed to enable id irq\n");
 				return ret;
+			}
+
+			if (!property_enabled(rphy,
+					      &rport->port_cfg->utmi_iddig)) {
+				dev_dbg(&rport->phy->dev,
+					"port power on when resume\n");
+				extcon_set_state_sync(rphy->edev,
+						      EXTCON_USB_HOST,
+						      true);
+				extcon_set_state_sync(rphy->edev,
+						      EXTCON_USB_VBUS_EN,
+						      true);
+				gpiod_set_value_cansleep(rport->vbus_drv_gpio,
+							 1);
 			}
 		}
 	}

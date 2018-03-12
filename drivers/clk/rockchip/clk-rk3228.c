@@ -139,7 +139,7 @@ static const struct rockchip_cpuclk_reg_data rk3228_cpuclk_data = {
 PNAME(mux_pll_p)		= { "clk_24m", "xin24m" };
 
 PNAME(mux_ddrphy_p)		= { "dpll", "gpll", "apll" };
-PNAME(mux_armclk_p)		= { "apll", "gpll", "dpll" };
+PNAME(mux_armclk_p)		= { "apll_core", "gpll_core", "dpll_core" };
 PNAME(mux_usb480m_phy_p)	= { "usb480m_phy0", "usb480m_phy1" };
 PNAME(mux_usb480m_p)		= { "usb480m_phy", "xin24m" };
 PNAME(mux_hdmiphy_p)		= { "hdmiphy_phy", "xin24m" };
@@ -222,17 +222,20 @@ static struct rockchip_clk_branch rk3228_clk_branches[] __initdata = {
 			RK2928_CLKSEL_CON(4), 8, 5, DFLAGS),
 
 	/* PD_DDR */
-	COMPOSITE(0, "clk_ddrphy_src", mux_ddrphy_p, CLK_IGNORE_UNUSED,
-			RK2928_CLKSEL_CON(26), 8, 2, MFLAGS, 0, 2, DFLAGS | CLK_DIVIDER_POWER_OF_TWO,
-			RK2928_CLKGATE_CON(0), 2, GFLAGS),
-	GATE(0, "ddrphy4x", "clk_ddrphy_src", CLK_IGNORE_UNUSED,
+	COMPOSITE_DDRCLK(SCLK_DDRC, "clk_ddrc", mux_ddrphy_p, 0,
+			 RK2928_CLKSEL_CON(26), 8, 2, 0, 2,
+			 ROCKCHIP_DDRCLK_SIP_V2),
+	FACTOR(0, "clk_ddrphy", "clk_ddrc", 0, 1, 4),
+	GATE(0, "ddrphy4x", "clk_ddrc", CLK_IGNORE_UNUSED,
 			RK2928_CLKGATE_CON(7), 1, GFLAGS),
-	FACTOR_GATE(0, "ddrc", "clk_ddrphy_src", CLK_IGNORE_UNUSED, 1, 4,
-			RK2928_CLKGATE_CON(8), 5, GFLAGS),
-	FACTOR_GATE(0, "ddrphy", "clk_ddrphy_src", CLK_IGNORE_UNUSED, 1, 4,
-			RK2928_CLKGATE_CON(7), 0, GFLAGS),
 
 	/* PD_CORE */
+	GATE(0, "apll_core", "apll", CLK_IGNORE_UNUSED,
+			PX30_CLKGATE_CON(0), 6, GFLAGS),
+	GATE(0, "gpll_core", "gpll", CLK_IGNORE_UNUSED,
+			PX30_CLKGATE_CON(0), 6, GFLAGS),
+	GATE(0, "dpll_core", "dpll", CLK_IGNORE_UNUSED,
+			PX30_CLKGATE_CON(0), 6, GFLAGS),
 	COMPOSITE_NOMUX(0, "pclk_dbg", "armclk", CLK_IGNORE_UNUSED,
 			RK2928_CLKSEL_CON(1), 0, 4, DFLAGS | CLK_DIVIDER_READ_ONLY,
 			RK2928_CLKGATE_CON(4), 1, GFLAGS),
@@ -602,7 +605,7 @@ static struct rockchip_clk_branch rk3228_clk_branches[] __initdata = {
 	GATE(0, "pclk_sim", "pclk_cpu", CLK_IGNORE_UNUSED, RK2928_CLKGATE_CON(10), 3, GFLAGS),
 
 	GATE(0, "pclk_ddrphy", "pclk_phy_pre", CLK_IGNORE_UNUSED, RK2928_CLKGATE_CON(10), 3, GFLAGS),
-	GATE(0, "pclk_acodecphy", "pclk_phy_pre", CLK_IGNORE_UNUSED, RK2928_CLKGATE_CON(10), 5, GFLAGS),
+	GATE(PCLK_ACODECPHY, "pclk_acodecphy", "pclk_phy_pre", CLK_IGNORE_UNUSED, RK2928_CLKGATE_CON(10), 5, GFLAGS),
 	GATE(PCLK_HDMI_PHY, "pclk_hdmiphy", "pclk_phy_pre", 0, RK2928_CLKGATE_CON(10), 7, GFLAGS),
 	GATE(0, "pclk_vdacphy", "pclk_phy_pre", CLK_IGNORE_UNUSED, RK2928_CLKGATE_CON(10), 8, GFLAGS),
 	GATE(0, "pclk_phy_noc", "pclk_phy_pre", CLK_IGNORE_UNUSED, RK2928_CLKGATE_CON(10), 9, GFLAGS),
