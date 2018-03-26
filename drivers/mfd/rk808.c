@@ -16,7 +16,6 @@
  * more details.
  */
 
-#include <linux/delay.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
@@ -25,7 +24,6 @@
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/regmap.h>
-#include <linux/syscore_ops.h>
 
 struct rk808_reg_data {
 	int addr;
@@ -814,7 +812,7 @@ static void rk808_device_shutdown_prepare(void)
 	}
 }
 
-static void rk808_syscore_shutdown(void)
+static void rk808_device_shutdown(void)
 {
 	int ret;
 	struct rk808 *rk808 = i2c_get_clientdata(rk808_i2c_client);
@@ -832,34 +830,12 @@ static void rk808_syscore_shutdown(void)
 	regmap_update_bits(rk808->regmap,
 			   RK808_RTC_INT_REG,
 			   (0x3 << 2), (0x0 << 2));
-	/*
-	 * For PMIC that power off supplies by write register via i2c bus,
-	 * it's better to do power off at syscore shutdown here.
-	 *
-	 * Because when run to kernel's "pm_power_off" call, i2c may has
-	 * been stopped or PMIC may not be able to get i2c transfer while
-	 * there are too many devices are competiting.
-	 */
-	if (system_state == SYSTEM_POWER_OFF) {
-		/* power off supplies ! */
-		if (pm_shutdown) {
-			dev_info(&rk808_i2c_client->dev, "System power off\n");
-			ret = pm_shutdown(rk808->regmap);
-			if (ret)
-				dev_err(&rk808_i2c_client->dev,
-					"System power off error!\n");
-			mdelay(10);
-			dev_info(&rk808_i2c_client->dev,
-				 "Cpu should never reach here, stop!\n");
-			while (1)
-				;
-		}
+	if (pm_shutdown) {
+		ret = pm_shutdown(rk808->regmap);
+		if (ret)
+			dev_err(&rk808_i2c_client->dev, "power off error!\n");
 	}
 }
-
-static struct syscore_ops rk808_syscore_ops = {
-	.shutdown = rk808_syscore_shutdown,
-};
 
 static ssize_t rk8xx_dbg_store(struct device *dev,
 			       struct device_attribute *attr,
@@ -1128,7 +1104,7 @@ static int rk808_probe(struct i2c_client *client,
 		}
 		if (pm_shutdown_fn) {
 			pm_shutdown = pm_shutdown_fn;
-			register_syscore_ops(&rk808_syscore_ops);
+			pm_power_off = rk808_device_shutdown;
 		}
 	}
 
@@ -1194,11 +1170,10 @@ static int rk808_remove(struct i2c_client *client)
 
 	regmap_del_irq_chip(client->irq, rk808->irq_data);
 	mfd_remove_devices(&client->dev);
-
+	if (pm_power_off == rk808_device_shutdown)
+		pm_power_off = NULL;
 	if (pm_power_off_prepare == rk808_device_shutdown_prepare)
 		pm_power_off_prepare = NULL;
-	if (pm_shutdown)
-		unregister_syscore_ops(&rk808_syscore_ops);
 
 	return 0;
 }
