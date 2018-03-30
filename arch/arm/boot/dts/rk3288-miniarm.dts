@@ -531,7 +531,7 @@
 		compatible = "ovti,ov5647";
 		reg = <0x36>;
 		clocks = <&ext_cam_clk>;
-		status = "okay";
+		status = "disabled";
 	};
 
 	camera1: imx219@10 {
