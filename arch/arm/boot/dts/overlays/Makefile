@@ -21,6 +21,7 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	lirc-toshiba.dtbo \
 	mcp2515-can0.dtbo \
 	googlevoicehat-soundcard.dtbo \
+	camera-ov5647.dtbo
 
 
 targets += dtbs dtbs_install

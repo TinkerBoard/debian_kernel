@@ -532,6 +532,10 @@
 		reg = <0x36>;
 		clocks = <&ext_cam_clk>;
 		status = "disabled";
+		port {
+			ov5647_out: endpoint {
+			};
+		};
 	};
 
 	camera1: imx219@10 {
@@ -539,10 +543,9 @@
 		reg = <0x10>;
 		clocks = <&ext_cam_clk>;
 		status = "okay";
-
 		port {
 			imx219_out: endpoint {
-				remote-endpoint = <&imx219_in>;
+				remote-endpoint = <&mipi_dphy_in>;
 				data-lanes = <1 2>;
 			};
 		};
@@ -597,7 +600,7 @@
 		port@0 {
 			reg = <0>;
 
-			imx219_in: endpoint {
+			mipi_dphy_in: endpoint {
 				remote-endpoint = <&imx219_out>;
 				data-lanes = <1 2>;
 			};
