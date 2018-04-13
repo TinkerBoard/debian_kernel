@@ -22,113 +22,112 @@
 #define __HAL_PHY_RF_8723B_H__
 
 /*--------------------------Define Parameters-------------------------------*/
-#define	IQK_DELAY_TIME_8723B		20		//ms
+#define	IQK_DELAY_TIME_8723B		20		/* ms */
 #define IQK_DEFERRED_TIME_8723B		4
 #define	index_mapping_NUM_8723B		15
 #define AVG_THERMAL_NUM_8723B		4
-#define	RF_T_METER_8723B					0x42	//
+#define	RF_T_METER_8723B					0x42
 
 
-void ConfigureTxpowerTrack_8723B(
-	PTXPWRTRACK_CFG	pConfig
-	);
-
-void DoIQK_8723B(
-	PVOID		pDM_VOID,
-	u1Byte 		DeltaThermalIndex,
-	u1Byte		ThermalValue,	
-	u1Byte 		Threshold
-	);
-
-VOID
-ODM_TxPwrTrackSetPwr_8723B(
-	IN	PVOID		pDM_VOID,
-	PWRTRACK_METHOD 	Method,
-	u1Byte 				RFPath,
-	u1Byte 				ChannelMappedIndex
-	);
-
-//1 7.	IQK
-
-void	
-PHY_IQCalibrate_8723B(	
-#if (DM_ODM_SUPPORT_TYPE & ODM_AP)
-	IN PDM_ODM_T		pDM_Odm,
-#else
-	IN PADAPTER	Adapter,
-#endif
-	IN BOOLEAN	bReCovery,
-	IN BOOLEAN	bRestore,
-	IN BOOLEAN	Is2ant,
-	IN u1Byte	RF_Path);
-
-VOID
-ODM_SetIQCbyRFpath(
-//#if (DM_ODM_SUPPORT_TYPE & ODM_AP)
-	IN PDM_ODM_T		pDM_Odm,
-//#else
-	//IN	PADAPTER	pAdapter,
-//#endif
-    IN u4Byte RFpath
-	);
-
-//
-// LC calibrate
-//
-void	
-PHY_LCCalibrate_8723B(
-	IN	PVOID		pDM_VOID
+void configure_txpower_track_8723b(
+	struct _TXPWRTRACK_CFG	*p_config
 );
 
-//
-// AP calibrate
-//
-void	
-PHY_APCalibrate_8723B(		
+void do_iqk_8723b(
+	void		*p_dm_void,
+	u8		delta_thermal_index,
+	u8		thermal_value,
+	u8		threshold
+);
+
+void
+odm_tx_pwr_track_set_pwr_8723b(
+	void		*p_dm_void,
+	enum pwrtrack_method	method,
+	u8				rf_path,
+	u8				channel_mapped_index
+);
+
+/* 1 7.	IQK */
+
+void
+phy_iq_calibrate_8723b(
 #if (DM_ODM_SUPPORT_TYPE & ODM_AP)
-	IN PDM_ODM_T		pDM_Odm,
+	struct PHY_DM_STRUCT		*p_dm_odm,
 #else
-	IN	PADAPTER	pAdapter,
+	struct _ADAPTER	*adapter,
 #endif
-							IN 	s1Byte		delta);
-void	
-PHY_DigitalPredistortion_8723B(		IN	PADAPTER	pAdapter);
+	bool	is_recovery,
+	bool	is_restore,
+	bool	is_2ant,
+	u8	rf_path);
 
+void
+odm_set_iqc_by_rfpath(
+	/* #if (DM_ODM_SUPPORT_TYPE & ODM_AP) */
+	struct PHY_DM_STRUCT		*p_dm_odm,
+	/* #else */
+	/* struct _ADAPTER*	p_adapter,
+	* #endif */
+	u32 rf_path
+);
 
-VOID
-_PHY_SaveADDARegisters_8723B(
+/*
+ * LC calibrate
+ *   */
+void
+phy_lc_calibrate_8723b(
+	void		*p_dm_void
+);
+
+/*
+ * AP calibrate
+ *   */
+void
+phy_ap_calibrate_8723b(
 #if (DM_ODM_SUPPORT_TYPE & ODM_AP)
-	IN PDM_ODM_T		pDM_Odm,
+	struct PHY_DM_STRUCT		*p_dm_odm,
 #else
-	IN	PADAPTER	pAdapter,
+	struct _ADAPTER	*p_adapter,
 #endif
-	IN	pu4Byte		ADDAReg,
-	IN	pu4Byte		ADDABackup,
-	IN	u4Byte		RegisterNum
-	);
+	s8		delta);
+void
+phy_digital_predistortion_8723b(struct _ADAPTER	*p_adapter);
 
-VOID
-_PHY_PathADDAOn_8723B(
+
+void
+_phy_save_adda_registers_8723b(
 #if (DM_ODM_SUPPORT_TYPE & ODM_AP)
-	IN PDM_ODM_T		pDM_Odm,
+	struct PHY_DM_STRUCT		*p_dm_odm,
 #else
-	IN	PADAPTER	pAdapter,
+	struct _ADAPTER	*p_adapter,
 #endif
-	IN	pu4Byte		ADDAReg,
-	IN	BOOLEAN		isPathAOn,
-	IN	BOOLEAN		is2T
-	);
+	u32		*adda_reg,
+	u32		*adda_backup,
+	u32		register_num
+);
 
-VOID
-_PHY_MACSettingCalibration_8723B(
+void
+_phy_path_adda_on_8723b(
 #if (DM_ODM_SUPPORT_TYPE & ODM_AP)
-	IN PDM_ODM_T		pDM_Odm,
+	struct PHY_DM_STRUCT		*p_dm_odm,
 #else
-	IN	PADAPTER	pAdapter,
+	struct _ADAPTER	*p_adapter,
 #endif
-	IN	pu4Byte		MACReg,
-	IN	pu4Byte		MACBackup	
-	);
-							
-#endif	// #ifndef __HAL_PHY_RF_8188E_H__								
+	u32		*adda_reg,
+	bool		is_path_a_on,
+	bool		is2T
+);
 
+void
+_phy_mac_setting_calibration_8723b(
+#if (DM_ODM_SUPPORT_TYPE & ODM_AP)
+	struct PHY_DM_STRUCT		*p_dm_odm,
+#else
+	struct _ADAPTER	*p_adapter,
+#endif
+	u32		*mac_reg,
+	u32		*mac_backup
+);
+
+#endif	/*  #ifndef __HAL_PHY_RF_8188E_H__ */

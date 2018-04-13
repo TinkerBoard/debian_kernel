@@ -1,7 +1,7 @@
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2011 Realtek Corporation. All rights reserved.
- *                                        
+ *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
  * published by the Free Software Foundation.
@@ -20,10 +20,10 @@
 #ifndef	__ODM_RTL8723B_H__
 #define __ODM_RTL8723B_H__
 
-s1Byte
+s8
 odm_CCKRSSI_8723B(
-	IN		u1Byte	LNA_idx,
-	IN		u1Byte	VGA_idx
-	);
+	u8	LNA_idx,
+	u8	VGA_idx
+);
 
 #endif

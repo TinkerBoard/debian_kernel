@@ -14,7 +14,11 @@ EXTRA_CFLAGS += -Wno-unused-parameter
 EXTRA_CFLAGS += -Wno-unused-function
 EXTRA_CFLAGS += -Wno-unused
 #EXTRA_CFLAGS += -Wno-uninitialized
-#EXTRA_CFLAGS += -Wno-error=date-time	# Fix compile error on gcc 4.9 and later
+
+GCC_VER_49 := $(shell echo `$(CC) -dumpversion | cut -f1-2 -d.` \>= 4.9 | bc )
+ifeq ($(GCC_VER_49),1)
+EXTRA_CFLAGS += -Wno-date-time	# Fix compile error && warning on gcc 4.9 and later
+endif
 
 EXTRA_CFLAGS += -I$(src)/include
 EXTRA_CFLAGS += -I$(src)/hal/phydm
@@ -33,6 +37,9 @@ CONFIG_RTL8723B = y
 CONFIG_RTL8814A = n
 CONFIG_RTL8723C = n
 CONFIG_RTL8188F = n
+CONFIG_RTL8822B = n
+CONFIG_RTL8723D = n
+CONFIG_RTL8821C = n
 ######################### Interface ###########################
 CONFIG_USB_HCI = n
 CONFIG_PCI_HCI = n
@@ -47,24 +54,33 @@ CONFIG_WIFI_TEST = n
 CONFIG_BT_COEXIST = y
 CONFIG_INTEL_WIDI = n
 CONFIG_WAPI_SUPPORT = n
-CONFIG_EFUSE_CONFIG_FILE = n
+CONFIG_EFUSE_CONFIG_FILE = y
 CONFIG_EXT_CLK = n
 CONFIG_TRAFFIC_PROTECT = y
 CONFIG_LOAD_PHY_PARA_FROM_FILE = y
-CONFIG_CALIBRATE_TX_POWER_BY_REGULATORY = n
-CONFIG_CALIBRATE_TX_POWER_TO_MAX = n
+CONFIG_TXPWR_BY_RATE_EN = n
+CONFIG_TXPWR_LIMIT_EN = n
 CONFIG_RTW_ADAPTIVITY_EN = disable
 CONFIG_RTW_ADAPTIVITY_MODE = normal
 CONFIG_SIGNAL_SCALE_MAPPING = n
 CONFIG_80211W = n
 CONFIG_REDUCE_TX_CPU_LOADING = n
 CONFIG_BR_EXT = y
-CONFIG_ANTENNA_DIVERSITY = n
 CONFIG_TDLS = n
 CONFIG_WIFI_MONITOR = n
+CONFIG_MCC_MODE = n
+CONFIG_APPEND_VENDOR_IE_ENABLE = n
+CONFIG_RTW_NAPI = n
+CONFIG_RTW_GRO = n
+########################## Debug ###########################
+CONFIG_RTW_DEBUG = n
+# default log level is _DRV_INFO_ = 4,
+# please refer to "How_to_set_driver_debug_log_level.doc" to set the available level.
+CONFIG_RTW_LOG_LEVEL = 4
 ######################## Wake On Lan ##########################
 CONFIG_WOWLAN = n
 CONFIG_GPIO_WAKEUP = n
+CONFIG_DEFAULT_PATTERNS_EN = n
 CONFIG_WAKEUP_GPIO_IDX = default
 CONFIG_HIGH_ACTIVE = n
 CONFIG_PNO_SUPPORT = n
@@ -124,8 +140,10 @@ CONFIG_PLATFORM_ARM_WMT = n
 CONFIG_PLATFORM_TI_DM365 = n
 CONFIG_PLATFORM_MOZART = n
 CONFIG_PLATFORM_RTK119X = n
+CONFIG_PLATFORM_RTK129X = n
 CONFIG_PLATFORM_NOVATEK_NT72668 = n
 CONFIG_PLATFORM_HISILICON = n
+CONFIG_PLATFORM_NV_TK1 = n
 ###############################################################
 
 CONFIG_DRVEXT_MODULE = n
@@ -184,8 +202,10 @@ _HAL_INTFS_FILES :=	hal/hal_intf.o \
 			hal/hal_com_phycfg.o \
 			hal/hal_phy.o \
 			hal/hal_dm.o \
+			hal/hal_btcoex_wifionly.o \
 			hal/hal_btcoex.o \
 			hal/hal_mp.o \
+			hal/hal_mcc.o \
 			hal/hal_hci/hal_$(HCI_NAME).o \
 			hal/led/hal_$(HCI_NAME)_led.o
 
@@ -209,25 +229,37 @@ _OUTSRC_FILES := hal/phydm/phydm_debug.o	\
 		hal/phydm/phydm_noisemonitor.o\
 		hal/phydm/phydm_acs.o\
 		hal/phydm/phydm_beamforming.o\
+		hal/phydm/phydm_dfs.o\
 		hal/phydm/txbf/halcomtxbf.o\
-		hal/phydm/txbf/haltxbfinterface.o
+		hal/phydm/txbf/haltxbfinterface.o\
+		hal/phydm/txbf/phydm_hal_txbf_api.o\
+		hal/phydm/phydm_adc_sampling.o\
+		hal/phydm/phydm_kfree.o\
+		hal/phydm/phydm_ccx.o
 
 
 EXTRA_CFLAGS += -I$(src)/platform
 _PLATFORM_FILES := platform/platform_ops.o
 
-ifeq ($(CONFIG_BT_COEXIST), y)
 EXTRA_CFLAGS += -I$(src)/hal/btc
-_OUTSRC_FILES += hal/btc/HalBtc8192e1Ant.o \
-				hal/btc/HalBtc8192e2Ant.o \
-				hal/btc/HalBtc8723b1Ant.o \
-				hal/btc/HalBtc8723b2Ant.o \
-				hal/btc/HalBtc8812a1Ant.o \
-				hal/btc/HalBtc8812a2Ant.o \
-				hal/btc/HalBtc8821a1Ant.o \
-				hal/btc/HalBtc8821a2Ant.o \
-				hal/btc/HalBtc8821aCsr2Ant.o \
-				hal/btc/HalBtc8703b1Ant.o
+_OUTSRC_FILES += hal/btc/halbtc8723bwifionly.o \
+				hal/btc/halbtc8822bwifionly.o
+ifeq ($(CONFIG_BT_COEXIST), y)
+_OUTSRC_FILES += hal/btc/halbtc8192e1ant.o \
+				hal/btc/halbtc8192e2ant.o \
+				hal/btc/halbtc8723b1ant.o \
+				hal/btc/halbtc8723b2ant.o \
+				hal/btc/halbtc8812a1ant.o \
+				hal/btc/halbtc8812a2ant.o \
+				hal/btc/halbtc8821a1ant.o \
+				hal/btc/halbtc8821a2ant.o \
+				hal/btc/halbtc8703b1ant.o \
+				hal/btc/halbtc8723d1ant.o \
+				hal/btc/halbtc8723d2ant.o \
+				hal/btc/halbtc8822b1ant.o \
+				hal/btc/halbtc8822b2ant.o \
+				hal/btc/halbtc8821c1ant.o \
+				hal/btc/halbtc8821c2ant.o
 endif
 
 
@@ -263,6 +295,8 @@ _HAL_INTFS_FILES +=	hal/$(RTL871X)/$(RTL871X)_hal_init.o \
 			hal/$(RTL871X)/$(RTL871X)_dm.o \
 			hal/$(RTL871X)/$(RTL871X)_rxdesc.o \
 			hal/$(RTL871X)/$(RTL871X)_cmd.o \
+			hal/$(RTL871X)/hal8188e_s_fw.o \
+			hal/$(RTL871X)/hal8188e_t_fw.o \
 			hal/$(RTL871X)/$(HCI_NAME)/$(HCI_NAME)_halinit.o \
 			hal/$(RTL871X)/$(HCI_NAME)/rtl$(MODULE_NAME)_led.o \
 			hal/$(RTL871X)/$(HCI_NAME)/rtl$(MODULE_NAME)_xmit.o \
@@ -292,8 +326,6 @@ endif
 _OUTSRC_FILES += hal/phydm/$(RTL871X)/halhwimg8188e_mac.o\
 		hal/phydm/$(RTL871X)/halhwimg8188e_bb.o\
 		hal/phydm/$(RTL871X)/halhwimg8188e_rf.o\
-		hal/phydm/$(RTL871X)/halhwimg8188e_t_fw.o\
-		hal/phydm/$(RTL871X)/halhwimg8188e_s_fw.o\
 		hal/phydm/$(RTL871X)/halphyrf_8188e_ce.o\
 		hal/phydm/$(RTL871X)/phydm_regconfig8188e.o\
 		hal/phydm/$(RTL871X)/hal8188erateadaptive.o\
@@ -328,6 +360,7 @@ _HAL_INTFS_FILES +=	hal/$(RTL871X)/$(RTL871X)_hal_init.o \
 			hal/$(RTL871X)/$(RTL871X)_dm.o \
 			hal/$(RTL871X)/$(RTL871X)_rxdesc.o \
 			hal/$(RTL871X)/$(RTL871X)_cmd.o \
+			hal/$(RTL871X)/hal8192e_fw.o \
 			hal/$(RTL871X)/$(HCI_NAME)/$(HCI_NAME)_halinit.o \
 			hal/$(RTL871X)/$(HCI_NAME)/rtl$(MODULE_NAME)_led.o \
 			hal/$(RTL871X)/$(HCI_NAME)/rtl$(MODULE_NAME)_xmit.o \
@@ -354,7 +387,6 @@ endif
 _OUTSRC_FILES += hal/phydm/$(RTL871X)/halhwimg8192e_mac.o\
 		hal/phydm/$(RTL871X)/halhwimg8192e_bb.o\
 		hal/phydm/$(RTL871X)/halhwimg8192e_rf.o\
-		hal/phydm/$(RTL871X)/halhwimg8192e_fw.o\
 		hal/phydm/$(RTL871X)/halphyrf_8192e_ce.o\
 		hal/phydm/$(RTL871X)/phydm_regconfig8192e.o\
 		hal/phydm/$(RTL871X)/phydm_rtl8192e.o
@@ -422,8 +454,9 @@ endif
 
 ifeq ($(CONFIG_RTL8812A), y)
 EXTRA_CFLAGS += -DCONFIG_RTL8812A
-_OUTSRC_FILES += hal/phydm/$(RTL871X)/halhwimg8812a_fw.o\
-		hal/phydm/$(RTL871X)/halhwimg8812a_mac.o\
+_HAL_INTFS_FILES +=	hal/rtl8812a/hal8812a_fw.o
+
+_OUTSRC_FILES += hal/phydm/$(RTL871X)/halhwimg8812a_mac.o\
 		hal/phydm/$(RTL871X)/halhwimg8812a_bb.o\
 		hal/phydm/$(RTL871X)/halhwimg8812a_rf.o\
 		hal/phydm/$(RTL871X)/halphyrf_8812a_ce.o\
@@ -454,8 +487,9 @@ endif
 endif
 
 EXTRA_CFLAGS += -DCONFIG_RTL8821A
-_OUTSRC_FILES += hal/phydm/rtl8821a/halhwimg8821a_fw.o\
-		hal/phydm/rtl8821a/halhwimg8821a_mac.o\
+
+_HAL_INTFS_FILES +=	hal/rtl8812a/hal8821a_fw.o
+_OUTSRC_FILES += hal/phydm/rtl8821a/halhwimg8821a_mac.o\
 		hal/phydm/rtl8821a/halhwimg8821a_bb.o\
 		hal/phydm/rtl8821a/halhwimg8821a_rf.o\
 		hal/phydm/rtl8812a/halphyrf_8812a_ce.o\
@@ -495,7 +529,7 @@ _HAL_INTFS_FILES +=	hal/$(RTL871X)/$(RTL871X)_hal_init.o \
 			hal/$(RTL871X)/$(RTL871X)_dm.o \
 			hal/$(RTL871X)/$(RTL871X)_rxdesc.o \
 			hal/$(RTL871X)/$(RTL871X)_cmd.o \
-
+			hal/$(RTL871X)/hal8723b_fw.o
 
 _HAL_INTFS_FILES +=	\
 			hal/$(RTL871X)/$(HCI_NAME)/$(HCI_NAME)_halinit.o \
@@ -519,7 +553,6 @@ endif
 _OUTSRC_FILES += hal/phydm/$(RTL871X)/halhwimg8723b_bb.o\
 								hal/phydm/$(RTL871X)/halhwimg8723b_mac.o\
 								hal/phydm/$(RTL871X)/halhwimg8723b_rf.o\
-								hal/phydm/$(RTL871X)/halhwimg8723b_fw.o\
 								hal/phydm/$(RTL871X)/halhwimg8723b_mp.o\
 								hal/phydm/$(RTL871X)/phydm_regconfig8723b.o\
 								hal/phydm/$(RTL871X)/halphyrf_8723b_ce.o\
@@ -530,8 +563,8 @@ endif
 ########### HAL_RTL8814A #################################
 ifeq ($(CONFIG_RTL8814A), y)
 ## ADD NEW VHT MP HW TX MODE ##
-EXTRA_CFLAGS += -DCONFIG_MP_VHT_HW_TX_MODE
-CONFIG_MP_VHT_HW_TX_MODE = y
+#EXTRA_CFLAGS += -DCONFIG_MP_VHT_HW_TX_MODE
+#CONFIG_MP_VHT_HW_TX_MODE = y
 ##########################################
 RTL871X = rtl8814a
 ifeq ($(CONFIG_USB_HCI), y)
@@ -557,6 +590,7 @@ _HAL_INTFS_FILES +=	hal/$(RTL871X)/$(RTL871X)_hal_init.o \
 			hal/$(RTL871X)/$(RTL871X)_dm.o \
 			hal/$(RTL871X)/$(RTL871X)_rxdesc.o \
 			hal/$(RTL871X)/$(RTL871X)_cmd.o \
+			hal/$(RTL871X)/hal8814a_fw.o
 
 
 _HAL_INTFS_FILES +=	\
@@ -585,7 +619,6 @@ endif
 _OUTSRC_FILES += hal/phydm/$(RTL871X)/halhwimg8814a_bb.o\
 								hal/phydm/$(RTL871X)/halhwimg8814a_mac.o\
 								hal/phydm/$(RTL871X)/halhwimg8814a_rf.o\
-								hal/phydm/$(RTL871X)/halhwimg8814a_fw.o\
 								hal/phydm/$(RTL871X)/phydm_iqk_8814a.o\
 								hal/phydm/$(RTL871X)/phydm_regconfig8814a.o\
 								hal/phydm/$(RTL871X)/halphyrf_8814a_ce.o\
@@ -623,7 +656,7 @@ _HAL_INTFS_FILES +=	hal/$(RTL871X)/$(RTL871X)_hal_init.o \
 			hal/$(RTL871X)/$(RTL871X)_dm.o \
 			hal/$(RTL871X)/$(RTL871X)_rxdesc.o \
 			hal/$(RTL871X)/$(RTL871X)_cmd.o \
-
+			hal/$(RTL871X)/hal8703b_fw.o
 
 _HAL_INTFS_FILES +=	\
 			hal/$(RTL871X)/$(HCI_NAME)/$(HCI_NAME)_halinit.o \
@@ -647,9 +680,68 @@ endif
 _OUTSRC_FILES += hal/phydm/$(RTL871X)/halhwimg8703b_bb.o\
 								hal/phydm/$(RTL871X)/halhwimg8703b_mac.o\
 								hal/phydm/$(RTL871X)/halhwimg8703b_rf.o\
-								hal/phydm/$(RTL871X)/halhwimg8703b_fw.o\
 								hal/phydm/$(RTL871X)/phydm_regconfig8703b.o\
 								hal/phydm/$(RTL871X)/halphyrf_8703b.o
+endif
+
+########### HAL_RTL8723D #################################
+ifeq ($(CONFIG_RTL8723D), y)
+
+RTL871X = rtl8723d
+ifeq ($(CONFIG_USB_HCI), y)
+MODULE_NAME = 8723du
+MODULE_SUB_NAME = 8723du
+endif
+ifeq ($(CONFIG_PCI_HCI), y)
+MODULE_NAME = 8723de
+MODULE_SUB_NAME = 8723de
+endif
+ifeq ($(CONFIG_SDIO_HCI), y)
+MODULE_NAME = 8723ds
+MODULE_SUB_NAME = 8723ds
+endif
+
+EXTRA_CFLAGS += -DCONFIG_RTL8723D
+
+_HAL_INTFS_FILES += hal/HalPwrSeqCmd.o \
+					hal/$(RTL871X)/Hal8723DPwrSeq.o\
+					hal/$(RTL871X)/$(RTL871X)_sreset.o
+
+_HAL_INTFS_FILES +=	hal/$(RTL871X)/$(RTL871X)_hal_init.o \
+			hal/$(RTL871X)/$(RTL871X)_phycfg.o \
+			hal/$(RTL871X)/$(RTL871X)_rf6052.o \
+			hal/$(RTL871X)/$(RTL871X)_dm.o \
+			hal/$(RTL871X)/$(RTL871X)_rxdesc.o \
+			hal/$(RTL871X)/$(RTL871X)_cmd.o \
+			hal/$(RTL871X)/hal8723d_fw.o \
+			hal/$(RTL871X)/$(RTL871X)_lps_poff.o
+
+
+_HAL_INTFS_FILES +=	\
+			hal/$(RTL871X)/$(HCI_NAME)/$(HCI_NAME)_halinit.o \
+			hal/$(RTL871X)/$(HCI_NAME)/rtl$(MODULE_SUB_NAME)_led.o \
+			hal/$(RTL871X)/$(HCI_NAME)/rtl$(MODULE_SUB_NAME)_xmit.o \
+			hal/$(RTL871X)/$(HCI_NAME)/rtl$(MODULE_SUB_NAME)_recv.o
+
+ifeq ($(CONFIG_PCI_HCI), y)
+_HAL_INTFS_FILES += hal/$(RTL871X)/$(HCI_NAME)/$(HCI_NAME)_ops_linux.o
+else
+_HAL_INTFS_FILES += hal/$(RTL871X)/$(HCI_NAME)/$(HCI_NAME)_ops.o
+endif
+
+ifeq ($(CONFIG_USB_HCI), y)
+_HAL_INTFS_FILES +=hal/efuse/$(RTL871X)/HalEfuseMask8723D_USB.o
+endif
+ifeq ($(CONFIG_PCI_HCI), y)
+_HAL_INTFS_FILES +=hal/efuse/$(RTL871X)/HalEfuseMask8723D_PCIE.o
+endif
+
+_OUTSRC_FILES += hal/phydm/$(RTL871X)/halhwimg8723d_bb.o\
+								hal/phydm/$(RTL871X)/halhwimg8723d_mac.o\
+								hal/phydm/$(RTL871X)/halhwimg8723d_rf.o\
+								hal/phydm/$(RTL871X)/phydm_regconfig8723d.o\
+								hal/phydm/$(RTL871X)/phydm_rtl8723d.o\
+								hal/phydm/$(RTL871X)/halphyrf_8723d.o
 endif
 
 ########### HAL_RTL8188F #################################
@@ -678,7 +770,7 @@ _HAL_INTFS_FILES +=	hal/$(RTL871X)/$(RTL871X)_hal_init.o \
 			hal/$(RTL871X)/$(RTL871X)_dm.o \
 			hal/$(RTL871X)/$(RTL871X)_rxdesc.o \
 			hal/$(RTL871X)/$(RTL871X)_cmd.o \
-
+			hal/$(RTL871X)/hal8188f_fw.o
 
 _HAL_INTFS_FILES +=	\
 			hal/$(RTL871X)/$(HCI_NAME)/$(HCI_NAME)_halinit.o \
@@ -703,11 +795,28 @@ endif
 _OUTSRC_FILES += hal/phydm/$(RTL871X)/halhwimg8188f_bb.o\
 								hal/phydm/$(RTL871X)/halhwimg8188f_mac.o\
 								hal/phydm/$(RTL871X)/halhwimg8188f_rf.o\
-								hal/phydm/$(RTL871X)/halhwimg8188f_fw.o\
 								hal/phydm/$(RTL871X)/phydm_regconfig8188f.o\
 								hal/phydm/$(RTL871X)/halphyrf_8188f.o \
 								hal/phydm/$(RTL871X)/phydm_rtl8188f.o
 
+endif
+
+########### HAL_RTL8822B #################################
+ifeq ($(CONFIG_RTL8822B), y)
+include $(TopDIR)/rtl8822b.mk
+endif
+
+########### HAL_RTL8821C #################################
+ifeq ($(CONFIG_RTL8821C), y)
+include $(TopDIR)/rtl8821c.mk
+
+_OUTSRC_FILES +=	hal/phydm/rtl8821c/halhwimg8821c_bb.o \
+			hal/phydm/rtl8821c/halhwimg8821c_mac.o \
+			hal/phydm/rtl8821c/halhwimg8821c_rf.o \
+			hal/phydm/rtl8821c/phydm_hal_api8821c.o \
+			hal/phydm/rtl8821c/phydm_regconfig8821c.o\
+			hal/phydm/rtl8821c/halphyrf_8821c.o\
+			hal/phydm/rtl8821c/phydm_iqk_8821c.o
 endif
 
 ########### AUTO_CFG  #################################
@@ -731,7 +840,6 @@ endif
 endif
 
 ########### END OF PATH  #################################
-
 
 ifeq ($(CONFIG_USB_HCI), y)
 ifeq ($(CONFIG_USB_AUTOSUSPEND), y)
@@ -804,8 +912,25 @@ endif
 
 ifeq ($(CONFIG_LOAD_PHY_PARA_FROM_FILE), y)
 EXTRA_CFLAGS += -DCONFIG_LOAD_PHY_PARA_FROM_FILE
+#EXTRA_CFLAGS += -DREALTEK_CONFIG_PATH_WITH_IC_NAME_FOLDER
 #EXTRA_CFLAGS += -DREALTEK_CONFIG_PATH=\"/lib/firmware/\"
 EXTRA_CFLAGS += -DREALTEK_CONFIG_PATH=\"\"
+endif
+
+ifeq ($(CONFIG_TXPWR_BY_RATE_EN), n)
+EXTRA_CFLAGS += -DCONFIG_TXPWR_BY_RATE_EN=0
+else ifeq ($(CONFIG_TXPWR_BY_RATE_EN), y)
+EXTRA_CFLAGS += -DCONFIG_TXPWR_BY_RATE_EN=1
+else ifeq ($(CONFIG_TXPWR_BY_RATE_EN), auto)
+EXTRA_CFLAGS += -DCONFIG_TXPWR_BY_RATE_EN=2
+endif
+
+ifeq ($(CONFIG_TXPWR_LIMIT_EN), n)
+EXTRA_CFLAGS += -DCONFIG_TXPWR_LIMIT_EN=0
+else ifeq ($(CONFIG_TXPWR_LIMIT_EN), y)
+EXTRA_CFLAGS += -DCONFIG_TXPWR_LIMIT_EN=1
+else ifeq ($(CONFIG_TXPWR_LIMIT_EN), auto)
+EXTRA_CFLAGS += -DCONFIG_TXPWR_LIMIT_EN=2
 endif
 
 ifeq ($(CONFIG_CALIBRATE_TX_POWER_BY_REGULATORY), y)
@@ -840,6 +965,9 @@ ifeq ($(CONFIG_WOWLAN), y)
 EXTRA_CFLAGS += -DCONFIG_WOWLAN
 ifeq ($(CONFIG_SDIO_HCI), y)
 EXTRA_CFLAGS += -DCONFIG_RTW_SDIO_PM_KEEP_POWER
+endif
+ifeq ($(CONFIG_DEFAULT_PATTERNS_EN), y)
+EXTRA_CFLAGS += -DCONFIG_DEFAULT_PATTERNS_EN
 endif
 endif
 
@@ -898,6 +1026,18 @@ ifeq ($(CONFIG_WIFI_MONITOR), y)
 EXTRA_CFLAGS += -DCONFIG_WIFI_MONITOR
 endif
 
+ifeq ($(CONFIG_MCC_MODE), y)
+EXTRA_CFLAGS += -DCONFIG_MCC_MODE
+endif
+
+ifeq ($(CONFIG_RTW_NAPI), y)
+EXTRA_CFLAGS += -DCONFIG_RTW_NAPI
+endif
+
+ifeq ($(CONFIG_RTW_GRO), y)
+EXTRA_CFLAGS += -DCONFIG_RTW_GRO
+endif
+
 ifeq ($(CONFIG_MP_VHT_HW_TX_MODE), y)
 EXTRA_CFLAGS += -DCONFIG_MP_VHT_HW_TX_MODE
 ifeq ($(CONFIG_PLATFORM_I386_PC), y)
@@ -909,6 +1049,15 @@ EXTRA_CFLAGS += -mfloat-abi=hard
 endif
 endif
 
+ifeq ($(CONFIG_APPEND_VENDOR_IE_ENABLE), y)
+EXTRA_CFLAGS += -DCONFIG_APPEND_VENDOR_IE_ENABLE
+endif
+
+ifeq ($(CONFIG_RTW_DEBUG), y)
+EXTRA_CFLAGS += -DCONFIG_RTW_DEBUG
+EXTRA_CFLAGS += -DRTW_LOG_LEVEL=$(CONFIG_RTW_LOG_LEVEL)
+endif
+
 EXTRA_CFLAGS += -DDM_ODM_SUPPORT_TYPE=0x04
 
 ifeq ($(CONFIG_PLATFORM_I386_PC), y)
@@ -918,6 +1067,19 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/i386/)
 ARCH ?= $(SUBARCH)
 CROSS_COMPILE ?=
 KVER  := $(shell uname -r)
+KSRC := /lib/modules/$(KVER)/build
+MODDESTDIR := /lib/modules/$(KVER)/kernel/drivers/net/wireless/
+INSTALL_PREFIX :=
+endif
+
+ifeq ($(CONFIG_PLATFORM_NV_TK1), y)
+EXTRA_CFLAGS += -DCONFIG_PLATFORM_NV_TK1
+EXTRA_CFLAGS += -DCONFIG_LITTLE_ENDIAN
+EXTRA_CFLAGS += -DCONFIG_IOCTL_CFG80211 -DRTW_USE_CFG80211_STA_EVENT
+EXTRA_CFLAGS += -DCONFIG_CONCURRENT_MODE
+ARCH ?= arm
+CROSS_COMPILE ?=
+KVER := $(shell uname -r)
 KSRC := /lib/modules/$(KVER)/build
 MODDESTDIR := /lib/modules/$(KVER)/kernel/drivers/net/wireless/
 INSTALL_PREFIX :=
@@ -1548,6 +1710,7 @@ EXTRA_CFLAGS += -DCONFIG_LITTLE_ENDIAN
 EXTRA_CFLAGS += -DCONFIG_TRAFFIC_PROTECT
 # default setting for Android 4.1, 4.2
 EXTRA_CFLAGS += -DCONFIG_CONCURRENT_MODE
+EXTRA_CFLAGS += -DCONFIG_IFACE_NUMBER=3
 EXTRA_CFLAGS += -DCONFIG_IOCTL_CFG80211 -DRTW_USE_CFG80211_STA_EVENT
 #EXTRA_CFLAGS +=  -DCONFIG_QOS_OPTIMIZATION
 EXTRA_CFLAGS += -DCONFIG_QOS_OPTIMIZATION
@@ -1571,6 +1734,36 @@ CROSS_COMPILE := /home/realtek/software_phoenix/phoenix/toolchain/usr/local/arm-
 KSRC := /home/realtek/software_phoenix/linux-kernel
 MODULE_NAME := 8192eu
 
+endif
+
+ifeq ($(CONFIG_PLATFORM_RTK129X), y)
+EXTRA_CFLAGS += -DCONFIG_LITTLE_ENDIAN
+EXTRA_CFLAGS += -DRTK_129X_PLATFORM
+EXTRA_CFLAGS += -DCONFIG_TRAFFIC_PROTECT
+# default setting for Android 4.1, 4.2
+#EXTRA_CFLAGS += -DCONFIG_CONCURRENT_MODE
+EXTRA_CFLAGS += -DCONFIG_IOCTL_CFG80211 -DRTW_USE_CFG80211_STA_EVENT
+#EXTRA_CFLAGS += -DCONFIG_P2P_IPS -DCONFIG_QOS_OPTIMIZATION
+EXTRA_CFLAGS += -DCONFIG_QOS_OPTIMIZATION
+EXTRA_CFLAGS += -Wno-error=date-time
+
+#EXTRA_CFLAGS += -DCONFIG_#PLATFORM_OPS
+ifeq ($(CONFIG_USB_HCI), y)
+EXTRA_CFLAGS += -DCONFIG_USE_USB_BUFFER_ALLOC_TX
+#_PLATFORM_FILES += platform/platform_ARM_SUNxI_usb.o
+endif
+ifeq ($(CONFIG_SDIO_HCI), y)
+_PLATFORM_FILES += platform/platform_ARM_SUNnI_sdio.o
+endif
+
+ARCH := arm64
+
+# ==== Cross compile setting for Android 4.4 SDK =====
+#CROSS_COMPILE := arm-linux-gnueabihf-
+KVER  := 4.1.10
+CROSS_COMPILE := $(CROSS)
+KSRC := $(LINUX_KERNEL_PATH)
+MODULE_NAME := 8822be
 endif
 
 ifeq ($(CONFIG_PLATFORM_NOVATEK_NT72668), y)
@@ -1631,6 +1824,7 @@ rtk_core :=	core/rtw_cmd.o \
 		core/rtw_ieee80211.o \
 		core/rtw_mlme.o \
 		core/rtw_mlme_ext.o \
+		core/rtw_mi.o \
 		core/rtw_wlan_util.o \
 		core/rtw_vht.o \
 		core/rtw_pwrctrl.o \
@@ -1644,10 +1838,15 @@ rtk_core :=	core/rtw_cmd.o \
 		core/rtw_br_ext.o \
 		core/rtw_iol.o \
 		core/rtw_sreset.o \
+		core/rtw_btcoex_wifionly.o \
 		core/rtw_btcoex.o \
 		core/rtw_beamforming.o \
 		core/rtw_odm.o \
 		core/efuse/rtw_efuse.o 
+
+ifeq ($(CONFIG_SDIO_HCI), y)
+rtk_core += core/rtw_sdio.o
+endif
 
 $(MODULE_NAME)-y += $(rtk_core)
 
@@ -1661,8 +1860,7 @@ $(MODULE_NAME)-y += $(_HAL_INTFS_FILES)
 $(MODULE_NAME)-y += $(_OUTSRC_FILES)
 $(MODULE_NAME)-y += $(_PLATFORM_FILES)
 
-$(MODULE_NAME)-$(CONFIG_MP_INCLUDED) += core/rtw_mp.o \
-					core/rtw_mp_ioctl.o
+$(MODULE_NAME)-$(CONFIG_MP_INCLUDED) += core/rtw_mp.o
 
 ifeq ($(CONFIG_RTL8723B), y)
 $(MODULE_NAME)-$(CONFIG_MP_INCLUDED)+= core/rtw_bt_mp.o
@@ -1698,9 +1896,8 @@ config_r:
 .PHONY: modules clean
 
 clean:
-	cd hal/phydm/ ; rm -fr */*.mod.c */*.mod */*.o */.*.cmd */*.ko
-	cd hal/phydm/ ; rm -fr *.mod.c *.mod *.o .*.cmd *.ko
-	cd hal/led ; rm -fr *.mod.c *.mod *.o .*.cmd *.ko
+	#$(MAKE) -C $(KSRC) M=$(shell pwd) clean
+	cd hal ; rm -fr */*/*/*.mod.c */*/*/*.mod */*/*/*.o */*/*/.*.cmd */*/*/*.ko
 	cd hal ; rm -fr */*/*.mod.c */*/*.mod */*/*.o */*/.*.cmd */*/*.ko
 	cd hal ; rm -fr */*.mod.c */*.mod */*.o */.*.cmd */*.ko
 	cd hal ; rm -fr *.mod.c *.mod *.o .*.cmd *.ko
