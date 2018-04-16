@@ -311,7 +311,9 @@ static void dw_mci_rockchip_platfm_shutdown(struct platform_device *pdev)
 {
 	struct dw_mci *host = platform_get_drvdata(pdev);
 	struct mmc_host *mmc = host->slot[0]->mmc;
-	int ret;
+	struct device_node *np = host->dev->of_node;
+	int ret, gpio;
+	enum of_gpio_flags flags;
 
 	mdelay(20);
 
@@ -320,6 +322,22 @@ static void dw_mci_rockchip_platfm_shutdown(struct platform_device *pdev)
 
 	if (!IS_ERR(mmc->supply.vqmmc))
 		regulator_set_voltage(mmc->supply.vqmmc, 3000000, 3300000);
+
+	gpio = of_get_named_gpio_flags(np, "maskrom_gpio", 0, &flags);
+
+	if (gpio_is_valid(gpio)) {
+		if(!gpio_request(gpio, "maskrom_gpio")) {
+	        	if (!gpio_direction_output(gpio, 0)) {
+		        	gpio_free(gpio);
+				dev_info(host->dev, "set maskrom gpio to low\n");
+	        	}else{
+				gpio_free(gpio);
+				dev_err(host->dev, "maskrom_gpio set low fail\n");
+			}
+		}else{
+			dev_err(host->dev, "maskrom_gpio request fail\n");
+		}
+	}
 }
 
 #ifdef CONFIG_PM_SLEEP
