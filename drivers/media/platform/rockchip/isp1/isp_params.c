@@ -352,6 +352,8 @@ static void lsc_config(struct rkisp1_isp_params_vdev *params_vdev,
 static void flt_config(struct rkisp1_isp_params_vdev *params_vdev,
 		       const struct cifisp_flt_config *arg)
 {
+	u32 filt_mode;
+
 	rkisp1_iowrite32(params_vdev, arg->thresh_bl0, CIF_ISP_FILT_THRESH_BL0);
 	rkisp1_iowrite32(params_vdev, arg->thresh_bl1, CIF_ISP_FILT_THRESH_BL1);
 	rkisp1_iowrite32(params_vdev, arg->thresh_sh0, CIF_ISP_FILT_THRESH_SH0);
@@ -363,11 +365,14 @@ static void flt_config(struct rkisp1_isp_params_vdev *params_vdev,
 	rkisp1_iowrite32(params_vdev, arg->fac_sh1, CIF_ISP_FILT_FAC_SH1);
 	rkisp1_iowrite32(params_vdev, arg->lum_weight, CIF_ISP_FILT_LUM_WEIGHT);
 
-	rkisp1_iowrite32(params_vdev, (arg->mode ? CIF_ISP_FLT_MODE_DNR : 0) |
-			 CIF_ISP_FLT_CHROMA_V_MODE(arg->chr_v_mode) |
-			 CIF_ISP_FLT_CHROMA_H_MODE(arg->chr_h_mode) |
-			 CIF_ISP_FLT_GREEN_STAGE1(arg->grn_stage1),
-			 CIF_ISP_FILT_MODE);
+	filt_mode = rkisp1_ioread32(params_vdev, CIF_ISP_FILT_MODE);
+	filt_mode &= CIF_ISP_FLT_ENA;
+	if (arg->mode)
+		filt_mode |= CIF_ISP_FLT_MODE_DNR;
+	filt_mode |= CIF_ISP_FLT_CHROMA_V_MODE(arg->chr_v_mode) |
+				 CIF_ISP_FLT_CHROMA_H_MODE(arg->chr_h_mode) |
+				 CIF_ISP_FLT_GREEN_STAGE1(arg->grn_stage1);
+	rkisp1_iowrite32(params_vdev, filt_mode, CIF_ISP_FILT_MODE);
 }
 
 /* ISP demosaic interface function */
