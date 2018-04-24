@@ -1,2 +1,2 @@
 obj-y				+= dsi/
-obj-$(CONFIG_RTL8723BS)	+= rtl8723bs/
+#obj-$(CONFIG_RTL8723BS)	+= rtl8723bs/
