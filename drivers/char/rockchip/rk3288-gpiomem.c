@@ -39,6 +39,10 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * Ported to rk3288 from Jorg Wolff, 2017
+*/
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -100,6 +104,7 @@ static const struct vm_operations_struct rk3288_gpiomem_vm_ops = {
 	.access = generic_access_phys
 #endif
 };
+
 static int address_is_allowed(unsigned long pfn, unsigned long size)
 {
     unsigned long address = pfn << PAGE_SHIFT;
@@ -174,7 +179,7 @@ static int rk3288_gpiomem_dev_uevent(struct device *dev, struct kobj_uevent_env 
     return 0;
 }
 
- /****************************************************************************
+/****************************************************************************
 *
 *   Probe and remove functions
 *
