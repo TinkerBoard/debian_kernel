@@ -1,19 +1,24 @@
 /*
  *
- * (C) COPYRIGHT 2012-2017 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2012-2018 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 /*
  * Code for supporting explicit Linux fences (CONFIG_SYNC_FILE)
@@ -161,7 +166,9 @@ static void kbase_fence_wait_callback(struct dma_fence *fence,
 	struct kbase_context *kctx = katom->kctx;
 
 	/* Cancel atom if fence is erroneous */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
+#if (KERNEL_VERSION(4, 11, 0) <= LINUX_VERSION_CODE || \
+	 (KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE && \
+	  KERNEL_VERSION(4, 9, 68) <= LINUX_VERSION_CODE))
 	if (dma_fence_is_signaled(kcb->fence) && kcb->fence->error)
 #else
 	if (dma_fence_is_signaled(kcb->fence) && kcb->fence->status < 0)
@@ -277,7 +284,9 @@ static void kbase_sync_fence_info_get(struct dma_fence *fence,
 	 * 1 : signaled
 	 */
 	if (dma_fence_is_signaled(fence)) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
+#if (KERNEL_VERSION(4, 11, 0) <= LINUX_VERSION_CODE || \
+	 (KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE && \
+	  KERNEL_VERSION(4, 9, 68) <= LINUX_VERSION_CODE))
 		int status = fence->error;
 #else
 		int status = fence->status;

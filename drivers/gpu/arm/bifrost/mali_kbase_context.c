@@ -1,19 +1,24 @@
 /*
  *
- * (C) COPYRIGHT 2010-2017 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2018 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 
 
@@ -27,15 +32,6 @@
 #include <mali_kbase_dma_fence.h>
 #include <mali_kbase_ctx_sched.h>
 
-/**
- * kbase_create_context() - Create a kernel base context.
- * @kbdev: Kbase device
- * @is_compat: Force creation of a 32-bit context
- *
- * Allocate and init a kernel base context.
- *
- * Return: new kbase context
- */
 struct kbase_context *
 kbase_create_context(struct kbase_device *kbdev, bool is_compat)
 {
@@ -59,6 +55,11 @@ kbase_create_context(struct kbase_device *kbdev, bool is_compat)
 	atomic_set(&kctx->refcount, 0);
 	if (is_compat)
 		kbase_ctx_flag_set(kctx, KCTX_COMPAT);
+#if defined(CONFIG_64BIT)
+	else
+		kbase_ctx_flag_set(kctx, KCTX_FORCE_SAME_VA);
+#endif /* !defined(CONFIG_64BIT) */
+
 #ifdef CONFIG_MALI_BIFROST_TRACE_TIMELINE
 	kctx->timeline.owner_tgid = task_tgid_nr(current);
 #endif
@@ -114,9 +115,6 @@ kbase_create_context(struct kbase_device *kbdev, bool is_compat)
 
 	INIT_LIST_HEAD(&kctx->waiting_soft_jobs);
 	spin_lock_init(&kctx->waiting_soft_jobs_lock);
-#ifdef CONFIG_KDS
-	INIT_LIST_HEAD(&kctx->waiting_kds_resource);
-#endif
 	err = kbase_dma_fence_init(kctx);
 	if (err)
 		goto free_event;
@@ -168,9 +166,8 @@ kbase_create_context(struct kbase_device *kbdev, bool is_compat)
 
 	mutex_init(&kctx->vinstr_cli_lock);
 
-	setup_timer(&kctx->soft_job_timeout,
-		    kbasep_soft_job_timeout_worker,
-		    (uintptr_t)kctx);
+	kbase_timer_setup(&kctx->soft_job_timeout,
+			  kbasep_soft_job_timeout_worker);
 
 	return kctx;
 
@@ -218,13 +215,6 @@ static void kbase_reg_pending_dtor(struct kbase_va_region *reg)
 	kfree(reg);
 }
 
-/**
- * kbase_destroy_context - Destroy a kernel base context.
- * @kctx: Context to destroy
- *
- * Calls kbase_destroy_os_context() to free OS specific structures.
- * Will release all outstanding regions.
- */
 void kbase_destroy_context(struct kbase_context *kctx)
 {
 	struct kbase_device *kbdev;
@@ -244,6 +234,8 @@ void kbase_destroy_context(struct kbase_context *kctx)
 	/* A suspend won't happen here, because we're in a syscall from a userspace
 	 * thread. */
 	kbase_pm_context_active(kbdev);
+
+	kbase_mem_pool_mark_dying(&kctx->mem_pool);
 
 	kbase_jd_zap_context(kctx);
 
@@ -296,8 +288,6 @@ void kbase_destroy_context(struct kbase_context *kctx)
 
 	kbase_jd_exit(kctx);
 
-	kbase_pm_context_idle(kbdev);
-
 	kbase_dma_fence_term(kctx);
 
 	mutex_lock(&kbdev->mmu_hw_mutex);
@@ -318,16 +308,11 @@ void kbase_destroy_context(struct kbase_context *kctx)
 	WARN_ON(atomic_read(&kctx->nonmapped_pages) != 0);
 
 	vfree(kctx);
+
+	kbase_pm_context_idle(kbdev);
 }
 KBASE_EXPORT_SYMBOL(kbase_destroy_context);
 
-/**
- * kbase_context_set_create_flags - Set creation flags on a context
- * @kctx: Kbase context
- * @flags: Flags to set
- *
- * Return: 0 on success
- */
 int kbase_context_set_create_flags(struct kbase_context *kctx, u32 flags)
 {
 	int err = 0;

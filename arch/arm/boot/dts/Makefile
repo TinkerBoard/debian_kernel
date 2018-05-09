@@ -519,10 +519,14 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3066a-marsboard.dtb \
 	rk3066a-rayeager.dtb \
 	rk3126-bnd-d708.dtb \
+	rk3126-bnd-m88-emmc.dtb \
 	rk3126-evb.dtb \
 	rk3128-fireprime.dtb \
+	rk3128h-box.dtb \
 	rk3188-radxarock.dtb \
 	rk3228-evb.dtb \
+	rk3229-at-3nod.dtb \
+	rk3229-at-3nod-func.dtb \
 	rk3229-at-gva.dtb \
 	rk3229-echo-v10.dtb \
 	rk3229-evb.dtb \

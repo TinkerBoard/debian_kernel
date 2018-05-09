@@ -1,19 +1,24 @@
 /*
  *
- * (C) COPYRIGHT 2015-2017 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2015-2018 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 #include <linux/anon_inodes.h>
 #include <linux/atomic.h>
@@ -144,12 +149,14 @@ enum tl_msg_id_obj {
 	KBASE_TL_ATTRIB_ATOM_CONFIG,
 	KBASE_TL_ATTRIB_ATOM_PRIORITY,
 	KBASE_TL_ATTRIB_ATOM_STATE,
-	KBASE_TL_ATTRIB_ATOM_PRIORITY_CHANGE,
+	KBASE_TL_ATTRIB_ATOM_PRIORITIZED,
 	KBASE_TL_ATTRIB_ATOM_JIT,
 	KBASE_TL_ATTRIB_AS_CONFIG,
 	KBASE_TL_EVENT_LPU_SOFTSTOP,
 	KBASE_TL_EVENT_ATOM_SOFTSTOP_EX,
 	KBASE_TL_EVENT_ATOM_SOFTSTOP_ISSUE,
+	KBASE_TL_EVENT_ATOM_SOFTJOB_START,
+	KBASE_TL_EVENT_ATOM_SOFTJOB_END,
 
 	/* Job dump specific events. */
 	KBASE_JD_GPU_SOFT_RESET
@@ -453,8 +460,8 @@ static const struct tp_desc tp_desc_obj[] = {
 		"atom,state"
 	},
 	{
-		KBASE_TL_ATTRIB_ATOM_PRIORITY_CHANGE,
-		__stringify(KBASE_TL_ATTRIB_ATOM_PRIORITY_CHANGE),
+		KBASE_TL_ATTRIB_ATOM_PRIORITIZED,
+		__stringify(KBASE_TL_ATTRIB_ATOM_PRIORITIZED),
 		"atom caused priority change",
 		"@p",
 		"atom"
@@ -491,6 +498,20 @@ static const struct tp_desc tp_desc_obj[] = {
 		KBASE_TL_EVENT_ATOM_SOFTSTOP_ISSUE,
 		__stringify(KBASE_TL_EVENT_SOFTSTOP_ISSUE),
 		"atom softstop issued",
+		"@p",
+		"atom"
+	},
+	{
+		KBASE_TL_EVENT_ATOM_SOFTJOB_START,
+		__stringify(KBASE_TL_EVENT_ATOM_SOFTJOB_START),
+		"atom soft job has started",
+		"@p",
+		"atom"
+	},
+	{
+		KBASE_TL_EVENT_ATOM_SOFTJOB_END,
+		__stringify(KBASE_TL_EVENT_ATOM_SOFTJOB_END),
+		"atom soft job has completed",
 		"@p",
 		"atom"
 	},
@@ -1037,17 +1058,17 @@ static void kbasep_tlstream_flush_stream(enum tl_stream_type stype)
 
 /**
  * kbasep_tlstream_autoflush_timer_callback - autoflush timer callback
- * @data:  unused
+ * @timer: unused
  *
  * Timer is executed periodically to check if any of the stream contains
  * buffer ready to be submitted to user space.
  */
-static void kbasep_tlstream_autoflush_timer_callback(unsigned long data)
+static void kbasep_tlstream_autoflush_timer_callback(struct timer_list *timer)
 {
 	enum tl_stream_type stype;
 	int                 rcode;
 
-	CSTD_UNUSED(data);
+	CSTD_UNUSED(timer);
 
 	for (stype = 0; stype < TL_STREAM_TYPE_COUNT; stype++) {
 		struct tl_stream *stream = tl_stream[stype];
@@ -1371,9 +1392,8 @@ int kbase_tlstream_init(void)
 
 	/* Initialize autoflush timer. */
 	atomic_set(&autoflush_timer_active, 0);
-	setup_timer(&autoflush_timer,
-			kbasep_tlstream_autoflush_timer_callback,
-			0);
+	kbase_timer_setup(&autoflush_timer,
+			  kbasep_tlstream_autoflush_timer_callback);
 
 	return 0;
 }
@@ -2208,9 +2228,9 @@ void __kbase_tlstream_tl_attrib_atom_state(void *atom, u32 state)
 	kbasep_tlstream_msgbuf_release(TL_STREAM_TYPE_OBJ, flags);
 }
 
-void __kbase_tlstream_tl_attrib_atom_priority_change(void *atom)
+void __kbase_tlstream_tl_attrib_atom_prioritized(void *atom)
 {
-	const u32     msg_id = KBASE_TL_ATTRIB_ATOM_PRIORITY_CHANGE;
+	const u32     msg_id = KBASE_TL_ATTRIB_ATOM_PRIORITIZED;
 	const size_t  msg_size =
 		sizeof(msg_id) + sizeof(u64) + sizeof(atom);
 	unsigned long flags;
@@ -2340,6 +2360,52 @@ void __kbase_tlstream_tl_event_atom_softstop_ex(void *atom)
 void __kbase_tlstream_tl_event_atom_softstop_issue(void *atom)
 {
 	const u32     msg_id = KBASE_TL_EVENT_ATOM_SOFTSTOP_ISSUE;
+	const size_t  msg_size =
+		sizeof(msg_id) + sizeof(u64) + sizeof(atom);
+	unsigned long flags;
+	char          *buffer;
+	size_t        pos = 0;
+
+	buffer = kbasep_tlstream_msgbuf_acquire(
+			TL_STREAM_TYPE_OBJ,
+			msg_size, &flags);
+	KBASE_DEBUG_ASSERT(buffer);
+
+	pos = kbasep_tlstream_write_bytes(buffer, pos, &msg_id, sizeof(msg_id));
+	pos = kbasep_tlstream_write_timestamp(buffer, pos);
+	pos = kbasep_tlstream_write_bytes(
+			buffer, pos, &atom, sizeof(atom));
+	KBASE_DEBUG_ASSERT(msg_size == pos);
+
+	kbasep_tlstream_msgbuf_release(TL_STREAM_TYPE_OBJ, flags);
+}
+
+void __kbase_tlstream_tl_event_atom_softjob_start(void *atom)
+{
+	const u32     msg_id = KBASE_TL_EVENT_ATOM_SOFTJOB_START;
+	const size_t  msg_size =
+		sizeof(msg_id) + sizeof(u64) + sizeof(atom);
+	unsigned long flags;
+	char          *buffer;
+	size_t        pos = 0;
+
+	buffer = kbasep_tlstream_msgbuf_acquire(
+			TL_STREAM_TYPE_OBJ,
+			msg_size, &flags);
+	KBASE_DEBUG_ASSERT(buffer);
+
+	pos = kbasep_tlstream_write_bytes(buffer, pos, &msg_id, sizeof(msg_id));
+	pos = kbasep_tlstream_write_timestamp(buffer, pos);
+	pos = kbasep_tlstream_write_bytes(
+			buffer, pos, &atom, sizeof(atom));
+	KBASE_DEBUG_ASSERT(msg_size == pos);
+
+	kbasep_tlstream_msgbuf_release(TL_STREAM_TYPE_OBJ, flags);
+}
+
+void __kbase_tlstream_tl_event_atom_softjob_end(void *atom)
+{
+	const u32     msg_id = KBASE_TL_EVENT_ATOM_SOFTJOB_END;
 	const size_t  msg_size =
 		sizeof(msg_id) + sizeof(u64) + sizeof(atom);
 	unsigned long flags;

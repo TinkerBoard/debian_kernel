@@ -1700,7 +1700,7 @@ static int _opp_add_static_v2(struct device *dev, struct device_node *np)
 
 	/* Check if the OPP supports hardware's hierarchy of versions or not */
 	if (!_opp_is_supported(dev, opp_table, np)) {
-		dev_dbg(dev, "OPP not supported by hardware: %llu\n", rate);
+		dev_err(dev, "OPP not supported by hardware: %llu\n", rate);
 		goto free_opp;
 	}
 

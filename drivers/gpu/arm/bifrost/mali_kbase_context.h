@@ -1,26 +1,59 @@
 /*
  *
- * (C) COPYRIGHT 2011-2016 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2011-2016, 2018 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 #ifndef _KBASE_CONTEXT_H_
 #define _KBASE_CONTEXT_H_
 
 #include <linux/atomic.h>
 
+/**
+ * kbase_create_context() - Create a kernel base context.
+ * @kbdev: Kbase device
+ * @is_compat: Force creation of a 32-bit context
+ *
+ * Allocate and init a kernel base context.
+ *
+ * Return: new kbase context
+ */
+struct kbase_context *
+kbase_create_context(struct kbase_device *kbdev, bool is_compat);
 
+/**
+ * kbase_destroy_context - Destroy a kernel base context.
+ * @kctx: Context to destroy
+ *
+ * Calls kbase_destroy_os_context() to free OS specific structures.
+ * Will release all outstanding regions.
+ */
+void kbase_destroy_context(struct kbase_context *kctx);
+
+/**
+ * kbase_context_set_create_flags - Set creation flags on a context
+ * @kctx: Kbase context
+ * @flags: Flags to set, which shall be one of the flags of
+ *         BASE_CONTEXT_CREATE_KERNEL_FLAGS.
+ *
+ * Return: 0 on success, -EINVAL otherwise when an invalid flag is specified.
+ */
 int kbase_context_set_create_flags(struct kbase_context *kctx, u32 flags);
 
 /**

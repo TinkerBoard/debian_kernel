@@ -42,9 +42,9 @@
 		compatible = "pwm-backlight";
 		pwms = <&pwm1 0 25000 0>;
 		brightness-levels = <
-			  0   1   2   3   4   5   6   7
-			  8   9  10  11  12  13  14  15
-			 16  17  18  19  20  21  22  23
+			 0   10  10  11  11  12  12  13
+			 13  14  14  15  15  16  16  17
+			 17  18  18  19  20  21  22  23
 			 24  25  26  27  28  29  30  31
 			 32  33  34  35  36  37  38  39
 			 40  41  42  43  44  45  46  47
@@ -75,6 +75,15 @@
 			240 241 242 243 244 245 246 247
 			248 249 250 251 252 253 254 255>;
 		default-brightness-level = <200>;
+	};
+
+	charge-animation {
+		compatible = "rockchip,uboot-charge";
+		rockchip,uboot-charge-on = <1>;
+		rockchip,android-charge-on = <0>;
+		rockchip,uboot-low-power-voltage = <3500>;
+		rockchip,screen-on-voltage = <3600>;
+		status = "okay";
 	};
 
 	rk817-sound {
@@ -223,8 +232,39 @@
 	cpu-supply = <&vdd_arm>;
 };
 
+&cpu0_opp_table {
+	/*
+	 * max IR-drop values on different freq condition for this board!
+	 */
+	rockchip,board-irdrop = <
+		/*MHz	MHz	uV */
+		0	815	37500
+		816	1119	50000
+		1200	1512	75000
+	>;
+};
+
+&dmc_opp_table {
+	/*
+	 * max IR-drop values on different freq condition for this board!
+	 */
+	rockchip,board-irdrop = <
+		/*MHz	MHz	uV */
+		451	800	75000
+	>;
+};
+
 &dsi_in_vopl {
 	status = "disabled";
+};
+
+&dfi {
+	status = "okay";
+};
+
+&dmc {
+	center-supply = <&vdd_logic>;
+	status = "okay";
 };
 
 &emmc {
@@ -251,12 +291,19 @@
 		reg = <0x20>;
 		interrupt-parent = <&gpio0>;
 		interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
-		pinctrl-names = "default";
+		pinctrl-names = "default", "pmic-sleep",
+				"pmic-power-off", "pmic-reset";
 		pinctrl-0 = <&pmic_int>;
+		pinctrl-1 = <&soc_slppin_slp>, <&rk817_slppin_slp>;
+		pinctrl-2 = <&soc_slppin_gpio>, <&rk817_slppin_pwrdn>;
+		pinctrl-3 = <&soc_slppin_rst>, <&rk817_slppin_rst>;
 		rockchip,system-power-controller;
 		wakeup-source;
 		#clock-cells = <1>;
 		clock-output-names = "rk808-clkout1", "rk808-clkout2";
+		//fb-inner-reg-idxs = <2>;
+		/* 1: rst regs (default in codes), 0: rst the pmic */
+		pmic-reset-func = <0>;
 
 		vcc1-supply = <&vccsys>;
 		vcc2-supply = <&vccsys>;
@@ -272,6 +319,53 @@
 			status = "okay";
 		};
 
+		pinctrl_rk8xx: pinctrl_rk8xx {
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			rk817_ts_gpio1: rk817_ts_gpio1 {
+				pins = "gpio_ts";
+				function = "pin_fun1";
+				/* output-low; */
+				/* input-enable; */
+			};
+
+			rk817_gt_gpio2: rk817_gt_gpio2 {
+				pins = "gpio_gt";
+				function = "pin_fun1";
+			};
+
+			rk817_pin_ts: rk817_pin_ts {
+				pins = "gpio_ts";
+				function = "pin_fun0";
+			};
+
+			rk817_pin_gt: rk817_pin_gt {
+				pins = "gpio_gt";
+				function = "pin_fun0";
+			};
+
+			rk817_slppin_null: rk817_slppin_null {
+				pins = "gpio_slp";
+				function = "pin_fun0";
+			};
+
+			rk817_slppin_slp: rk817_slppin_slp {
+				pins = "gpio_slp";
+				function = "pin_fun1";
+			};
+
+			rk817_slppin_pwrdn: rk817_slppin_pwrdn {
+				pins = "gpio_slp";
+				function = "pin_fun2";
+			};
+
+			rk817_slppin_rst: rk817_slppin_rst {
+				pins = "gpio_slp";
+				function = "pin_fun3";
+			};
+		};
+
 		regulators {
 			vdd_logic: DCDC_REG1 {
 				regulator-always-on;
@@ -279,7 +373,7 @@
 				regulator-min-microvolt = <950000>;
 				regulator-max-microvolt = <1350000>;
 				regulator-ramp-delay = <6001>;
-				regulator-initial-mode = <0x1>;
+				regulator-initial-mode = <0x2>;
 				regulator-name = "vdd_logic";
 				regulator-state-mem {
 					regulator-on-in-suspend;
@@ -293,7 +387,7 @@
 				regulator-min-microvolt = <950000>;
 				regulator-max-microvolt = <1350000>;
 				regulator-ramp-delay = <6001>;
-				regulator-initial-mode = <0x1>;
+				regulator-initial-mode = <0x2>;
 				regulator-name = "vdd_arm";
 				regulator-state-mem {
 					regulator-off-in-suspend;
@@ -304,7 +398,7 @@
 			vcc_ddr: DCDC_REG3 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-initial-mode = <0x1>;
+				regulator-initial-mode = <0x2>;
 				regulator-name = "vcc_ddr";
 				regulator-state-mem {
 					regulator-on-in-suspend;
@@ -316,10 +410,10 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <3000000>;
 				regulator-max-microvolt = <3000000>;
-				regulator-initial-mode = <0x1>;
+				regulator-initial-mode = <0x2>;
 				regulator-name = "vcc_3v0";
 				regulator-state-mem {
-					regulator-off-in-suspend;
+					regulator-on-in-suspend;
 					regulator-suspend-microvolt = <3000000>;
 				};
 			};
@@ -390,8 +484,6 @@
 			};
 
 			vcc_sd: LDO_REG6 {
-				regulator-always-on;
-				regulator-boot-on;
 				regulator-min-microvolt = <3300000>;
 				regulator-max-microvolt = <3300000>;
 
@@ -404,7 +496,6 @@
 			};
 
 			vcc2v8_dvp: LDO_REG7 {
-				regulator-always-on;
 				regulator-boot-on;
 				regulator-min-microvolt = <2800000>;
 				regulator-max-microvolt = <2800000>;
@@ -417,20 +508,18 @@
 			};
 
 			vcc1v8_dvp: LDO_REG8 {
-				regulator-always-on;
 				regulator-boot-on;
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
 
 				regulator-name = "vcc1v8_dvp";
 				regulator-state-mem {
-					regulator-on-in-suspend;
+					regulator-off-in-suspend;
 					regulator-suspend-microvolt = <1800000>;
 				};
 			};
 
 			vdd1v5_dvp: LDO_REG9 {
-				regulator-always-on;
 				regulator-boot-on;
 				regulator-min-microvolt = <1500000>;
 				regulator-max-microvolt = <1500000>;
@@ -458,21 +547,21 @@
 
 		battery {
 			compatible = "rk817,battery";
-			ocv_table = <3500 3625 3685 3697 3718 3735 3748
-				3760 3774 3788 3802 3816 3834 3853
-				3877 3908 3946 3975 4018 4071 4106>;
-			design_capacity = <2500>;
-			design_qmax = <2750>;
+			ocv_table = <3500 3548 3592 3636 3687 3740 3780
+				3806 3827 3846 3864 3889 3929 3964
+				3993 4015 4030 4041 4056 4076 4148>;
+			design_capacity = <4000>;
+			design_qmax = <4200>;
 			bat_res = <100>;
-			sleep_enter_current = <300>;
-			sleep_exit_current = <300>;
+			sleep_enter_current = <150>;
+			sleep_exit_current = <180>;
 			sleep_filter_current = <100>;
 			power_off_thresd = <3500>;
 			zero_algorithm_vol = <3850>;
 			max_soc_offset = <60>;
 			monitor_sec = <5>;
 			sample_res = <10>;
-			virtual_power = <1>;
+			virtual_power = <0>;
 		};
 
 		charger {
@@ -566,6 +655,21 @@
 			rockchip,pins =
 				<0 RK_PA7 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
+
+		soc_slppin_gpio: soc_slppin_gpio {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_GPIO &pcfg_output_low>;
+		};
+
+		soc_slppin_slp: soc_slppin_slp {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_1 &pcfg_pull_none>;
+		};
+
+		soc_slppin_rst: soc_slppin_rst {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_2 &pcfg_pull_none>;
+		};
 	};
 
 	sdio-pwrseq {
@@ -590,8 +694,13 @@
 	status = "okay";
 };
 
+&rockchip_suspend {
+	status = "okay";
+	rockchip,sleep-debug-en = <1>;
+};
+
 &route_dsi {
-	status = "disabled";
+	status = "okay";
 };
 
 &saradc {
@@ -600,28 +709,37 @@
 };
 
 &sdmmc {
+	bus-width = <4>;
 	cap-mmc-highspeed;
+	cap-sd-highspeed;
 	supports-sd;
-	broken-cd;
 	card-detect-delay = <800>;
 	ignore-pm-notify;
-	keep-power-in-suspend;
-	/*cd-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>; [> CD GPIO <]*/
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	sd-uhs-sdr104;
+	vqmmc-supply = <&vccio_sd>;
+	vmmc-supply = <&vcc_sd>;
 	status = "disabled";
 };
 
 &sdio {
-	max-frequency = <50000000>;
+	bus-width = <4>;
 	cap-sd-highspeed;
 	supports-sdio;
 	ignore-pm-notify;
 	keep-power-in-suspend;
 	non-removable;
 	mmc-pwrseq = <&sdio_pwrseq>;
+	sd-uhs-sdr104;
 	status = "okay";
 };
 
 &tsadc {
+	pinctrl-names = "init", "default";
+	pinctrl-0 = <&tsadc_otp_gpio>;
+	pinctrl-1 = <&tsadc_otp_out>;
 	status = "okay";
 };
 
@@ -629,10 +747,12 @@
 	status = "okay";
 
 	u2phy_host: host-port {
+		rockchip,low-power-mode;
 		status = "okay";
 	};
 
 	u2phy_otg: otg-port {
+		rockchip,low-power-mode;
 		status = "okay";
 	};
 };

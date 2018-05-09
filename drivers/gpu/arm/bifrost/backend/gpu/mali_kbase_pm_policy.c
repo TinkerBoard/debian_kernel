@@ -1,19 +1,24 @@
 /*
  *
- * (C) COPYRIGHT 2010-2016 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2018 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 /*
  * Power policy API implementations
@@ -378,6 +383,7 @@ void kbase_pm_update_active(struct kbase_device *kbdev)
 
 		/* Power on the GPU and any cores requested by the policy */
 		if (pm->backend.poweroff_wait_in_progress) {
+			KBASE_DEBUG_ASSERT(kbdev->pm.backend.gpu_powered);
 			pm->backend.poweron_required = true;
 			spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 		} else {
@@ -922,19 +928,24 @@ KBASE_EXPORT_TEST_API(kbase_pm_request_cores_sync);
 void kbase_pm_request_l2_caches(struct kbase_device *kbdev)
 {
 	unsigned long flags;
-	u32 prior_l2_users_count;
 
 	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
 
-	prior_l2_users_count = kbdev->l2_users_count++;
+	kbdev->l2_users_count++;
 
 	KBASE_DEBUG_ASSERT(kbdev->l2_users_count != 0);
 
-	/* if the GPU is reset while the l2 is on, l2 will be off but
-	 * prior_l2_users_count will be > 0. l2_available_bitmap will have been
-	 * set to 0 though by kbase_pm_init_hw */
-	if (!prior_l2_users_count || !kbdev->l2_available_bitmap)
-		kbase_pm_check_transitions_nolock(kbdev);
+	/* Check for the required L2 transitions.
+	 * Caller would block here for the L2 caches of all core groups to be
+	 * powered on, so need to inform the Hw to power up all the L2 caches.
+	 * Can't rely on the l2_users_count value being non-zero previously to
+	 * avoid checking for the transition, as the count could be non-zero
+	 * even if not all the instances of L2 cache are powered up since
+	 * currently the power status of L2 is not tracked separately for each
+	 * core group. Also if the GPU is reset while the L2 is on, L2 will be
+	 * off but the count will be non-zero.
+	 */
+	kbase_pm_check_transitions_nolock(kbdev);
 
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 	wait_event(kbdev->pm.backend.l2_powered_wait,

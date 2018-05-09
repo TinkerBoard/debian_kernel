@@ -26,11 +26,15 @@
 #include <linux/devfreq_cooling.h>
 #include <linux/devfreq-event.h>
 #include <linux/fb.h>
+#include <linux/input.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_irq.h>
 #include <linux/platform_device.h>
 #include <linux/pm_opp.h>
+#include <linux/pm_qos.h>
 #include <linux/reboot.h>
 #include <linux/regulator/consumer.h>
 #include <linux/rockchip/rockchip_sip.h>
@@ -54,6 +58,10 @@
 						  system_status_nb)
 #define reboot_to_dmcfreq(nb) container_of(nb, struct rockchip_dmcfreq, \
 					   reboot_nb)
+#define df_update_to_dmcfreq(work) container_of(work, struct rockchip_dmcfreq, \
+						devfreq_update)
+#define input_hd_to_dmcfreq(hd) container_of(hd, struct rockchip_dmcfreq, \
+					     input_handler)
 
 #define VIDEO_1080P_SIZE	(1920 * 1080)
 #define FIQ_INIT_HANDLER	(0x1)
@@ -95,6 +103,7 @@ struct share_params {
 	 * 0: never wait flag1
 	 */
 	u32 wait_flag0;
+	u32 complt_hwirq;
 	 /* if need, add parameter after */
 };
 
@@ -758,6 +767,8 @@ struct rockchip_dmcfreq {
 	struct notifier_block fb_nb;
 	struct list_head video_info_list;
 	struct freq_map_table *vop_bw_tbl;
+	struct work_struct devfreq_update;
+	struct input_handler input_handler;
 
 	unsigned long rate, target_rate;
 	unsigned long volt, target_volt;
@@ -792,8 +803,13 @@ struct rockchip_dmcfreq {
 	s32 ts[4];
 	struct thermal_zone_device *ddr_tz;
 
+	unsigned int touchboostpulse_duration_val;
+	u64 touchboostpulse_endtime;
+
 	int (*set_auto_self_refresh)(u32 en);
 };
+
+static struct pm_qos_request pm_qos;
 
 /*
  * function: packaging de-skew setting to px30_ddr_dts_config_timing,
@@ -912,7 +928,7 @@ static int rockchip_dmcfreq_target(struct device *dev, unsigned long *freq,
 	struct dev_pm_opp *opp;
 	struct cpufreq_policy *policy;
 	unsigned long old_clk_rate = dmcfreq->rate;
-	unsigned long opp_rate, target_volt, target_rate;
+	unsigned long target_volt, target_rate;
 	unsigned int cpu_cur, cpufreq_cur;
 	int err = 0;
 
@@ -923,14 +939,13 @@ static int rockchip_dmcfreq_target(struct device *dev, unsigned long *freq,
 		rcu_read_unlock();
 		return PTR_ERR(opp);
 	}
-	opp_rate = dev_pm_opp_get_freq(opp);
 	target_volt = dev_pm_opp_get_voltage(opp);
 
 	rcu_read_unlock();
 
-	target_rate = clk_round_rate(dmcfreq->dmc_clk, opp_rate);
+	target_rate = clk_round_rate(dmcfreq->dmc_clk, *freq);
 	if ((long)target_rate <= 0)
-		target_rate = opp_rate;
+		target_rate = *freq;
 
 	if (dmcfreq->rate == target_rate) {
 		if (dmcfreq->volt == target_volt)
@@ -1028,7 +1043,8 @@ static int rockchip_dmcfreq_target(struct device *dev, unsigned long *freq,
 		}
 	}
 
-	dmcfreq->devfreq->last_status.current_frequency = opp_rate;
+	if (dmcfreq->devfreq)
+		dmcfreq->devfreq->last_status.current_frequency = *freq;
 
 	dmcfreq->volt = target_volt;
 out:
@@ -1080,6 +1096,9 @@ static __maybe_unused int rockchip_dmcfreq_suspend(struct device *dev)
 	struct rockchip_dmcfreq *dmcfreq = dev_get_drvdata(dev);
 	int ret = 0;
 
+	if (!dmcfreq)
+		return 0;
+
 	if (dmcfreq->edev) {
 		ret = devfreq_event_disable_edev(dmcfreq->edev);
 		if (ret < 0) {
@@ -1101,6 +1120,9 @@ static __maybe_unused int rockchip_dmcfreq_resume(struct device *dev)
 {
 	struct rockchip_dmcfreq *dmcfreq = dev_get_drvdata(dev);
 	int ret = 0;
+
+	if (!dmcfreq)
+		return 0;
 
 	if (dmcfreq->edev) {
 		ret = devfreq_event_enable_edev(dmcfreq->edev);
@@ -1568,16 +1590,60 @@ static int rockchip_ddr_set_auto_self_refresh(uint32_t en)
 	return res.a0;
 }
 
+struct dmcfreq_wait_ctrl_t {
+	wait_queue_head_t wait_wq;
+	int wait_flag;
+	int wait_en;
+	int wait_time_out_ms;
+};
+
+static struct dmcfreq_wait_ctrl_t wait_ctrl;
+
+static irqreturn_t wait_complete_irq(int irqno, void *dev_id)
+{
+	struct dmcfreq_wait_ctrl_t *ctrl = dev_id;
+
+	ctrl->wait_flag = 0;
+	wake_up(&ctrl->wait_wq);
+	return IRQ_HANDLED;
+}
+
+int rockchip_dmcfreq_wait_complete(void)
+{
+	if (!wait_ctrl.wait_en) {
+		pr_err("%s: Do not support time out!\n", __func__);
+		return 0;
+	}
+	wait_ctrl.wait_flag = -1;
+
+	/*
+	 * CPUs only enter WFI when idle to make sure that
+	 * FIQn can quick response.
+	 */
+	pm_qos_update_request(&pm_qos, 0);
+
+	wait_event_timeout(wait_ctrl.wait_wq, (wait_ctrl.wait_flag == 0),
+			   msecs_to_jiffies(wait_ctrl.wait_time_out_ms));
+
+	pm_qos_update_request(&pm_qos, PM_QOS_DEFAULT_VALUE);
+
+	return 0;
+}
+
 static int px30_dmc_init(struct platform_device *pdev,
 			 struct rockchip_dmcfreq *dmcfreq)
 {
 	struct arm_smccc_res res;
 	u32 size;
+	int ret;
+	int complt_irq;
+	u32 complt_hwirq;
+	struct irq_data *complt_irq_data;
 
 	res = sip_smc_dram(0, 0,
 			   ROCKCHIP_SIP_CONFIG_DRAM_GET_VERSION);
 	dev_notice(&pdev->dev, "current ATF version 0x%lx!\n", res.a1);
-	if (res.a0 || res.a1 < 0x101) {
+	if (res.a0 || res.a1 < 0x103) {
 		dev_err(&pdev->dev,
 			"trusted firmware need to update or is invalid!\n");
 		return -ENXIO;
@@ -1599,6 +1665,28 @@ static int px30_dmc_init(struct platform_device *pdev,
 	ddr_psci_param = (struct share_params *)res.a1;
 	of_get_px30_timings(&pdev->dev, pdev->dev.of_node,
 			    (uint32_t *)ddr_psci_param);
+
+	init_waitqueue_head(&wait_ctrl.wait_wq);
+	wait_ctrl.wait_en = 1;
+	wait_ctrl.wait_time_out_ms = 17 * 5;
+
+	complt_irq = platform_get_irq_byname(pdev, "complete_irq");
+	if (complt_irq < 0) {
+		dev_err(&pdev->dev, "no IRQ for complete_irq: %d\n",
+			complt_irq);
+		return complt_irq;
+	}
+
+	ret = devm_request_irq(&pdev->dev, complt_irq, wait_complete_irq,
+			       0, dev_name(&pdev->dev), &wait_ctrl);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "cannot request complete_irq\n");
+		return ret;
+	}
+
+	complt_irq_data = irq_get_irq_data(complt_irq);
+	complt_hwirq = irqd_to_hwirq(complt_irq_data);
+	ddr_psci_param->complt_hwirq = complt_hwirq;
 
 	res = sip_smc_dram(SHARE_PAGE_TYPE_DDR, 0,
 			   ROCKCHIP_SIP_CONFIG_DRAM_INIT);
@@ -1924,6 +2012,7 @@ static const struct of_device_id rockchip_dmcfreq_of_match[] = {
 	{ .compatible = "rockchip,rk3128-dmc", .data = rk3128_dmc_init },
 	{ .compatible = "rockchip,rk3228-dmc", .data = rk3228_dmc_init },
 	{ .compatible = "rockchip,rk3288-dmc", .data = rk3288_dmc_init },
+	{ .compatible = "rockchip,rk3308-dmc", .data = NULL },
 	{ .compatible = "rockchip,rk3328-dmc", .data = rk3328_dmc_init },
 	{ .compatible = "rockchip,rk3368-dmc", .data = rk3368_dmc_init },
 	{ .compatible = "rockchip,rk3399-dmc", .data = rk3399_dmc_init },
@@ -1985,7 +2074,7 @@ static int rockchip_get_system_status_rate(struct device_node *np,
 
 	prop = of_find_property(np, porp_name, NULL);
 	if (!prop)
-		return -EINVAL;
+		return -ENODEV;
 
 	if (!prop->value)
 		return -ENODATA;
@@ -2262,17 +2351,20 @@ struct video_info *rockchip_find_video_info(struct rockchip_dmcfreq *dmcfreq,
 	if (!video_info)
 		return NULL;
 
+	mutex_lock(&dmcfreq->lock);
 	list_for_each_entry(info, &dmcfreq->video_info_list, node) {
 		if ((info->width == video_info->width) &&
 		    (info->height == video_info->height) &&
 		    (info->ishevc == video_info->ishevc) &&
 		    (info->videoFramerate == video_info->videoFramerate) &&
 		    (info->streamBitrate == video_info->streamBitrate)) {
+			mutex_unlock(&dmcfreq->lock);
 			kfree(video_info);
 			return info;
 		}
 	}
 
+	mutex_unlock(&dmcfreq->lock);
 	kfree(video_info);
 
 	return NULL;
@@ -2281,14 +2373,20 @@ struct video_info *rockchip_find_video_info(struct rockchip_dmcfreq *dmcfreq,
 static void rockchip_add_video_info(struct rockchip_dmcfreq *dmcfreq,
 				    struct video_info *video_info)
 {
-	if (video_info)
+	if (video_info) {
+		mutex_lock(&dmcfreq->lock);
 		list_add(&video_info->node, &dmcfreq->video_info_list);
+		mutex_unlock(&dmcfreq->lock);
+	}
 }
 
-static void rockchip_del_video_info(struct video_info *video_info)
+static void rockchip_del_video_info(struct rockchip_dmcfreq *dmcfreq,
+				    struct video_info *video_info)
 {
 	if (video_info) {
+		mutex_lock(&dmcfreq->lock);
 		list_del(&video_info->node);
+		mutex_unlock(&dmcfreq->lock);
 		kfree(video_info);
 	}
 }
@@ -2298,7 +2396,9 @@ static void rockchip_update_video_info(struct rockchip_dmcfreq *dmcfreq)
 	struct video_info *video_info;
 	int max_res = 0, max_stream_bitrate = 0, res = 0;
 
+	mutex_lock(&dmcfreq->lock);
 	if (list_empty(&dmcfreq->video_info_list)) {
+		mutex_unlock(&dmcfreq->lock);
 		rockchip_clear_system_status(SYS_STATUS_VIDEO);
 		return;
 	}
@@ -2310,6 +2410,7 @@ static void rockchip_update_video_info(struct rockchip_dmcfreq *dmcfreq)
 		if (video_info->streamBitrate > max_stream_bitrate)
 			max_stream_bitrate = video_info->streamBitrate;
 	}
+	mutex_unlock(&dmcfreq->lock);
 
 	if (max_res <= VIDEO_1080P_SIZE) {
 		rockchip_set_system_status(SYS_STATUS_VIDEO_1080P);
@@ -2338,7 +2439,7 @@ static ssize_t rockchip_dmcfreq_status_store(struct device *dev,
 		/* clear video flag */
 		video_info = rockchip_find_video_info(dmcfreq, buf);
 		if (video_info) {
-			rockchip_del_video_info(video_info);
+			rockchip_del_video_info(dmcfreq, video_info);
 			rockchip_update_video_info(dmcfreq);
 		}
 		break;
@@ -2450,13 +2551,19 @@ static int devfreq_dmc_ondemand_func(struct devfreq *df,
 	unsigned int upthreshold = data->upthreshold;
 	unsigned int downdifferential = data->downdifferential;
 	unsigned long target_freq = 0;
+	u64 now;
 
 	if (dmcfreq->auto_freq_en && !dmcfreq->is_dualview) {
 		if (dmcfreq->status_rate)
 			target_freq = dmcfreq->status_rate;
 		else if (dmcfreq->auto_min_rate)
 			target_freq = dmcfreq->auto_min_rate;
-		target_freq = max(target_freq, dmcfreq->vop_req_rate);
+		now = ktime_to_us(ktime_get());
+		if (now < dmcfreq->touchboostpulse_endtime)
+			target_freq = max3(target_freq, dmcfreq->vop_req_rate,
+					   dmcfreq->boost_rate);
+		else
+			target_freq = max(target_freq, dmcfreq->vop_req_rate);
 	} else {
 		if (dmcfreq->status_rate)
 			target_freq = dmcfreq->status_rate;
@@ -2574,6 +2681,96 @@ static struct devfreq_governor devfreq_dmc_ondemand = {
 	.event_handler = devfreq_dmc_ondemand_handler,
 };
 
+static void rockchip_dmcfreq_devfreq_update(struct work_struct *work)
+{
+	struct rockchip_dmcfreq *dmcfreq = df_update_to_dmcfreq(work);
+
+	rockchip_dmcfreq_update_target(dmcfreq);
+}
+
+static void rockchip_dmcfreq_input_event(struct input_handle *handle,
+					 unsigned int type,
+					 unsigned int code,
+					 int value)
+{
+	struct rockchip_dmcfreq *dmcfreq = handle->private;
+	u64 now, endtime;
+
+	if (type != EV_ABS && type != EV_KEY)
+		return;
+
+	now = ktime_to_us(ktime_get());
+	endtime = now + dmcfreq->touchboostpulse_duration_val;
+	if (endtime < (dmcfreq->touchboostpulse_endtime + 10 * USEC_PER_MSEC))
+		return;
+	dmcfreq->touchboostpulse_endtime = endtime;
+
+	schedule_work(&dmcfreq->devfreq_update);
+}
+
+static int rockchip_dmcfreq_input_connect(struct input_handler *handler,
+					  struct input_dev *dev,
+					  const struct input_device_id *id)
+{
+	int error;
+	struct input_handle *handle;
+	struct rockchip_dmcfreq *dmcfreq = input_hd_to_dmcfreq(handler);
+
+	handle = kzalloc(sizeof(*handle), GFP_KERNEL);
+	if (!handle)
+		return -ENOMEM;
+
+	handle->dev = dev;
+	handle->handler = handler;
+	handle->name = "dmcfreq";
+	handle->private = dmcfreq;
+
+	error = input_register_handle(handle);
+	if (error)
+		goto err2;
+
+	error = input_open_device(handle);
+	if (error)
+		goto err1;
+
+	return 0;
+err1:
+	input_unregister_handle(handle);
+err2:
+	kfree(handle);
+	return error;
+}
+
+static void rockchip_dmcfreq_input_disconnect(struct input_handle *handle)
+{
+	input_close_device(handle);
+	input_unregister_handle(handle);
+	kfree(handle);
+}
+
+static const struct input_device_id rockchip_dmcfreq_input_ids[] = {
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+			INPUT_DEVICE_ID_MATCH_ABSBIT,
+		.evbit = { BIT_MASK(EV_ABS) },
+		.absbit = { [BIT_WORD(ABS_MT_POSITION_X)] =
+			BIT_MASK(ABS_MT_POSITION_X) |
+			BIT_MASK(ABS_MT_POSITION_Y) },
+	},
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_KEYBIT |
+			INPUT_DEVICE_ID_MATCH_ABSBIT,
+		.keybit = { [BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH) },
+		.absbit = { [BIT_WORD(ABS_X)] =
+			BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) },
+	},
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
+		.evbit = { BIT_MASK(EV_KEY) },
+	},
+	{ },
+};
+
 static unsigned long model_static_power(struct devfreq *devfreq,
 					unsigned long voltage)
 {
@@ -2679,9 +2876,11 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 	struct device_node *events_np, *np = pdev->dev.of_node;
 	struct rockchip_dmcfreq *data;
 	struct devfreq_dev_profile *devp = &rockchip_devfreq_dmc_profile;
+	struct dev_pm_opp *opp;
 	const struct of_device_id *match;
 	int (*init)(struct platform_device *pdev,
 		    struct rockchip_dmcfreq *data);
+	unsigned long opp_rate, opp_volt;
 #define MAX_PROP_NAME_LEN	3
 	char name[MAX_PROP_NAME_LEN];
 	bool is_events_available = false;
@@ -2748,32 +2947,69 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 		dev_err(dev, "Invalid operating-points in device tree.\n");
 		return -EINVAL;
 	}
+	rockchip_adjust_opp_by_irdrop(dev);
 
 	if (rockchip_dmcfreq_init_freq_table(dev, devp))
 		return -EFAULT;
+
+	data->rate = clk_get_rate(data->dmc_clk);
+	data->volt = regulator_get_voltage(data->vdd_center);
+	devp->initial_freq = data->rate;
+	opp_rate = data->rate;
+
+	rcu_read_lock();
+	opp = devfreq_recommended_opp(dev, &opp_rate, 0);
+	if (IS_ERR(opp)) {
+		rcu_read_unlock();
+		return PTR_ERR(opp);
+	}
+	opp_volt = dev_pm_opp_get_voltage(opp);
+	rcu_read_unlock();
+
+	if (opp_volt != data->volt) {
+		ret = regulator_set_voltage(data->vdd_center, opp_volt,
+					    INT_MAX);
+		if (ret) {
+			dev_err(dev, "Cannot set voltage %lu uV\n", opp_volt);
+			return ret;
+		}
+	}
+
+	of_property_read_u32(np, "auto-freq-en", &data->auto_freq_en);
+	if (!is_events_available && data->auto_freq_en) {
+		dev_warn(dev, "events isn't available, close auto freq\n");
+		data->auto_freq_en = 0;
+	}
+	ret = rockchip_get_system_status_rate(np, "system-status-freq", data);
+	if (ret) {
+		dev_err(dev, "failed to get system status rate\n");
+		if (ret == -ENODEV && !data->auto_freq_en) {
+			dev_info(dev, "don't add devfreq feature\n");
+			if (data->edev)
+				devfreq_event_disable_edev(data->edev);
+			return 0;
+		}
+	}
 
 	of_property_read_u32(np, "upthreshold",
 			     &data->ondemand_data.upthreshold);
 	of_property_read_u32(np, "downdifferential",
 			     &data->ondemand_data.downdifferential);
 	of_property_read_u32(np, "min-cpu-freq", &data->min_cpu_freq);
-	if (rockchip_get_system_status_rate(np, "system-status-freq", data))
-		dev_err(dev, "failed to get system status rate\n");
-	of_property_read_u32(np, "auto-freq-en", &data->auto_freq_en);
-	if (!is_events_available && data->auto_freq_en) {
-		dev_warn(dev, "events isn't available, close auto freq\n");
-		data->auto_freq_en = 0;
-	}
 	of_property_read_u32(np, "auto-min-freq", (u32 *)&data->auto_min_rate);
 	data->auto_min_rate *= 1000;
 	if (rockchip_get_freq_map_talbe(np, "vop-bw-dmc-freq",
 					&data->vop_bw_tbl))
 		dev_err(dev, "failed to get vop bandwidth to dmc rate\n");
+	of_property_read_u32(np, "touchboost_duration",
+			     (u32 *)&data->touchboostpulse_duration_val);
+	if (data->touchboostpulse_duration_val)
+		data->touchboostpulse_duration_val *= USEC_PER_MSEC;
+	else
+		data->touchboostpulse_duration_val = 500 * USEC_PER_MSEC;
 
-	data->rate = clk_get_rate(data->dmc_clk);
-	data->volt = regulator_get_voltage(data->vdd_center);
-
-	devp->initial_freq = data->rate;
+	pm_qos_add_request(&pm_qos, PM_QOS_CPU_DMA_LATENCY,
+			   PM_QOS_DEFAULT_VALUE);
 
 	ret = devfreq_add_governor(&devfreq_dmc_ondemand);
 	if (ret) {
@@ -2796,7 +3032,7 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 	data->max = devp->freq_table[devp->max_state ? devp->max_state - 1 : 0];
 	data->devfreq->min_freq = data->min;
 	data->devfreq->max_freq = data->max;
-	data->devfreq->last_status.current_frequency = data->rate;
+	data->devfreq->last_status.current_frequency = opp_rate;
 	reset_last_status(data->devfreq);
 
 	if (rockchip_drm_register_notifier_to_dmc(data->devfreq))
@@ -2829,7 +3065,19 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 	if (ret)
 		dev_err(dev, "failed to register system_status sysfs file\n");
 
-	rockchip_set_system_status(SYS_STATUS_NORMAL);
+	if (data->boost_rate) {
+		INIT_WORK(&data->devfreq_update,
+			  rockchip_dmcfreq_devfreq_update);
+		data->input_handler.event = rockchip_dmcfreq_input_event;
+		data->input_handler.connect = rockchip_dmcfreq_input_connect;
+		data->input_handler.disconnect =
+			rockchip_dmcfreq_input_disconnect;
+		data->input_handler.name = "dmcfreq";
+		data->input_handler.id_table = rockchip_dmcfreq_input_ids;
+		ret = input_register_handler(&data->input_handler);
+		if (ret)
+			dev_err(dev, "failed to register input handler\n");
+	}
 
 	ret = ddr_power_model_simple_init(data);
 
@@ -2845,6 +3093,8 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 				ret);
 		}
 	}
+
+	rockchip_set_system_status(SYS_STATUS_NORMAL);
 
 	return 0;
 }

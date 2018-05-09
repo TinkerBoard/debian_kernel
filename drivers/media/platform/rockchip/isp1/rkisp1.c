@@ -302,6 +302,8 @@ static int rkisp1_config_mipi(struct rkisp1_device *dev)
 		    CIF_MIPI_CTRL_CLOCKLANE_ENA;
 
 	writel(mipi_ctrl, base + CIF_MIPI_CTRL);
+	if (dev->isp_ver == ISP_V12)
+		writel(0, base + CIF_ISP_CSI0_CTRL0);
 
 	/* Configure Data Type and Virtual Channel */
 	writel(CIF_MIPI_DATA_SEL_DT(in_fmt->mipi_dt) | CIF_MIPI_DATA_SEL_VC(0),
@@ -445,7 +447,7 @@ static int rkisp1_isp_start(struct rkisp1_device *dev)
 	/* Activate ISP */
 	val = readl(base + CIF_ISP_CTRL);
 	val |= CIF_ISP_CTRL_ISP_CFG_UPD | CIF_ISP_CTRL_ISP_ENABLE |
-	       CIF_ISP_CTRL_ISP_INFORM_ENABLE;
+	       CIF_ISP_CTRL_ISP_INFORM_ENABLE | CIF_ISP_CTRL_ISP_CFG_UPD_PERMANENT;
 	writel(val, base + CIF_ISP_CTRL);
 
 	/* XXX: Is the 1000us too long?

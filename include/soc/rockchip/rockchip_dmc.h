@@ -15,7 +15,7 @@
 
 #include <linux/devfreq.h>
 
-#ifdef ROCKCHIP_PM_DOMAINS
+#ifdef CONFIG_ROCKCHIP_PM_DOMAINS
 int rockchip_pm_register_notify_to_dmc(struct devfreq *devfreq);
 #else
 static inline int rockchip_pm_register_notify_to_dmc(struct devfreq *devfreq)
@@ -28,6 +28,15 @@ static inline int rockchip_pm_register_notify_to_dmc(struct devfreq *devfreq)
 int rockchip_drm_register_notifier_to_dmc(struct devfreq *devfreq);
 #else
 static inline int rockchip_drm_register_notifier_to_dmc(struct devfreq *devfreq)
+{
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_ARM_ROCKCHIP_DMC_DEVFREQ
+int rockchip_dmcfreq_wait_complete(void);
+#else
+static inline int rockchip_dmcfreq_wait_complete(void)
 {
 	return 0;
 }

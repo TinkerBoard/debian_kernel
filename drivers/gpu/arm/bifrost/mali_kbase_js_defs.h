@@ -7,13 +7,18 @@
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 
 
@@ -141,6 +146,48 @@ enum {
 /** Combination of KBASE_JS_ATOM_DONE_<...> bits */
 typedef u32 kbasep_js_atom_done_code;
 
+/*
+ * Context scheduling mode defines for kbase_device::js_ctx_scheduling_mode
+ */
+enum {
+	/*
+	 * In this mode, the context containing higher priority atoms will be
+	 * scheduled first and also the new runnable higher priority atoms can
+	 * preempt lower priority atoms currently running on the GPU, even if
+	 * they belong to a different context.
+	 */
+	KBASE_JS_SYSTEM_PRIORITY_MODE = 0,
+
+	/*
+	 * In this mode, the contexts are scheduled in round-robin fashion and
+	 * the new runnable higher priority atoms can preempt the lower priority
+	 * atoms currently running on the GPU, only if they belong to the same
+	 * context.
+	 */
+	KBASE_JS_PROCESS_LOCAL_PRIORITY_MODE,
+
+	/* Must be the last in the enum */
+	KBASE_JS_PRIORITY_MODE_COUNT,
+};
+
+/*
+ * Internal atom priority defines for kbase_jd_atom::sched_prio
+ */
+enum {
+	KBASE_JS_ATOM_SCHED_PRIO_HIGH = 0,
+	KBASE_JS_ATOM_SCHED_PRIO_MED,
+	KBASE_JS_ATOM_SCHED_PRIO_LOW,
+	KBASE_JS_ATOM_SCHED_PRIO_COUNT,
+};
+
+/* Invalid priority for kbase_jd_atom::sched_prio */
+#define KBASE_JS_ATOM_SCHED_PRIO_INVALID -1
+
+/* Default priority in the case of contexts with no atoms, or being lenient
+ * about invalid priorities from userspace.
+ */
+#define KBASE_JS_ATOM_SCHED_PRIO_DEFAULT KBASE_JS_ATOM_SCHED_PRIO_MED
+
 /**
  * @brief KBase Device Data Job Scheduler sub-structure
  *
@@ -224,12 +271,12 @@ struct kbasep_js_device_data {
 	/**
 	 * List of contexts that can currently be pulled from
 	 */
-	struct list_head ctx_list_pullable[BASE_JM_MAX_NR_SLOTS];
+	struct list_head ctx_list_pullable[BASE_JM_MAX_NR_SLOTS][KBASE_JS_ATOM_SCHED_PRIO_COUNT];
 	/**
 	 * List of contexts that can not currently be pulled from, but have
 	 * jobs currently running.
 	 */
-	struct list_head ctx_list_unpullable[BASE_JM_MAX_NR_SLOTS];
+	struct list_head ctx_list_unpullable[BASE_JM_MAX_NR_SLOTS][KBASE_JS_ATOM_SCHED_PRIO_COUNT];
 
 	/** Number of currently scheduled user contexts (excluding ones that are not submitting jobs) */
 	s8 nr_user_contexts_running;
@@ -334,8 +381,6 @@ struct kbasep_js_atom_retained_state {
 	base_jd_core_req core_req;
 	/* priority */
 	int sched_priority;
-	/** Job Slot to retry submitting to if submission from IRQ handler failed */
-	int retry_submit_on_slot;
 	/* Core group atom was executed on */
 	u32 device_nr;
 
@@ -362,22 +407,6 @@ struct kbasep_js_atom_retained_state {
  */
 #define KBASEP_JS_TICK_RESOLUTION_US 1
 
-/*
- * Internal atom priority defines for kbase_jd_atom::sched_prio
- */
-enum {
-	KBASE_JS_ATOM_SCHED_PRIO_HIGH = 0,
-	KBASE_JS_ATOM_SCHED_PRIO_MED,
-	KBASE_JS_ATOM_SCHED_PRIO_LOW,
-	KBASE_JS_ATOM_SCHED_PRIO_COUNT,
-};
-
-/* Invalid priority for kbase_jd_atom::sched_prio */
-#define KBASE_JS_ATOM_SCHED_PRIO_INVALID -1
-
-/* Default priority in the case of contexts with no atoms, or being lenient
- * about invalid priorities from userspace */
-#define KBASE_JS_ATOM_SCHED_PRIO_DEFAULT KBASE_JS_ATOM_SCHED_PRIO_MED
 
 	  /** @} *//* end group kbase_js */
 	  /** @} *//* end group base_kbase_api */

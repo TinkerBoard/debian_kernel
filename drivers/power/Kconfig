@@ -159,6 +159,7 @@ config BATTERY_SBS
 
 config BATTERY_BQ27XXX
 	tristate "BQ27xxx battery driver"
+	depends on I2C || I2C=n
 	help
 	  Say Y here to enable support for batteries with BQ27xxx (I2C/HDQ) chips.
 
@@ -308,6 +309,7 @@ config BATTERY_RX51
 config CHARGER_ISP1704
 	tristate "ISP1704 USB Charger Detection"
 	depends on USB_PHY
+	depends on USB_GADGET || !USB_GADGET # if USB_GADGET=m, this can't be 'y'
 	help
 	  Say Y to enable support for USB Charger Detection with
 	  ISP1707/ISP1704 USB transceivers.
@@ -474,6 +476,15 @@ config CHARGER_TPS65217
 	help
 	 Say Y here to enable support for battery charging with TPS65217
 	 PMIC chips.
+
+config CHARGER_UNIVERSAL
+	tristate "universal Charger driver"
+	depends on EXTCON
+	help
+	  Say Y to enable support for universal charger.
+	  This driver only report charging status.
+	  Applicable to all charger IC that the
+	  charging current is determined by the hardware.
 
 config BATTERY_GAUGE_LTC2941
 	tristate "LTC2941/LTC2943 Battery Gauge Driver"

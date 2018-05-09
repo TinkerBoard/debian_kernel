@@ -36,6 +36,8 @@ struct rockchip_pwm_chip {
 	struct pwm_chip chip;
 	struct clk *clk;
 	struct clk *pclk;
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *active_state;
 	const struct rockchip_pwm_data *data;
 	void __iomem *base;
 	bool vop_pwm_en; /* indicate voppwm mirror register state */
@@ -109,6 +111,7 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 {
 	struct rockchip_pwm_chip *pc = to_rockchip_pwm_chip(chip);
 	unsigned long period, duty;
+	unsigned long flags;
 	u64 clk_rate, div;
 	u32 ctrl;
 
@@ -126,6 +129,7 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 	div = clk_rate * state->duty_cycle;
 	duty = DIV_ROUND_CLOSEST_ULL(div, pc->data->prescaler * NSEC_PER_SEC);
 
+	local_irq_save(flags);
 	/*
 	 * Lock the period and duty of previous configuration, then
 	 * change the duty and period, that would not be effective.
@@ -137,6 +141,7 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 		else
 			ctrl &= ~PWM_ENABLE;
 	}
+
 	if (pc->data->supports_lock) {
 		ctrl |= PWM_LOCK_EN;
 		writel_relaxed(ctrl, pc->base + pc->data->regs.ctrl);
@@ -162,6 +167,7 @@ static void rockchip_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
 		ctrl &= ~PWM_LOCK_EN;
 
 	writel(ctrl, pc->base + pc->data->regs.ctrl);
+	local_irq_restore(flags);
 }
 
 static int rockchip_pwm_enable(struct pwm_chip *chip,
@@ -233,6 +239,8 @@ static int rockchip_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	 */
 	rockchip_pwm_get_state(chip, pwm, state);
 
+	if (state->enabled)
+		ret = pinctrl_select_state(pc->pinctrl, pc->active_state);
 out:
 	clk_disable(pc->pclk);
 
@@ -375,6 +383,18 @@ static int rockchip_pwm_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(&pdev->dev, "Can't prepare APB clk: %d\n", ret);
 		goto err_clk;
+	}
+
+	pc->pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(pc->pinctrl)) {
+		dev_err(&pdev->dev, "Get pinctrl failed!\n");
+		return PTR_ERR(pc->pinctrl);
+	}
+
+	pc->active_state = pinctrl_lookup_state(pc->pinctrl, "active");
+	if (IS_ERR(pc->active_state)) {
+		dev_err(&pdev->dev, "No active pinctrl state\n");
+		return PTR_ERR(pc->active_state);
 	}
 
 	platform_set_drvdata(pdev, pc);

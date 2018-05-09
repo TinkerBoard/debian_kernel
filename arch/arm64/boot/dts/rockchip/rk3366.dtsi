@@ -147,29 +147,29 @@
 
 		opp-408000000 {
 			opp-hz = /bits/ 64 <408000000>;
-			opp-microvolt = <950000>;
+			opp-microvolt = <950000 950000 1250000>;
 			clock-latency-ns = <40000>;
 			opp-suspend;
 		};
 		opp-600000000 {
 			opp-hz = /bits/ 64 <600000000>;
-			opp-microvolt = <950000>;
+			opp-microvolt = <950000 950000 1250000>;
 		};
 		opp-816000000 {
 			opp-hz = /bits/ 64 <816000000>;
-			opp-microvolt = <1000000>;
+			opp-microvolt = <1000000 1000000 1250000>;
 		};
 		opp-1008000000 {
 			opp-hz = /bits/ 64 <1008000000>;
-			opp-microvolt = <1075000>;
+			opp-microvolt = <1075000 1075000 1250000>;
 		};
 		opp-1200000000 {
 			opp-hz = /bits/ 64 <1200000000>;
-			opp-microvolt = <1175000>;
+			opp-microvolt = <1175000 1175000 1250000>;
 		};
 		opp-1296000000 {
 			opp-hz = /bits/ 64 <1296000000>;
-			opp-microvolt = <1250000>;
+			opp-microvolt = <1250000 1250000 1250000>;
 		};
 	};
 
@@ -287,12 +287,12 @@
 			thermal-sensors = <&tsadc 0>;
 
 			trips {
-				threshold: trip-point@0 {
+				threshold: trip-point-0 {
 					temperature = <70000>; /* millicelsius */
 					hysteresis = <2000>; /* millicelsius */
 					type = "passive";
 				};
-				target: trip-point@1 {
+				target: trip-point-1 {
 					temperature = <85000>; /* millicelsius */
 					hysteresis = <2000>; /* millicelsius */
 					type = "passive";
@@ -520,8 +520,8 @@
 		clock-names = "otg";
 		dr_mode = "otg";
 		g-np-tx-fifo-size = <16>;
-		g-rx-fifo-size = <275>;
-		g-tx-fifo-size = <256 128 128 64 64 32>;
+		g-rx-fifo-size = <280>;
+		g-tx-fifo-size = <256 128 128 64 32 16>;
 		g-use-dma;
 		status = "disabled";
 	};
@@ -566,7 +566,7 @@
 		compatible = "rockchip,rk3368-pwm", "rockchip,rk3288-pwm";
 		reg = <0x0 0xff680000 0x0 0x10>;
 		#pwm-cells = <3>;
-		pinctrl-names = "default";
+		pinctrl-names = "active";
 		pinctrl-0 = <&pwm0_pin>;
 		clocks = <&cru PCLK_RKPWM>;
 		clock-names = "pwm";
@@ -577,7 +577,7 @@
 		compatible = "rockchip,rk3368-pwm", "rockchip,rk3288-pwm";
 		reg = <0x0 0xff680010 0x0 0x10>;
 		#pwm-cells = <3>;
-		pinctrl-names = "default";
+		pinctrl-names = "active";
 		pinctrl-0 = <&pwm1_pin>;
 		clocks = <&cru PCLK_RKPWM>;
 		clock-names = "pwm";
@@ -597,7 +597,7 @@
 		compatible = "rockchip,rk3368-pwm", "rockchip,rk3288-pwm";
 		reg = <0x0 0xff680030 0x0 0x10>;
 		#pwm-cells = <3>;
-		pinctrl-names = "default";
+		pinctrl-names = "active";
 		pinctrl-0 = <&pwm3_t2_pin>;
 		clocks = <&cru PCLK_RKPWM>;
 		clock-names = "pwm";

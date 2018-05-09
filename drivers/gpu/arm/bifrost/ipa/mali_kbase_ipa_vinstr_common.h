@@ -1,27 +1,29 @@
 /*
  *
- * (C) COPYRIGHT 2017 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2017-2018 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 #ifndef _KBASE_IPA_VINSTR_COMMON_H_
 #define _KBASE_IPA_VINSTR_COMMON_H_
 
 #include "mali_kbase.h"
-
-/* Maximum length for the name of an IPA group. */
-#define KBASE_IPA_MAX_GROUP_NAME_LEN 15
 
 /* Maximum number of IPA groups for an IPA model. */
 #define KBASE_IPA_MAX_GROUP_DEF_NUM  16
@@ -35,8 +37,6 @@
 /* Number of bytes per block in a vinstr_buffer. */
 #define KBASE_IPA_NR_BYTES_PER_BLOCK \
 	(KBASE_IPA_NR_CNT_PER_BLOCK * KBASE_IPA_NR_BYTES_PER_CNT)
-
-
 
 /**
  * struct kbase_ipa_model_vinstr_data - IPA context per device
@@ -69,21 +69,22 @@ struct kbase_ipa_model_vinstr_data {
  *                      Coefficients are interpreted as fractions where the
  *                      denominator is 1000000.
  * @op:                 which operation to be performed on the counter values
- * @counter:            counter used to calculate energy for IPA group
+ * @counter_block_offset:  block offset in bytes of the counter used to calculate energy for IPA group
  */
 struct kbase_ipa_group {
-	char name[KBASE_IPA_MAX_GROUP_NAME_LEN + 1];
+	const char *name;
 	s32 default_value;
 	s64 (*op)(struct kbase_ipa_model_vinstr_data *, s32, u32);
-	u32 counter;
+	u32 counter_block_offset;
 };
 
-/*
+/**
  * sum_all_shader_cores() - sum a counter over all cores
  * @model_data		pointer to model data
  * @coeff		model coefficient. Unity is ~2^20, so range approx
  * +/- 4.0: -2^22 < coeff < 2^22
-
+ * @counter     offset in bytes of the counter used to calculate energy for IPA group
+ *
  * Calculate energy estimation based on hardware counter `counter'
  * across all shader cores.
  *
@@ -93,12 +94,13 @@ s64 kbase_ipa_sum_all_shader_cores(
 	struct kbase_ipa_model_vinstr_data *model_data,
 	s32 coeff, u32 counter);
 
-/*
+/**
  * sum_single_counter() - sum a single counter
  * @model_data		pointer to model data
  * @coeff		model coefficient. Unity is ~2^20, so range approx
  * +/- 4.0: -2^22 < coeff < 2^22
-
+ * @counter     offset in bytes of the counter used to calculate energy for IPA group
+ *
  * Calculate energy estimation based on hardware counter `counter'.
  *
  * Return: Counter value. Range: -2^34 < ret < 2^34
@@ -107,7 +109,7 @@ s64 kbase_ipa_single_counter(
 	struct kbase_ipa_model_vinstr_data *model_data,
 	s32 coeff, u32 counter);
 
-/*
+/**
  * attach_vinstr() - attach a vinstr_buffer to an IPA model.
  * @model_data		pointer to model data
  *
@@ -119,7 +121,7 @@ s64 kbase_ipa_single_counter(
  */
 int kbase_ipa_attach_vinstr(struct kbase_ipa_model_vinstr_data *model_data);
 
-/*
+/**
  * detach_vinstr() - detach a vinstr_buffer from an IPA model.
  * @model_data		pointer to model data
  *
@@ -144,6 +146,33 @@ void kbase_ipa_detach_vinstr(struct kbase_ipa_model_vinstr_data *model_data);
  */
 int kbase_ipa_vinstr_dynamic_coeff(struct kbase_ipa_model *model, u32 *coeffp,
 	u32 current_freq);
+
+/**
+ * kbase_ipa_vinstr_common_model_init() - initialize ipa power model
+ * @model:		ipa power model to initialize
+ * @ipa_groups_def:	array of ipa groups which sets coefficients for
+ *			the corresponding counters used in the ipa model
+ * @ipa_group_size:     number of elements in the array @ipa_groups_def
+ *
+ * This initialization function performs initialization steps common
+ * for ipa models based on counter values. In each call, the model
+ * passes its specific coefficient values per ipa counter group via
+ * @ipa_groups_def array.
+ *
+ * Return: 0 on success, error code otherwise
+ */
+int kbase_ipa_vinstr_common_model_init(struct kbase_ipa_model *model,
+				 const struct kbase_ipa_group *ipa_groups_def,
+							size_t ipa_group_size);
+
+/**
+ * kbase_ipa_vinstr_common_model_term() - terminate ipa power model
+ * @model: ipa power model to terminate
+ *
+ * This function performs all necessary steps to terminate ipa power model
+ * including clean up of resources allocated to hold model data.
+ */
+void kbase_ipa_vinstr_common_model_term(struct kbase_ipa_model *model);
 
 #if MALI_UNIT_TEST
 /**

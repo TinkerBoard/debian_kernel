@@ -1,19 +1,24 @@
 /*
  *
- * (C) COPYRIGHT 2010-2017 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2018 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 #ifndef _MIDGARD_REGMAP_H_
 #define _MIDGARD_REGMAP_H_
@@ -29,8 +34,7 @@
 #define GPU_CONTROL_REG(r)      (GPU_CONTROL_BASE + (r))
 #define GPU_ID                  0x000	/* (RO) GPU and revision identifier */
 #define L2_FEATURES             0x004	/* (RO) Level 2 cache features */
-#define SUSPEND_SIZE            0x008   /* (RO) Fixed-function suspend buffer
-						size */
+#define CORE_FEATURES           0x008	/* (RO) Shader Core Features */
 #define TILER_FEATURES          0x00C	/* (RO) Tiler Features */
 #define MEM_FEATURES            0x010	/* (RO) Memory system features */
 #define MMU_FEATURES            0x014	/* (RO) MMU features */
@@ -88,10 +92,14 @@
 #define THREAD_MAX_WORKGROUP_SIZE 0x0A4	/* (RO) Maximum workgroup size */
 #define THREAD_MAX_BARRIER_SIZE 0x0A8	/* (RO) Maximum threads waiting at a barrier */
 #define THREAD_FEATURES         0x0AC	/* (RO) Thread features */
+#define THREAD_TLS_ALLOC        0x310   /* (RO) Number of threads per core that
+					 * TLS must be allocated for
+					 */
 
 #define TEXTURE_FEATURES_0      0x0B0	/* (RO) Support flags for indexed texture formats 0..31 */
 #define TEXTURE_FEATURES_1      0x0B4	/* (RO) Support flags for indexed texture formats 32..63 */
 #define TEXTURE_FEATURES_2      0x0B8	/* (RO) Support flags for indexed texture formats 64..95 */
+#define TEXTURE_FEATURES_3      0x0BC	/* (RO) Support flags for texture order */
 
 #define TEXTURE_FEATURES_REG(n) GPU_CONTROL_REG(TEXTURE_FEATURES_0 + ((n) << 2))
 
@@ -557,6 +565,13 @@
 #define L2_MMU_CONFIG_LIMIT_EXTERNAL_WRITES_OCTANT      (0x1 << L2_MMU_CONFIG_LIMIT_EXTERNAL_WRITES_SHIFT)
 #define L2_MMU_CONFIG_LIMIT_EXTERNAL_WRITES_QUARTER     (0x2 << L2_MMU_CONFIG_LIMIT_EXTERNAL_WRITES_SHIFT)
 #define L2_MMU_CONFIG_LIMIT_EXTERNAL_WRITES_HALF        (0x3 << L2_MMU_CONFIG_LIMIT_EXTERNAL_WRITES_SHIFT)
+
+#define L2_MMU_CONFIG_3BIT_LIMIT_EXTERNAL_READS_SHIFT      (12)
+#define L2_MMU_CONFIG_3BIT_LIMIT_EXTERNAL_READS            (0x7 << L2_MMU_CONFIG_LIMIT_EXTERNAL_READS_SHIFT)
+
+#define L2_MMU_CONFIG_3BIT_LIMIT_EXTERNAL_WRITES_SHIFT     (15)
+#define L2_MMU_CONFIG_3BIT_LIMIT_EXTERNAL_WRITES           (0x7 << L2_MMU_CONFIG_LIMIT_EXTERNAL_WRITES_SHIFT)
+
 /* End L2_MMU_CONFIG register */
 
 /* THREAD_* registers */

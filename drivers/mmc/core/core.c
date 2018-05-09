@@ -1112,7 +1112,7 @@ int mmc_execute_tuning(struct mmc_card *card)
 	err = host->ops->execute_tuning(host, opcode);
 
 	if (err)
-		pr_err("%s: tuning execution failed\n", mmc_hostname(host));
+		pr_err_ratelimited("%s: tuning execution failed\n", mmc_hostname(host));
 	else
 		mmc_retune_enable(host);
 
@@ -2849,6 +2849,14 @@ int mmc_pm_notify(struct notifier_block *notify_block,
 			err = host->bus_ops->pre_suspend(host);
 		if (!err)
 			break;
+
+		if (!mmc_card_is_removable(host)) {
+			dev_warn(mmc_dev(host),
+				 "pre_suspend failed for non-removable host: "
+				 "%d\n", err);
+			/* Avoid removing non-removable hosts */
+			break;
+		}
 
 		/* Calling bus_ops->remove() with a claimed host can deadlock */
 		host->bus_ops->remove(host);

@@ -190,12 +190,21 @@
 	};
 };
 
+&cpu0 {
+	cpu-supply = <&vdd_arm>;
+};
+
 &display_subsystem {
 	status = "okay";
 };
 
-&cpu0 {
-	cpu-supply = <&vdd_arm>;
+&dfi {
+	status = "okay";
+};
+
+&dmc {
+	center-supply = <&vdd_logic>;
+	status = "okay";
 };
 
 &emmc {
@@ -355,7 +364,7 @@
 			vccio_sd: LDO_REG5 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <3300000>;
+				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <3300000>;
 
 				regulator-name = "vccio_sd";
@@ -366,8 +375,6 @@
 			};
 
 			vcc_sd: LDO_REG6 {
-				regulator-always-on;
-				regulator-boot-on;
 				regulator-min-microvolt = <3300000>;
 				regulator-max-microvolt = <3300000>;
 
@@ -447,7 +454,7 @@
 &i2c1 {
 	status = "okay";
 
-	sensor@0f {
+	sensor@f {
 		status = "okay";
 		compatible = "ak8963";
 		reg = <0x0f>;
@@ -550,28 +557,38 @@
 };
 
 &sdmmc {
+	bus-width = <4>;
 	cap-mmc-highspeed;
+	cap-sd-highspeed;
 	supports-sd;
-	broken-cd;
 	card-detect-delay = <800>;
 	ignore-pm-notify;
-	keep-power-in-suspend;
 	/*cd-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>; [> CD GPIO <]*/
-	status = "disabled";
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	sd-uhs-sdr104;
+	vqmmc-supply = <&vccio_sd>;
+	vmmc-supply = <&vcc_sd>;
+	status = "okay";
 };
 
 &sdio {
-	max-frequency = <50000000>;
+	bus-width = <4>;
 	cap-sd-highspeed;
 	supports-sdio;
 	ignore-pm-notify;
 	keep-power-in-suspend;
 	non-removable;
 	mmc-pwrseq = <&sdio_pwrseq>;
+	sd-uhs-sdr104;
 	status = "okay";
 };
 
 &tsadc {
+	pinctrl-names = "init", "default";
+	pinctrl-0 = <&tsadc_otp_gpio>;
+	pinctrl-1 = <&tsadc_otp_out>;
 	status = "okay";
 };
 

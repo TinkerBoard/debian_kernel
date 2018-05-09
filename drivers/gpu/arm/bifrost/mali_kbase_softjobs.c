@@ -1,19 +1,24 @@
 /*
  *
- * (C) COPYRIGHT 2011-2017 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2011-2018 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 
 
@@ -370,12 +375,12 @@ static void kbase_fence_debug_timeout(struct kbase_jd_atom *katom)
 }
 #endif /* CONFIG_MALI_BIFROST_FENCE_DEBUG */
 
-void kbasep_soft_job_timeout_worker(unsigned long data)
+void kbasep_soft_job_timeout_worker(struct timer_list *timer)
 {
-	struct kbase_context *kctx = (struct kbase_context *)data;
+	struct kbase_context *kctx = container_of(timer, struct kbase_context,
+			soft_job_timeout);
 	u32 timeout_ms = (u32)atomic_read(
 			&kctx->kbdev->js_data.soft_job_timeout_ms);
-	struct timer_list *timer = &kctx->soft_job_timeout;
 	ktime_t cur_time = ktime_get();
 	bool restarting = false;
 	unsigned long lflags;
@@ -521,8 +526,7 @@ static inline void free_user_buffer(struct kbase_debug_copy_buffer *buffer)
 
 static void kbase_debug_copy_finish(struct kbase_jd_atom *katom)
 {
-	struct kbase_debug_copy_buffer *buffers =
-			(struct kbase_debug_copy_buffer *)(uintptr_t)katom->jc;
+	struct kbase_debug_copy_buffer *buffers = katom->softjob_data;
 	unsigned int i;
 	unsigned int nr = katom->nr_extres;
 
@@ -560,7 +564,7 @@ static void kbase_debug_copy_finish(struct kbase_jd_atom *katom)
 	kbase_gpu_vm_unlock(katom->kctx);
 	kfree(buffers);
 
-	katom->jc = 0;
+	katom->softjob_data = NULL;
 }
 
 static int kbase_debug_copy_prepare(struct kbase_jd_atom *katom)
@@ -578,10 +582,9 @@ static int kbase_debug_copy_prepare(struct kbase_jd_atom *katom)
 	buffers = kcalloc(nr, sizeof(*buffers), GFP_KERNEL);
 	if (!buffers) {
 		ret = -ENOMEM;
-		katom->jc = 0;
 		goto out_cleanup;
 	}
-	katom->jc = (u64)(uintptr_t)buffers;
+	katom->softjob_data = buffers;
 
 	user_buffers = kmalloc_array(nr, sizeof(*user_buffers), GFP_KERNEL);
 
@@ -768,9 +771,11 @@ static int kbase_mem_copy_from_extres(struct kbase_context *kctx,
 	u64 offset = buf_data->offset;
 	size_t extres_size = buf_data->nr_extres_pages*PAGE_SIZE;
 	size_t to_copy = min(extres_size, buf_data->size);
-	size_t dma_to_copy;
 	struct kbase_mem_phy_alloc *gpu_alloc = buf_data->gpu_alloc;
 	int ret = 0;
+#ifdef CONFIG_DMA_SHARED_BUFFER
+	size_t dma_to_copy;
+#endif
 
 	KBASE_DEBUG_ASSERT(pages != NULL);
 
@@ -853,9 +858,11 @@ out_unlock:
 
 static int kbase_debug_copy(struct kbase_jd_atom *katom)
 {
-	struct kbase_debug_copy_buffer *buffers =
-			(struct kbase_debug_copy_buffer *)(uintptr_t)katom->jc;
+	struct kbase_debug_copy_buffer *buffers = katom->softjob_data;
 	unsigned int i;
+
+	if (WARN_ON(!buffers))
+		return -EINVAL;
 
 	for (i = 0; i < katom->nr_extres; i++) {
 		int res = kbase_mem_copy_from_extres(katom->kctx, &buffers[i]);
@@ -910,8 +917,34 @@ static int kbase_jit_allocate_prepare(struct kbase_jd_atom *katom)
 		goto free_info;
 	}
 
-	/* Replace the user pointer with our kernel allocated info structure */
-	katom->jc = (u64)(uintptr_t) info;
+	if (kctx->jit_version == 1) {
+		/* Old JIT didn't have usage_id, max_allocations, bin_id
+		 * or padding, so force them to zero
+		 */
+		info->usage_id = 0;
+		info->max_allocations = 0;
+		info->bin_id = 0;
+		info->flags = 0;
+		memset(info->padding, 0, sizeof(info->padding));
+	} else {
+		int i;
+
+		/* Check padding is all zeroed */
+		for (i = 0; i < sizeof(info->padding); i++) {
+			if (info->padding[i] != 0) {
+				ret = -EINVAL;
+				goto free_info;
+			}
+		}
+
+		/* No bit other than TILER_ALIGN_TOP shall be set */
+		if (info->flags & ~BASE_JIT_ALLOC_MEM_TILER_ALIGN_TOP) {
+			ret = -EINVAL;
+			goto free_info;
+		}
+	}
+
+	katom->softjob_data = info;
 	katom->jit_blocked = false;
 
 	lockdep_assert_held(&kctx->jctx.lock);
@@ -933,7 +966,6 @@ static int kbase_jit_allocate_prepare(struct kbase_jd_atom *katom)
 free_info:
 	kfree(info);
 fail:
-	katom->jc = 0;
 	return ret;
 }
 
@@ -958,7 +990,12 @@ static int kbase_jit_allocate_process(struct kbase_jd_atom *katom)
 		katom->jit_blocked = false;
 	}
 
-	info = (struct base_jit_alloc_info *) (uintptr_t) katom->jc;
+	info = katom->softjob_data;
+
+	if (WARN_ON(!info)) {
+		katom->event_code = BASE_JD_EVENT_JOB_INVALID;
+		return 0;
+	}
 
 	/* The JIT ID is still in use so fail the allocation */
 	if (kctx->jit_alloc[info->id]) {
@@ -1061,7 +1098,7 @@ static void kbase_jit_allocate_finish(struct kbase_jd_atom *katom)
 		katom->jit_blocked = false;
 	}
 
-	info = (struct base_jit_alloc_info *) (uintptr_t) katom->jc;
+	info = katom->softjob_data;
 	/* Free the info structure */
 	kfree(info);
 }
@@ -1184,11 +1221,7 @@ static int kbase_ext_res_prepare(struct kbase_jd_atom *katom)
 	 */
 	ext_res->count = count;
 
-	/*
-	 * Replace the user pointer with our kernel allocated
-	 * ext_res structure.
-	 */
-	katom->jc = (u64)(uintptr_t) ext_res;
+	katom->softjob_data = ext_res;
 
 	return 0;
 
@@ -1204,7 +1237,7 @@ static void kbase_ext_res_process(struct kbase_jd_atom *katom, bool map)
 	int i;
 	bool failed = false;
 
-	ext_res = (struct base_external_resource_list *) (uintptr_t) katom->jc;
+	ext_res = katom->softjob_data;
 	if (!ext_res)
 		goto failed_jc;
 
@@ -1240,13 +1273,13 @@ static void kbase_ext_res_process(struct kbase_jd_atom *katom, bool map)
 	return;
 
 failed_loop:
-	while (--i > 0) {
-		u64 gpu_addr;
-
-		gpu_addr = ext_res->ext_res[i].ext_resource &
+	while (i > 0) {
+		u64 const gpu_addr = ext_res->ext_res[i - 1].ext_resource &
 				~BASE_EXT_RES_ACCESS_EXCLUSIVE;
 
 		kbase_sticky_resource_release(katom->kctx, NULL, gpu_addr);
+
+		--i;
 	}
 
 	katom->event_code = BASE_JD_EVENT_JOB_INVALID;
@@ -1260,13 +1293,15 @@ static void kbase_ext_res_finish(struct kbase_jd_atom *katom)
 {
 	struct base_external_resource_list *ext_res;
 
-	ext_res = (struct base_external_resource_list *) (uintptr_t) katom->jc;
+	ext_res = katom->softjob_data;
 	/* Free the info structure */
 	kfree(ext_res);
 }
 
 int kbase_process_soft_job(struct kbase_jd_atom *katom)
 {
+	KBASE_TLSTREAM_TL_EVENT_ATOM_SOFTJOB_START(katom);
+
 	switch (katom->core_req & BASE_JD_REQ_SOFT_JOB_TYPE) {
 	case BASE_JD_REQ_SOFT_DUMP_CPU_GPU_TIME:
 		return kbase_dump_cpu_gpu_time(katom);
@@ -1430,6 +1465,7 @@ int kbase_prepare_soft_job(struct kbase_jd_atom *katom)
 
 void kbase_finish_soft_job(struct kbase_jd_atom *katom)
 {
+	KBASE_TLSTREAM_TL_EVENT_ATOM_SOFTJOB_END(katom);
 	switch (katom->core_req & BASE_JD_REQ_SOFT_JOB_TYPE) {
 	case BASE_JD_REQ_SOFT_DUMP_CPU_GPU_TIME:
 		/* Nothing to do */

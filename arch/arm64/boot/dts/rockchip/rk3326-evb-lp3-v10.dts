@@ -111,9 +111,9 @@
 		status = "disabled";
 
 		display-timings {
-			native-mode = <&b101ew05_timing>;
+			native-mode = <&timing0>;
 
-			b101ew05_timing: timing0 {
+			timing0: timing0 {
 				clock-frequency = <49500000>;
 				hactive = <1024>;
 				vactive = <600>;
@@ -318,6 +318,15 @@
 	status = "disabled";
 };
 
+&dfi {
+	status = "okay";
+};
+
+&dmc {
+	center-supply = <&vdd_logic>;
+	status = "okay";
+};
+
 &emmc {
 	bus-width = <8>;
 	cap-mmc-highspeed;
@@ -345,12 +354,19 @@
 		reg = <0x20>;
 		interrupt-parent = <&gpio0>;
 		interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
-		pinctrl-names = "default";
+		pinctrl-names = "default", "pmic-sleep",
+				"pmic-power-off", "pmic-reset";
 		pinctrl-0 = <&pmic_int>;
+		pinctrl-1 = <&soc_slppin_slp>, <&rk817_slppin_slp>;
+		pinctrl-2 = <&soc_slppin_gpio>, <&rk817_slppin_pwrdn>;
+		pinctrl-3 = <&soc_slppin_rst>, <&rk817_slppin_rst>;
 		rockchip,system-power-controller;
 		wakeup-source;
 		#clock-cells = <1>;
 		clock-output-names = "rk808-clkout1", "rk808-clkout2";
+		//fb-inner-reg-idxs = <2>;
+		/* 1: rst regs (default in codes), 0: rst the pmic */
+		pmic-reset-func = <0>;
 
 		vcc1-supply = <&vccsys>;
 		vcc2-supply = <&vccsys>;
@@ -366,6 +382,53 @@
 			status = "okay";
 		};
 
+		pinctrl_rk8xx: pinctrl_rk8xx {
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			rk817_ts_gpio1: rk817_ts_gpio1 {
+				pins = "gpio_ts";
+				function = "pin_fun1";
+				/* output-low; */
+				/* input-enable; */
+			};
+
+			rk817_gt_gpio2: rk817_gt_gpio2 {
+				pins = "gpio_gt";
+				function = "pin_fun1";
+			};
+
+			rk817_pin_ts: rk817_pin_ts {
+				pins = "gpio_ts";
+				function = "pin_fun0";
+			};
+
+			rk817_pin_gt: rk817_pin_gt {
+				pins = "gpio_gt";
+				function = "pin_fun0";
+			};
+
+			rk817_slppin_null: rk817_slppin_null {
+				pins = "gpio_slp";
+				function = "pin_fun0";
+			};
+
+			rk817_slppin_slp: rk817_slppin_slp {
+				pins = "gpio_slp";
+				function = "pin_fun1";
+			};
+
+			rk817_slppin_pwrdn: rk817_slppin_pwrdn {
+				pins = "gpio_slp";
+				function = "pin_fun2";
+			};
+
+			rk817_slppin_rst: rk817_slppin_rst {
+				pins = "gpio_slp";
+				function = "pin_fun3";
+			};
+		};
+
 		regulators {
 			vdd_logic: DCDC_REG1 {
 				regulator-always-on;
@@ -373,7 +436,7 @@
 				regulator-min-microvolt = <950000>;
 				regulator-max-microvolt = <1350000>;
 				regulator-ramp-delay = <6001>;
-				regulator-initial-mode = <0x1>;
+				regulator-initial-mode = <0x2>;
 				regulator-name = "vdd_logic";
 				regulator-state-mem {
 					regulator-on-in-suspend;
@@ -387,7 +450,7 @@
 				regulator-min-microvolt = <950000>;
 				regulator-max-microvolt = <1350000>;
 				regulator-ramp-delay = <6001>;
-				regulator-initial-mode = <0x1>;
+				regulator-initial-mode = <0x2>;
 				regulator-name = "vdd_arm";
 				regulator-state-mem {
 					regulator-off-in-suspend;
@@ -398,7 +461,7 @@
 			vcc_ddr: DCDC_REG3 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-initial-mode = <0x1>;
+				regulator-initial-mode = <0x2>;
 				regulator-name = "vcc_ddr";
 				regulator-state-mem {
 					regulator-on-in-suspend;
@@ -410,7 +473,7 @@
 				regulator-boot-on;
 				regulator-min-microvolt = <3000000>;
 				regulator-max-microvolt = <3000000>;
-				regulator-initial-mode = <0x1>;
+				regulator-initial-mode = <0x2>;
 				regulator-name = "vcc_3v0";
 				regulator-state-mem {
 					regulator-off-in-suspend;
@@ -484,8 +547,6 @@
 			};
 
 			vcc_sd: LDO_REG6 {
-				regulator-always-on;
-				regulator-boot-on;
 				regulator-min-microvolt = <3300000>;
 				regulator-max-microvolt = <3300000>;
 
@@ -602,7 +663,7 @@
 	i2c-scl-rising-time-ns = <275>;
 	i2c-scl-falling-time-ns = <16>;
 
-	sensor@0f {
+	sensor@f {
 		status = "okay";
 		compatible = "ak8963";
 		reg = <0x0f>;
@@ -694,6 +755,21 @@
 			rockchip,pins =
 				<0 RK_PA7 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
+
+		soc_slppin_gpio: soc_slppin_gpio {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_GPIO &pcfg_output_low>;
+		};
+
+		soc_slppin_slp: soc_slppin_slp {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_1 &pcfg_pull_none>;
+		};
+
+		soc_slppin_rst: soc_slppin_rst {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_2 &pcfg_pull_none>;
+		};
 	};
 
 	sdio-pwrseq {
@@ -722,8 +798,13 @@
 	status = "okay";
 };
 
+&rockchip_suspend {
+	status = "okay";
+	rockchip,sleep-debug-en = <1>;
+};
+
 &route_dsi {
-	status = "disabled";
+	status = "okay";
 };
 
 &route_lvds {
@@ -736,28 +817,38 @@
 };
 
 &sdmmc {
+	bus-width = <4>;
 	cap-mmc-highspeed;
+	cap-sd-highspeed;
 	supports-sd;
-	broken-cd;
 	card-detect-delay = <800>;
 	ignore-pm-notify;
-	keep-power-in-suspend;
 	/*cd-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>; [> CD GPIO <]*/
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	sd-uhs-sdr104;
+	vqmmc-supply = <&vccio_sd>;
+	vmmc-supply = <&vcc_sd>;
 	status = "disabled";
 };
 
 &sdio {
-	max-frequency = <50000000>;
+	bus-width = <4>;
 	cap-sd-highspeed;
 	supports-sdio;
 	ignore-pm-notify;
 	keep-power-in-suspend;
 	non-removable;
 	mmc-pwrseq = <&sdio_pwrseq>;
+	sd-uhs-sdr104;
 	status = "okay";
 };
 
 &tsadc {
+	pinctrl-names = "init", "default";
+	pinctrl-0 = <&tsadc_otp_gpio>;
+	pinctrl-1 = <&tsadc_otp_out>;
 	status = "okay";
 };
 

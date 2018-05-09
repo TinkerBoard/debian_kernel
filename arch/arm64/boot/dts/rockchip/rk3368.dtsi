@@ -713,12 +713,12 @@
 
 			thermal-sensors = <&tsadc 0>;
 			trips {
-				threshold: trip-point@0 {
+				threshold: trip-point-0 {
 					temperature = <70000>; /* millicelsius */
 					hysteresis = <2000>; /* millicelsius */
 					type = "passive";
 				};
-				target: trip-point@1 {
+				target: trip-point-1 {
 					temperature = <80000>; /* millicelsius */
 					hysteresis = <2000>; /* millicelsius */
 					type = "passive";
@@ -834,8 +834,8 @@
 		clock-names = "otg";
 		dr_mode = "otg";
 		g-np-tx-fifo-size = <16>;
-		g-rx-fifo-size = <275>;
-		g-tx-fifo-size = <256 128 128 64 64 32>;
+		g-rx-fifo-size = <280>;
+		g-tx-fifo-size = <256 128 128 64 32 16>;
 		g-use-dma;
 		status = "disabled";
 	};
@@ -862,7 +862,7 @@
 		compatible = "rockchip,rk3368-pwm", "rockchip,rk3288-pwm";
 		reg = <0x0 0xff680000 0x0 0x10>;
 		#pwm-cells = <3>;
-		pinctrl-names = "default";
+		pinctrl-names = "active";
 		pinctrl-0 = <&pwm0_pin>;
 		clocks = <&cru PCLK_PWM1>;
 		clock-names = "pwm";
@@ -873,7 +873,7 @@
 		compatible = "rockchip,rk3368-pwm", "rockchip,rk3288-pwm";
 		reg = <0x0 0xff680010 0x0 0x10>;
 		#pwm-cells = <3>;
-		pinctrl-names = "default";
+		pinctrl-names = "active";
 		pinctrl-0 = <&pwm1_pin>;
 		clocks = <&cru PCLK_PWM1>;
 		clock-names = "pwm";
@@ -893,7 +893,7 @@
 		compatible = "rockchip,rk3368-pwm", "rockchip,rk3288-pwm";
 		reg = <0x0 0xff680030 0x0 0x10>;
 		#pwm-cells = <3>;
-		pinctrl-names = "default";
+		pinctrl-names = "active";
 		pinctrl-0 = <&pwm3_pin>;
 		clocks = <&cru PCLK_PWM1>;
 		clock-names = "pwm";
@@ -1045,7 +1045,7 @@
 			 *	*_HDMI		HDMI
 			 *	*_MIPI_*	MIPI
 			 */
-			pd_vio {
+			pd_vio@RK3368_PD_VIO {
 				reg = <RK3368_PD_VIO>;
 				clocks = <&cru ACLK_IEP>,
 					 <&cru ACLK_ISP>,
@@ -1092,7 +1092,7 @@
 			 * (video endecoder & decoder) clocks that on the
 			 * ACLK_VCODEC_NIU and HCLK_VCODEC_NIU (NOC).
 			 */
-			pd_video {
+			pd_video@RK3368_PD_VIDEO {
 				reg = <RK3368_PD_VIDEO>;
 				clocks = <&cru ACLK_VIDEO>,
 					 <&cru HCLK_VIDEO>,
@@ -1106,7 +1106,7 @@
 			 * Note: ACLK_GPU is the GPU clock,
 			 * and on the ACLK_GPU_NIU (NOC).
 			 */
-			pd_gpu_1 {
+			pd_gpu_1@RK3368_PD_GPU_1 {
 				reg = <RK3368_PD_GPU_1>;
 				clocks = <&cru ACLK_GPU_CFG>,
 					 <&cru ACLK_GPU_MEM>,
@@ -1274,6 +1274,19 @@
 		interrupts = <GIC_SPI 66 IRQ_TYPE_LEVEL_HIGH>;
 	};
 
+	spdif: spdif@ff880000 {
+		compatible = "rockchip,rk3368-spdif";
+		reg = <0x0 0xff880000 0x0 0x1000>;
+		interrupts = <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>;
+		dmas = <&dmac_bus 3>;
+		dma-names = "tx";
+		clock-names = "mclk", "hclk";
+		clocks = <&cru SCLK_SPDIF_8CH>, <&cru HCLK_SPDIF>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&spdif_bus>;
+		status = "disabled";
+	};
+
 	i2s_2ch: i2s-2ch@ff890000 {
 		compatible = "rockchip,rk3368-i2s", "rockchip,rk3066-i2s";
 		reg = <0x0 0xff890000 0x0 0x1000>;
@@ -1381,6 +1394,7 @@
 
 	vop: vop@ff930000 {
 		compatible = "rockchip,rk3368-vop";
+		rockchip,grf = <&grf>;
 		reg = <0x0 0xff930000 0x0 0x2fc>, <0x0 0xff931000 0x0 0x400>;
 		reg-names = "regs", "gamma_lut";
 		interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
@@ -2095,6 +2109,12 @@
 						<2 6 RK_FUNC_1 &pcfg_pull_up>,
 						<2 7 RK_FUNC_1 &pcfg_pull_up>,
 						<2 8 RK_FUNC_1 &pcfg_pull_up>;
+			};
+		};
+
+		spdif {
+			spdif_bus: spdif-bus {
+				rockchip,pins = <2 23 RK_FUNC_1 &pcfg_pull_none>;
 			};
 		};
 

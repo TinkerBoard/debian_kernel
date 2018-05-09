@@ -1,28 +1,28 @@
 /*
  *
- * (C) COPYRIGHT 2013-2015,2017 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2013-2015,2017-2018 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 #include <linux/dma-mapping.h>
 #include <mali_kbase.h>
 #include <mali_kbase_10969_workaround.h>
 
-/* This function is used to solve an HW issue with single iterator GPUs.
- * If a fragment job is soft-stopped on the edge of its bounding box, can happen that the
- * restart index is out of bounds and the rerun causes a tile range fault. If this happens
- * we try to clamp the restart index to a correct value and rerun the job.
- */
 /* Mask of X and Y coordinates for the coordinates words in the descriptors*/
 #define X_COORDINATE_MASK 0x00000FFF
 #define Y_COORDINATE_MASK 0x0FFF0000

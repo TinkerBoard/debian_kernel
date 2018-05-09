@@ -92,6 +92,11 @@
 			reg = <0x0 0x0>;
 		};
 
+		secure_memory: secure-memory@80000000 {
+			compatible = "rockchip,secure-memory";
+			reg = <0x80000000 0x0>;
+		};
+
 		ramoops_mem: ramoops@62e00000 {
 			reg = <0x62e00000 0xf0000>;
 		};
@@ -132,6 +137,7 @@
 	broken-cd;
 	bus-width = <8>;
 	cap-mmc-highspeed;
+	mmc-hs200-1_8v;
 	supports-emmc;
 	disable-wp;
 	non-removable;
@@ -179,7 +185,6 @@
 };
 
 &u2phy0 {
-	otg-vbus-gpios = <&gpio3 RK_PC6 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 
 	u2phy0_otg: otg-port {

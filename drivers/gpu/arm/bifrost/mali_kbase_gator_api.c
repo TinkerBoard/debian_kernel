@@ -7,13 +7,18 @@
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 #include "mali_kbase.h"
 #include "mali_kbase_hw.h"
@@ -67,6 +72,10 @@ const char * const *kbase_gator_hwcnt_init_names(uint32_t *total_counters)
 		case GPU_ID2_PRODUCT_TSIX:
 			hardware_counters = hardware_counters_mali_tSIx;
 			count = ARRAY_SIZE(hardware_counters_mali_tSIx);
+			break;
+		case GPU_ID2_PRODUCT_TNOX:
+			hardware_counters = hardware_counters_mali_tNOx;
+			count = ARRAY_SIZE(hardware_counters_mali_tNOx);
 			break;
 		default:
 			hardware_counters = NULL;
@@ -149,7 +158,7 @@ KBASE_EXPORT_SYMBOL(kbase_gator_hwcnt_term_names);
 struct kbase_gator_hwcnt_handles *kbase_gator_hwcnt_init(struct kbase_gator_hwcnt_info *in_out_info)
 {
 	struct kbase_gator_hwcnt_handles *hand;
-	struct kbase_uk_hwcnt_reader_setup setup;
+	struct kbase_ioctl_hwcnt_reader_setup setup;
 	uint32_t dump_size = 0, i = 0;
 
 	if (!in_out_info)

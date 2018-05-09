@@ -42,6 +42,7 @@
 
 #include <dt-bindings/clock/rockchip,rk808.h>
 #include "rk3288.dtsi"
+#include "rk3288-linux.dtsi"
 
 / {
 	model = "Rockchip RK3288 Fennec Board";
@@ -461,7 +462,6 @@
 };
 
 &tsadc {
-	rockchip,hw-tshut-mode = <0>; /* tshut mode 0:CRU 1:GPIO */
 	rockchip,hw-tshut-polarity = <0>; /* tshut polarity 0:LOW 1:HIGH */
 	status = "okay";
 };

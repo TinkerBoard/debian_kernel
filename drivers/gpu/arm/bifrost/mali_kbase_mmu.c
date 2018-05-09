@@ -7,13 +7,18 @@
  * Foundation, and any use by you of this program is subject to the terms
  * of such GNU licence.
  *
- * A copy of the licence is included with the program, and can also be obtained
- * from Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA  02110-1301, USA.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-2.0.html.
+ *
+ * SPDX-License-Identifier: GPL-2.0
  *
  */
-
-
 
 
 
@@ -99,15 +104,198 @@ static void kbase_mmu_report_fault_and_kill(struct kbase_context *kctx,
 		struct kbase_as *as, const char *reason_str);
 
 
-static size_t make_multiple(size_t minimum, size_t multiple)
+/**
+ * reg_grow_calc_extra_pages() - Calculate the number of backed pages to add to
+ *                               a region on a GPU page fault
+ *
+ * @reg:           The region that will be backed with more pages
+ * @fault_rel_pfn: PFN of the fault relative to the start of the region
+ *
+ * This calculates how much to increase the backing of a region by, based on
+ * where a GPU page fault occurred and the flags in the region.
+ *
+ * This can be more than the minimum number of pages that would reach
+ * @fault_rel_pfn, for example to reduce the overall rate of page fault
+ * interrupts on a region, or to ensure that the end address is aligned.
+ *
+ * Return: the number of backed pages to increase by
+ */
+static size_t reg_grow_calc_extra_pages(struct kbase_va_region *reg, size_t fault_rel_pfn)
 {
-	size_t remainder = minimum % multiple;
+	size_t multiple = reg->extent;
+	size_t reg_current_size = kbase_reg_current_backed_size(reg);
+	size_t minimum_extra = fault_rel_pfn - reg_current_size + 1;
+	size_t remainder;
+
+	if (!multiple) {
+		dev_warn(reg->kctx->kbdev->dev,
+				"VA Region 0x%llx extent was 0, allocator needs to set this properly for KBASE_REG_PF_GROW\n",
+				((unsigned long long)reg->start_pfn) << PAGE_SHIFT);
+		return minimum_extra;
+	}
+
+	/* Calculate the remainder to subtract from minimum_extra to make it
+	 * the desired (rounded down) multiple of the extent.
+	 * Depending on reg's flags, the base used for calculating multiples is
+	 * different */
+	if (reg->flags & KBASE_REG_TILER_ALIGN_TOP) {
+		/* multiple is based from the top of the initial commit, which
+		 * has been allocated in such a way that (start_pfn +
+		 * initial_commit) is already aligned to multiple. Hence the
+		 * pfn for the end of committed memory will also be aligned to
+		 * multiple */
+		size_t initial_commit = reg->initial_commit;
+
+		if (fault_rel_pfn < initial_commit) {
+			/* this case is just to catch in case it's been
+			 * recommitted by userspace to be smaller than the
+			 * initial commit */
+			minimum_extra = initial_commit - reg_current_size;
+			remainder = 0;
+		} else {
+			/* same as calculating (fault_rel_pfn - initial_commit + 1) */
+			size_t pages_after_initial = minimum_extra + reg_current_size - initial_commit;
+
+			remainder = pages_after_initial % multiple;
+		}
+	} else {
+		/* multiple is based from the current backed size, even if the
+		 * current backed size/pfn for end of committed memory are not
+		 * themselves aligned to multiple */
+		remainder = minimum_extra % multiple;
+	}
 
 	if (remainder == 0)
-		return minimum;
+		return minimum_extra;
 
-	return minimum + multiple - remainder;
+	return minimum_extra + multiple - remainder;
 }
+
+#ifdef CONFIG_MALI_JOB_DUMP
+static void kbase_gpu_mmu_handle_write_faulting_as(struct kbase_context *kctx,
+				struct kbase_device *kbdev,
+				struct kbase_as *faulting_as,
+				u64 start_pfn, size_t nr, u32 op)
+{
+	mutex_lock(&kbdev->mmu_hw_mutex);
+
+	kbase_mmu_hw_clear_fault(kbdev, faulting_as, kctx,
+			KBASE_MMU_FAULT_TYPE_PAGE);
+	kbase_mmu_hw_do_operation(kbdev, faulting_as, kctx, start_pfn,
+			nr, op, 1);
+
+	mutex_unlock(&kbdev->mmu_hw_mutex);
+
+	kbase_mmu_hw_enable_fault(kbdev, faulting_as, kctx,
+			KBASE_MMU_FAULT_TYPE_PAGE);
+}
+
+static void kbase_gpu_mmu_handle_write_fault(struct kbase_context *kctx,
+			struct kbase_as *faulting_as)
+{
+	struct kbasep_gwt_list_element *pos;
+	struct kbase_va_region *region;
+	struct kbase_device *kbdev;
+	u64 fault_pfn, pfn_offset;
+	u32 op;
+	int ret;
+	int as_no;
+
+	as_no = faulting_as->number;
+	kbdev = container_of(faulting_as, struct kbase_device, as[as_no]);
+	fault_pfn = faulting_as->fault_addr >> PAGE_SHIFT;
+
+	kbase_gpu_vm_lock(kctx);
+
+	/* Find region and check if it should be writable. */
+	region = kbase_region_tracker_find_region_enclosing_address(kctx,
+			faulting_as->fault_addr);
+	if (!region || region->flags & KBASE_REG_FREE) {
+		kbase_gpu_vm_unlock(kctx);
+		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
+				"Memory is not mapped on the GPU");
+		return;
+	}
+
+	if (!(region->flags & KBASE_REG_GPU_WR)) {
+		kbase_gpu_vm_unlock(kctx);
+		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
+				"Region does not have write permissions");
+		return;
+	}
+
+	/* Capture addresses of faulting write location
+	 * for job dumping if write tracking is enabled.
+	 */
+	if (kctx->gwt_enabled) {
+		u64 page_addr = faulting_as->fault_addr & PAGE_MASK;
+		bool found = false;
+		/* Check if this write was already handled. */
+		list_for_each_entry(pos, &kctx->gwt_current_list, link) {
+			if (page_addr == pos->page_addr) {
+				found = true;
+				break;
+			}
+		}
+
+		if (!found) {
+			pos = kmalloc(sizeof(*pos), GFP_KERNEL);
+			if (pos) {
+				pos->region = region;
+				pos->page_addr = page_addr;
+				pos->num_pages = 1;
+				list_add(&pos->link, &kctx->gwt_current_list);
+			} else {
+				dev_warn(kbdev->dev, "kmalloc failure");
+			}
+		}
+	}
+
+	pfn_offset = fault_pfn - region->start_pfn;
+	/* Now make this faulting page writable to GPU. */
+	ret = kbase_mmu_update_pages_no_flush(kctx, fault_pfn,
+				&kbase_get_gpu_phy_pages(region)[pfn_offset],
+				1, region->flags);
+
+	/* flush L2 and unlock the VA (resumes the MMU) */
+	if (kbase_hw_has_issue(kbdev, BASE_HW_ISSUE_6367))
+		op = AS_COMMAND_FLUSH;
+	else
+		op = AS_COMMAND_FLUSH_PT;
+
+	kbase_gpu_mmu_handle_write_faulting_as(kctx, kbdev, faulting_as,
+			fault_pfn, 1, op);
+
+	kbase_gpu_vm_unlock(kctx);
+}
+
+static void kbase_gpu_mmu_handle_permission_fault(struct kbase_context *kctx,
+			struct kbase_as	*faulting_as)
+{
+	u32 fault_status;
+
+	fault_status = faulting_as->fault_status;
+
+	switch (fault_status & AS_FAULTSTATUS_ACCESS_TYPE_MASK) {
+	case AS_FAULTSTATUS_ACCESS_TYPE_ATOMIC:
+	case AS_FAULTSTATUS_ACCESS_TYPE_WRITE:
+		kbase_gpu_mmu_handle_write_fault(kctx, faulting_as);
+		break;
+	case AS_FAULTSTATUS_ACCESS_TYPE_EX:
+		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
+				"Execute Permission fault");
+		break;
+	case AS_FAULTSTATUS_ACCESS_TYPE_READ:
+		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
+				"Read Permission fault");
+		break;
+	default:
+		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
+				"Unknown Permission fault");
+		break;
+	}
+}
+#endif
 
 void page_fault_worker(struct work_struct *data)
 {
@@ -122,6 +310,10 @@ void page_fault_worker(struct work_struct *data)
 	struct kbase_va_region *region;
 	int err;
 	bool grown = false;
+	size_t min_pool_size;
+	struct kbase_mem_pool *pool;
+	int pages_to_grow;
+	struct tagged_addr *gpu_pages, *cpu_pages;
 
 	faulting_as = container_of(data, struct kbase_as, work_pagefault);
 	fault_pfn = faulting_as->fault_addr >> PAGE_SHIFT;
@@ -140,8 +332,7 @@ void page_fault_worker(struct work_struct *data)
 
 	KBASE_DEBUG_ASSERT(kctx->kbdev == kbdev);
 
-	if (unlikely(faulting_as->protected_mode))
-	{
+	if (unlikely(faulting_as->protected_mode)) {
 		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
 				"Protected mode fault");
 		kbase_mmu_hw_clear_fault(kbdev, faulting_as, kctx,
@@ -158,6 +349,17 @@ void page_fault_worker(struct work_struct *data)
 		break;
 
 	case AS_FAULTSTATUS_EXCEPTION_CODE_PERMISSION_FAULT:
+#ifdef CONFIG_MALI_JOB_DUMP
+		/* If GWT was ever enabled then we need to handle
+		 * write fault pages even if the feature was disabled later.
+		 */
+		if (kctx->gwt_was_enabled) {
+			kbase_gpu_mmu_handle_permission_fault(kctx,
+							faulting_as);
+			goto fault_done;
+		}
+#endif
+
 		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
 				"Permission failure");
 		goto fault_done;
@@ -196,6 +398,7 @@ void page_fault_worker(struct work_struct *data)
 		goto fault_done;
 	}
 
+page_fault_retry:
 	/* so we have a translation fault, let's see if it is for growable
 	 * memory */
 	kbase_gpu_vm_lock(kctx);
@@ -266,15 +469,10 @@ void page_fault_worker(struct work_struct *data)
 		goto fault_done;
 	}
 
-	new_pages = make_multiple(fault_rel_pfn -
-			kbase_reg_current_backed_size(region) + 1,
-			region->extent);
+	new_pages = reg_grow_calc_extra_pages(region, fault_rel_pfn);
 
 	/* cap to max vsize */
-	if (new_pages + kbase_reg_current_backed_size(region) >
-			region->nr_pages)
-		new_pages = region->nr_pages -
-				kbase_reg_current_backed_size(region);
+	new_pages = min(new_pages, region->nr_pages - kbase_reg_current_backed_size(region));
 
 	if (0 == new_pages) {
 		mutex_lock(&kbdev->mmu_hw_mutex);
@@ -294,20 +492,59 @@ void page_fault_worker(struct work_struct *data)
 		goto fault_done;
 	}
 
-	if (kbase_alloc_phy_pages_helper(region->gpu_alloc, new_pages) == 0) {
-		if (region->gpu_alloc != region->cpu_alloc) {
-			if (kbase_alloc_phy_pages_helper(
-					region->cpu_alloc, new_pages) == 0) {
-				grown = true;
-			} else {
-				kbase_free_phy_pages_helper(region->gpu_alloc,
-						new_pages);
-			}
-		} else {
-			grown = true;
-		}
+#ifdef CONFIG_MALI_2MB_ALLOC
+	if (new_pages >= (SZ_2M / SZ_4K)) {
+		pool = &kctx->lp_mem_pool;
+		/* Round up to number of 2 MB pages required */
+		min_pool_size = new_pages + ((SZ_2M / SZ_4K) - 1);
+		min_pool_size /= (SZ_2M / SZ_4K);
+	} else {
+#endif
+		pool = &kctx->mem_pool;
+		min_pool_size = new_pages;
+#ifdef CONFIG_MALI_2MB_ALLOC
 	}
+#endif
 
+	if (region->gpu_alloc != region->cpu_alloc)
+		min_pool_size *= 2;
+
+	pages_to_grow = 0;
+
+	mutex_lock(&kctx->mem_partials_lock);
+	kbase_mem_pool_lock(pool);
+	/* We can not allocate memory from the kernel with the vm_lock held, so
+	 * check that there is enough memory in the pool. If not then calculate
+	 * how much it has to grow by, grow the pool when the vm_lock is
+	 * dropped, and retry the allocation.
+	 */
+	if (kbase_mem_pool_size(pool) >= min_pool_size) {
+		gpu_pages = kbase_alloc_phy_pages_helper_locked(
+				region->gpu_alloc, pool, new_pages);
+
+		if (gpu_pages) {
+			if (region->gpu_alloc != region->cpu_alloc) {
+				cpu_pages = kbase_alloc_phy_pages_helper_locked(
+						region->cpu_alloc, pool,
+						new_pages);
+
+				if (cpu_pages) {
+					grown = true;
+				} else {
+					kbase_free_phy_pages_helper_locked(
+							region->gpu_alloc,
+							pool, gpu_pages,
+							new_pages);
+				}
+			} else {
+				grown = true;
+			}
+		}
+	} else {
+		pages_to_grow = min_pool_size - kbase_mem_pool_size(pool);
+	}
+	kbase_mem_pool_unlock(pool);
+	mutex_unlock(&kctx->mem_partials_lock);
 
 	if (grown) {
 		u64 pfn_offset;
@@ -377,12 +614,45 @@ void page_fault_worker(struct work_struct *data)
 		/* reenable this in the mask */
 		kbase_mmu_hw_enable_fault(kbdev, faulting_as, kctx,
 					 KBASE_MMU_FAULT_TYPE_PAGE);
+
+#ifdef CONFIG_MALI_JOB_DUMP
+		if (kctx->gwt_enabled) {
+			/* GWT also tracks growable regions. */
+			struct kbasep_gwt_list_element *pos;
+
+			pos = kmalloc(sizeof(*pos), GFP_KERNEL);
+			if (pos) {
+				pos->region = region;
+				pos->page_addr = (region->start_pfn +
+							pfn_offset) <<
+							 PAGE_SHIFT;
+				pos->num_pages = new_pages;
+				list_add(&pos->link,
+					&kctx->gwt_current_list);
+			} else {
+				dev_warn(kbdev->dev, "kmalloc failure");
+			}
+		}
+#endif
 		kbase_gpu_vm_unlock(kctx);
 	} else {
-		/* failed to extend, handle as a normal PF */
+		int ret = -ENOMEM;
+
 		kbase_gpu_vm_unlock(kctx);
-		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
-				"Page allocation failure");
+
+		/* If the memory pool was insufficient then grow it and retry.
+		 * Otherwise fail the allocation.
+		 */
+		if (pages_to_grow > 0)
+			ret = kbase_mem_pool_grow(pool, pages_to_grow);
+
+		if (ret < 0) {
+			/* failed to extend, handle as a normal PF */
+			kbase_mmu_report_fault_and_kill(kctx, faulting_as,
+					"Page allocation failure");
+		} else {
+			goto page_fault_retry;
+		}
 	}
 
 fault_done:
@@ -838,9 +1108,16 @@ int kbase_mmu_insert_pages_no_flush(struct kbase_context *kctx,
 				u64 *target = &pgd_page[ofs];
 
 				/* Fail if the current page is a valid ATE entry
+				 * unless gwt_was_enabled as in that case all
+				 * pages will be valid from when
+				 * kbase_gpu_gwt_start() cleared the gpu
+				 * write flag.
 				 */
-				KBASE_DEBUG_ASSERT(0 == (*target & 1UL));
-
+#ifdef CONFIG_MALI_JOB_DUMP
+				if (!kctx->gwt_was_enabled)
+#endif
+					KBASE_DEBUG_ASSERT
+						(0 == (*target & 1UL));
 				kctx->kbdev->mmu_mode->entry_set_ate(target,
 						phys[i], flags, cur_level);
 			}
@@ -1202,13 +1479,12 @@ KBASE_EXPORT_TEST_API(kbase_mmu_teardown_pages);
  * already held by the caller. Refer to kbasep_js_runpool_release_ctx() for more
  * information.
  */
-int kbase_mmu_update_pages(struct kbase_context *kctx, u64 vpfn,
-			   struct tagged_addr *phys, size_t nr,
-			   unsigned long flags)
+int kbase_mmu_update_pages_no_flush(struct kbase_context *kctx, u64 vpfn,
+					struct tagged_addr *phys, size_t nr,
+					unsigned long flags)
 {
 	phys_addr_t pgd;
 	u64 *pgd_page;
-	size_t requested_nr = nr;
 	struct kbase_mmu_mode const *mmu_mode;
 	int err;
 
@@ -1223,9 +1499,6 @@ int kbase_mmu_update_pages(struct kbase_context *kctx, u64 vpfn,
 	mutex_lock(&kctx->mmu_lock);
 
 	mmu_mode = kctx->kbdev->mmu_mode;
-
-	dev_warn(kctx->kbdev->dev, "kbase_mmu_update_pages(): updating page share flags on GPU PFN 0x%llx from phys %p, %zu pages",
-			vpfn, phys, nr);
 
 	while (nr) {
 		unsigned int i;
@@ -1278,12 +1551,21 @@ int kbase_mmu_update_pages(struct kbase_context *kctx, u64 vpfn,
 	}
 
 	mutex_unlock(&kctx->mmu_lock);
-	kbase_mmu_flush_invalidate(kctx, vpfn, requested_nr, true);
 	return 0;
 
 fail_unlock:
 	mutex_unlock(&kctx->mmu_lock);
-	kbase_mmu_flush_invalidate(kctx, vpfn, requested_nr, true);
+	return err;
+}
+
+int kbase_mmu_update_pages(struct kbase_context *kctx, u64 vpfn,
+			   struct tagged_addr *phys, size_t nr,
+			   unsigned long flags)
+{
+	int err;
+
+	err = kbase_mmu_update_pages_no_flush(kctx, vpfn, phys, nr, flags);
+	kbase_mmu_flush_invalidate(kctx, vpfn, nr, true);
 	return err;
 }
 
@@ -1534,8 +1816,7 @@ void bus_fault_worker(struct work_struct *data)
 		return;
 	}
 
-	if (unlikely(faulting_as->protected_mode))
-	{
+	if (unlikely(faulting_as->protected_mode)) {
 		kbase_mmu_report_fault_and_kill(kctx, faulting_as,
 				"Permission failure");
 		kbase_mmu_hw_clear_fault(kbdev, faulting_as, kctx,
@@ -2114,14 +2395,10 @@ void kbase_mmu_interrupt_process(struct kbase_device *kbdev, struct kbase_contex
 		 * We need to switch to UNMAPPED mode - but we do this in a
 		 * worker so that we can sleep
 		 */
-		KBASE_DEBUG_ASSERT(0 == object_is_on_stack(&as->work_busfault));
-		WARN_ON(work_pending(&as->work_busfault));
-		queue_work(as->pf_wq, &as->work_busfault);
+		WARN_ON(!queue_work(as->pf_wq, &as->work_busfault));
 		atomic_inc(&kbdev->faults_pending);
 	} else {
-		KBASE_DEBUG_ASSERT(0 == object_is_on_stack(&as->work_pagefault));
-		WARN_ON(work_pending(&as->work_pagefault));
-		queue_work(as->pf_wq, &as->work_pagefault);
+		WARN_ON(!queue_work(as->pf_wq, &as->work_pagefault));
 		atomic_inc(&kbdev->faults_pending);
 	}
 }

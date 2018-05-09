@@ -67,12 +67,13 @@ kbase_devfreq_target(struct device *dev, unsigned long *target_freq, u32 flags)
 
 	rcu_read_lock();
 	opp = devfreq_recommended_opp(dev, &freq, flags);
-	voltage = dev_pm_opp_get_voltage(opp);
-	rcu_read_unlock();
-	if (IS_ERR_OR_NULL(opp)) {
+	if (IS_ERR(opp)) {
+		rcu_read_unlock();
 		dev_err(dev, "Failed to get opp (%ld)\n", PTR_ERR(opp));
 		return PTR_ERR(opp);
 	}
+	voltage = dev_pm_opp_get_voltage(opp);
+	rcu_read_unlock();
 
 	/*
 	 * Only update if there is a change of frequency
@@ -128,6 +129,8 @@ kbase_devfreq_target(struct device *dev, unsigned long *target_freq, u32 flags)
 #endif
 
 	kbdev->current_voltage = voltage;
+	if (kbdev->devfreq)
+		kbdev->devfreq->last_status.current_frequency = freq;
 
 	kbase_pm_reset_dvfs_utilisation(kbdev);
 
@@ -281,6 +284,7 @@ out:
 int kbase_devfreq_init(struct kbase_device *kbdev)
 {
 	struct devfreq_dev_profile *dp;
+	unsigned long opp_rate;
 	int err;
 
 	if (!kbdev->clock)
@@ -343,6 +347,11 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 	if (err)
 		dev_err(kbdev->dev, "register gpu trans notifier (%d)\n", err);
 
+	opp_rate = kbdev->current_freq;
+	rcu_read_lock();
+	devfreq_recommended_opp(kbdev->dev, &opp_rate, 0);
+	rcu_read_unlock();
+	kbdev->devfreq->last_status.current_frequency = opp_rate;
 #ifdef CONFIG_DEVFREQ_THERMAL
 	err = kbase_power_model_simple_init(kbdev);
 	if (err && err != -ENODEV && err != -EPROBE_DEFER) {

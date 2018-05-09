@@ -76,6 +76,28 @@
 		#sound-dai-cells = <0>;
 	};
 
+	vcc_host_vbus: host-vbus-regulator {
+		compatible = "regulator-fixed";
+		gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&host_vbus_drv>;
+		regulator-name = "vcc_host_vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+	};
+
+	vcc_otg_vbus: otg-vbus-regulator {
+		compatible = "regulator-fixed";
+		gpio = <&gpio0 RK_PD3 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&otg_vbus_drv>;
+		regulator-name = "vcc_otg_vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+	};
+
 	vcc_phy: vcc-phy-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc_phy";
@@ -138,6 +160,7 @@
 &emmc {
 	bus-width = <8>;
 	cap-mmc-highspeed;
+	mmc-hs200-1_8v;
 	supports-emmc;
 	disable-wp;
 	non-removable;
@@ -186,6 +209,13 @@
 };
 
 &hdmiphy {
+	rockchip,phy-table =
+		<165000000 0x07 0x0a 0x0a 0x0a 0x00 0x00 0x08
+			   0x08 0x08 0x00 0xac 0xcc 0xcc 0xcc>,
+		<340000000 0x0b 0x0d 0x0d 0x0d 0x07 0x15 0x08
+			   0x08 0x08 0x3f 0xac 0xcc 0xcd 0xdd>,
+		<594000000 0x10 0x1a 0x1a 0x1a 0x07 0x15 0x08
+			   0x08 0x08 0x00 0xac 0xcc 0xcc 0xcc>;
 	status = "okay";
 };
 
@@ -224,7 +254,7 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			vdd_logic: RK805_DCDC1@0 {
+			vdd_logic: RK805_DCDC1 {
 				regulator-compatible = "RK805_DCDC1";
 				regulator-name = "vdd_logic";
 				regulator-min-microvolt = <712500>;
@@ -240,7 +270,7 @@
 				};
 			};
 
-			vdd_arm: RK805_DCDC2@1 {
+			vdd_arm: RK805_DCDC2 {
 				regulator-compatible = "RK805_DCDC2";
 				regulator-name = "vdd_arm";
 				regulator-init-microvolt = <1225000>;
@@ -257,7 +287,7 @@
 				};
 			};
 
-			vcc_ddr: RK805_DCDC3@2 {
+			vcc_ddr: RK805_DCDC3 {
 				regulator-compatible = "RK805_DCDC3";
 				regulator-name = "vcc_ddr";
 				regulator-initial-mode = <0x1>;
@@ -269,7 +299,7 @@
 				};
 			};
 
-			vcc_io: RK805_DCDC4@3 {
+			vcc_io: RK805_DCDC4 {
 				regulator-compatible = "RK805_DCDC4";
 				regulator-name = "vcc_io";
 				regulator-min-microvolt = <3300000>;
@@ -284,7 +314,7 @@
 				};
 			};
 
-			vdd_18: RK805_LDO1@4 {
+			vdd_18: RK805_LDO1 {
 				regulator-compatible = "RK805_LDO1";
 				regulator-name = "vdd_18";
 				regulator-min-microvolt = <1800000>;
@@ -297,7 +327,7 @@
 				};
 			};
 
-			vcc_18emmc: RK805_LDO2@5 {
+			vcc_18emmc: RK805_LDO2 {
 				regulator-compatible = "RK805_LDO2";
 				regulator-name = "vcc_18emmc";
 				regulator-min-microvolt = <1800000>;
@@ -310,7 +340,7 @@
 				};
 			};
 
-			vdd_11: RK805_LDO3@6 {
+			vdd_11: RK805_LDO3 {
 				regulator-compatible = "RK805_LDO3";
 				regulator-name = "vdd_11";
 				regulator-min-microvolt = <1100000>;
@@ -324,6 +354,14 @@
 			};
 		};
 	};
+};
+
+&secure_memory {
+	/*
+	 * enable like this:
+	 * reg = <0x0 0x20000000 0x0 0x10000000>;
+	 */
+	reg = <0x0 0x20000000 0x0 0x0>;
 };
 
 &h265e {
@@ -373,6 +411,18 @@
 		wifi_enable_h: wifi-enable-h {
 		rockchip,pins =
 			<1 18 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	usb {
+		host_vbus_drv: host-vbus-drv {
+			rockchip,pins =
+				<0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		otg_vbus_drv: otg-vbus-drv {
+			rockchip,pins =
+				<0 RK_PD3 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
@@ -567,7 +617,6 @@
 };
 
 &u2phy {
-	otg-vbus-gpios = <&gpio0 RK_PD3 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 
 	u2phy_host: host-port {
@@ -575,12 +624,13 @@
 	};
 
 	u2phy_otg: otg-port {
+		vbus-supply = <&vcc_otg_vbus>;
 		status = "okay";
 	};
 };
 
 &u3phy {
-	vbus-drv-gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+	vbus-supply = <&vcc_host_vbus>;
 	status = "okay";
 };
 

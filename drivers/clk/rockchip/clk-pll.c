@@ -107,6 +107,31 @@ int rockchip_pll_clk_adaptive_scaling(struct clk *clk, int sel)
 	return 0;
 }
 
+int rockchip_pll_clk_adaptive_rate(struct clk *clk, unsigned long rate)
+{
+	const struct rockchip_pll_rate_table *rate_table;
+	struct clk *parent = clk_get_parent(clk);
+	struct rockchip_clk_pll *pll;
+	int i;
+
+	if (IS_ERR_OR_NULL(parent))
+		return -EINVAL;
+
+	pll = to_rockchip_clk_pll(__clk_get_hw(parent));
+	if (!pll)
+		return -EINVAL;
+
+	rate_table = pll->rate_table;
+	for (i = 0; i < pll->rate_count; i++) {
+		if (rate >= rate_table[i].rate) {
+			pll->sel = i;
+			break;
+		}
+	}
+
+	return 0;
+}
+
 static struct rockchip_pll_rate_table *rk_pll_rate_table_get(void)
 {
 	return &auto_table;
@@ -336,8 +361,12 @@ static int rockchip_pll_wait_lock(struct rockchip_clk_pll *pll)
 
 void rockchip_boost_enable_recovery_sw_low(struct clk_hw *hw)
 {
-	struct rockchip_clk_pll *pll = to_rockchip_clk_pll(hw);
+	struct rockchip_clk_pll *pll;
 	int ret;
+
+	if (!hw)
+		return;
+	pll = to_rockchip_clk_pll(hw);
 
 	if (pll->type == pll_px30) {
 		writel_relaxed(HIWORD_UPDATE(1, PX30_BOOST_RECOVERY_MASK,
@@ -367,7 +396,11 @@ void rockchip_boost_disable_low(struct rockchip_clk_pll *pll)
 
 void rockchip_boost_disable_recovery_sw(struct clk_hw *hw)
 {
-	struct rockchip_clk_pll *pll = to_rockchip_clk_pll(hw);
+	struct rockchip_clk_pll *pll;
+
+	if (!hw)
+		return;
+	pll = to_rockchip_clk_pll(hw);
 
 	if (pll->type == pll_px30) {
 		writel_relaxed(HIWORD_UPDATE(0, PX30_BOOST_RECOVERY_MASK,
@@ -429,6 +462,9 @@ static unsigned long rockchip_rk3036_pll_recalc_rate(struct clk_hw *hw,
 	struct rockchip_clk_pll *pll = to_rockchip_clk_pll(hw);
 	struct rockchip_pll_rate_table cur;
 	u64 rate64 = prate;
+
+	if (pll->sel && pll->scaling)
+		return pll->scaling;
 
 	if (pll->type == pll_rk3366)
 		rockchip_rk3366_pll_get_params(pll, &cur);
