@@ -735,8 +735,8 @@ void phy_detach(struct phy_device *phydev)
 	int i;
 
 	phydev->attached_dev->phydev = NULL;
-	phydev->attached_dev = NULL;
 	phy_suspend(phydev);
+	phydev->attached_dev = NULL;
 
 	/* If the device had no specific driver before (i.e. - it
 	 * was using the generic driver), we unbind the device
@@ -1226,7 +1226,70 @@ static int gen10g_config_init(struct phy_device *phydev)
 int genphy_suspend(struct phy_device *phydev)
 {
 	int value;
+	struct net_device * ndev = phydev->attached_dev;
 
+ 	mutex_lock(&phydev->lock);
+
+//#if RTL8211E
+#if 1
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6e);
+
+	phy_write(phydev, 21, ((u16)ndev->dev_addr[1] << 8) + ndev->dev_addr[0]);
+	phy_write(phydev, 22, ((u16)ndev->dev_addr[3] << 8) + ndev->dev_addr[2]);
+	phy_write(phydev, 23, ((u16)ndev->dev_addr[5] << 8) + ndev->dev_addr[4]);
+
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6d);
+	phy_write(phydev, 22, 0x1fff);
+	value = phy_read(phydev, 22);
+
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6d);
+	phy_write(phydev, 21, 0x1000);
+	value = phy_read(phydev, 21);
+
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x6d);
+	value =  phy_read(phydev, 25);
+	phy_write(phydev, 25, value | 0x1);
+
+	phy_write(phydev, 31, 0x0);
+        value = phy_read(phydev, 31);
+#endif
+
+//#if RTL8211F
+#if 0
+	//set INTB pin
+	phy_write(priv->phydev, 31, 0x0d40);
+	value = phy_read(priv->phydev, 22);
+	phy_write(priv->phydev, 22, value | BIT(5));
+
+	//set MAC address
+	phy_write(priv->phydev, 31, 0x0d8c);
+	phy_write(priv->phydev, 16, ((u16)ndev->dev_addr[1] << 8) + ndev->dev_addr[0]);
+	phy_write(priv->phydev, 17, ((u16)ndev->dev_addr[3] << 8) + ndev->dev_addr[2]);
+	phy_write(priv->phydev, 18, ((u16)ndev->dev_addr[5] << 8) + ndev->dev_addr[4]);
+
+	//set max packet length
+	phy_write(priv->phydev, 31, 0x0d8a);
+	phy_write(priv->phydev, 17, 0x9fff);
+
+	//enable wol event
+	phy_write(priv->phydev, 31, 0x0d8a);
+	phy_write(priv->phydev, 16, 0x1000);
+
+	//disable rgmii pad
+	phy_write(priv->phydev, 31, 0x0d8a);
+	value = phy_read(priv->phydev, 19);
+	phy_write(priv->phydev, 19, value | BIT(15));
+
+	phy_write(priv->phydev, 31, 0xa42);
+#endif
+	mutex_unlock(&phydev->lock);
+
+	return 0;
+/*
 	mutex_lock(&phydev->lock);
 
 	value = phy_read(phydev, MII_BMCR);
@@ -1235,6 +1298,7 @@ int genphy_suspend(struct phy_device *phydev)
 	mutex_unlock(&phydev->lock);
 
 	return 0;
+*/
 }
 EXPORT_SYMBOL(genphy_suspend);
 
@@ -1246,6 +1310,60 @@ static int gen10g_suspend(struct phy_device *phydev)
 int genphy_resume(struct phy_device *phydev)
 {
 	int value;
+
+	if (phydev->suspended) {
+		mutex_lock(&phydev->lock);
+//#if RTL8211E
+#if 1
+		phy_write(phydev, 31, 0x07);
+		phy_write(phydev, 30, 0x6d);
+		phy_write(phydev, 21, 0x0);
+		value = phy_read(phydev, 21);
+
+		phy_write(phydev, 31, 0x07);
+		phy_write(phydev, 30, 0x6d);
+		value =  phy_read(phydev, 22);
+		phy_write(phydev, 22, value | BIT(15));
+		value = phy_read(phydev, 22);
+
+		phy_write(phydev, 31, 0x07);
+		phy_write(phydev, 30, 0x6d);
+		value =  phy_read(phydev, 25);
+		phy_write(phydev, 25, value & (~(0x1)));
+
+		phy_write(phydev, 31, 0x0);
+                value = phy_read(phydev, 31);
+#endif
+
+//#if RTL8211F
+#if 0
+		//disable wol event
+		phy_write(priv->phydev, 31, 0x0d8a);
+		phy_write(priv->phydev, 16, 0x0);
+
+		//reset wol
+		phy_write(priv->phydev, 31, 0x0d8a);
+		value = phy_read(priv->phydev, 17);
+		phy_write(priv->phydev, 17, value & (~BIT(15)));
+
+		//enable rgmii pad
+		phy_write(priv->phydev, 31, 0x0d8a);
+		value = phy_read(priv->phydev, 19);
+		phy_write(priv->phydev, 19, value & (~BIT(15)));
+
+		//set INTB pin
+		phy_write(priv->phydev, 31, 0x0d40);
+		value = phy_read(priv->phydev, 22);
+		phy_write(priv->phydev, 22, value & (~BIT(5)));
+
+		phy_write(priv->phydev, 31, 0xa42);
+#endif
+		mutex_unlock(&phydev->lock);
+
+		msleep(100);
+
+		return 0;
+	}
 
 	mutex_lock(&phydev->lock);
 
