@@ -2669,7 +2669,7 @@ static void dw_mci_slot_of_parse(struct dw_mci_slot *slot)
 
 struct dw_mci *mSdhost;
 void setmmcEmergency() {
-	struct mmc_host *mmc = mSdhost->cur_slot->mmc;
+	struct mmc_host *mmc = mSdhost->slot[0]->mmc;
 	int ret;
 
 	mmc_power_off(mmc);
