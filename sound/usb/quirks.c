@@ -1304,22 +1304,43 @@ u64 snd_usb_interface_dsd_format_quirks(struct snd_usb_audio *chip,
 
 	/* XMOS based USB DACs */
 	switch (chip->usb_id) {
-	case USB_ID(0x20b1, 0x3008): /* iFi Audio micro/nano iDSD */
-	case USB_ID(0x20b1, 0x2008): /* Matrix Audio X-Sabre */
-	case USB_ID(0x20b1, 0x300a): /* Matrix Audio Mini-i Pro */
-	case USB_ID(0x22d9, 0x0416): /* OPPO HA-1 */
-	case USB_ID(0x2772, 0x0230): /* Pro-Ject Pre Box S2 Digital */
-		if (fp->altsetting == 2)
-			return SNDRV_PCM_FMTBIT_DSD_U32_BE;
+        case USB_ID(0x20b1, 0x3008): /* iFi Audio micro/nano iDSD */
+        case USB_ID(0x20b1, 0x2008): /* Matrix Audio X-Sabre */
+        case USB_ID(0x20b1, 0x300a): /* Matrix Audio Mini-i Pro */
+        case USB_ID(0x20b1, 0x302a): /* Matrix Audio Quattro II */
+        case USB_ID(0x22d9, 0x0416): /* OPPO HA-1 */
+        case USB_ID(0x22d9, 0x0426): /* OPPO HA-2 */
+        case USB_ID(0x2772, 0x0230): /* Pro-Ject Pre Box S2 Digital */
+        case USB_ID(0x2522, 0x0012): /* LH Labs VI DAC Infinity */
+        case USB_ID(0x1511, 0x0037): /* AURALiC VEGA */
+        case USB_ID(0x20b1, 0x0002): /* Wyred 4 Sound DAC-2 DSD */
+        case USB_ID(0x2622, 0x0666): /* QUAD Artera */
+        case USB_ID(0x25ce, 0x001f): /* Mytek Brooklyn DAC */
+        case USB_ID(0x22d9, 0x0436): /* OPPO Sonica */
+                if (fp->altsetting == 2)
+                        return SNDRV_PCM_FMTBIT_DSD_U32_BE;
 		break;
 
-	case USB_ID(0x20b1, 0x000a): /* Gustard DAC-X20U */
-	case USB_ID(0x20b1, 0x2009): /* DIYINHK DSD DXD 384kHz USB to I2S/DSD */
-	case USB_ID(0x20b1, 0x2023): /* JLsounds I2SoverUSB */
-	case USB_ID(0x20b1, 0x3023): /* Aune X1S 32BIT/384 DSD DAC */
-	case USB_ID(0x2616, 0x0106): /* PS Audio NuWave DAC */
-		if (fp->altsetting == 3)
-			return SNDRV_PCM_FMTBIT_DSD_U32_BE;
+        case USB_ID(0x20b1, 0x000a): /* Gustard DAC-X20U */
+        case USB_ID(0x20b1, 0x2009): /* DIYINHK DSD DXD 384kHz USB to I2S/DSD */
+        case USB_ID(0x20b1, 0x2023): /* JLsounds I2SoverUSB */
+        case USB_ID(0x20b1, 0x3023): /* Aune X1S 32BIT/384 DSD DAC */
+        case USB_ID(0x2616, 0x0106): /* PS Audio NuWave DAC */
+        case USB_ID(0x6b42, 0x0042): /* MSB Technology */
+        case USB_ID(0x20a0, 0x4143): /* WaveIO USB Audio 2.0 */
+        case USB_ID(0x20b1, 0x3073): /* Soekris dac1101 */
+        case USB_ID(0x20b1, 0x2005): /* Denafrips DAC */
+        case USB_ID(0x16d0, 0x0733): /* Furutech ADL Stratos */
+        case USB_ID(0x22e1, 0xca01): /* HDTA Serenade DSD */
+        case USB_ID(0x2622, 0x0041): /* Audiolab M-DAC+ */
+        case USB_ID(0x1db5, 0x0003): /* Bryston BDA3 */
+        case USB_ID(0x20b1, 0x302d): /* Unison Research Unico CD Due */
+        case USB_ID(0x16b0, 0x06b2): /* NuPrime DAC-10 */
+        case USB_ID(0x20b1, 0x3036): /* Holo Springs Level 3 R2R DAC */
+        case USB_ID(0x20b1, 0x300f): /* Engineered Electronics Stereo Playback Interface */
+        case USB_ID(0x20b1, 0x3021): /* Eastern El. MiniMax Tube DAC Supreme */
+                if (fp->altsetting == 3)
+                        return SNDRV_PCM_FMTBIT_DSD_U32_BE;		
 		break;
 	default:
 		break;
