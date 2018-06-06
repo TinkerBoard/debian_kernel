@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __PLAT_BOARD_H
 #define __PLAT_BOARD_H
 
@@ -72,6 +73,7 @@ enum {
     WIFI_RTL8812AU,
     WIFI_RTL_SERIES,
     WIFI_ESP8089,
+    WIFI_MVL88W8977,
     TYPE_MAX,
 };
 

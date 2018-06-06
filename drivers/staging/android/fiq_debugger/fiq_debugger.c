@@ -866,8 +866,7 @@ static bool fiq_debugger_handle_uart_interrupt(struct fiq_debugger_state *state,
 	int count = 0;
 	bool signal_helper = false;
 
-	if ((this_cpu != state->current_cpu) &&
-	    (cpu_online(state->current_cpu))) {
+	if (this_cpu != state->current_cpu) {
 		if (state->in_fiq)
 			return false;
 
@@ -881,12 +880,9 @@ static bool fiq_debugger_handle_uart_interrupt(struct fiq_debugger_state *state,
 			this_cpu);
 
 		atomic_set(&state->unhandled_fiq_count, 0);
-		fiq_debugger_switch_cpu(state, this_cpu);
+		state->current_cpu = this_cpu;
 		return false;
 	}
-
-	if (this_cpu != state->current_cpu)
-		state->current_cpu = this_cpu;
 
 	state->in_fiq = true;
 
@@ -1401,16 +1397,6 @@ static int fiq_debugger_probe(struct platform_device *pdev)
 	if (state->clk)
 		clk_enable(state->clk);
 
-	if (pdata->uart_init) {
-		ret = pdata->uart_init(pdev);
-		if (ret)
-			goto err_uart_init;
-	}
-
-	fiq_debugger_printf_nfiq(state,
-				"<hit enter %sto activate fiq debugger>\n",
-				state->no_sleep ? "" : "twice ");
-
 	if (fiq_debugger_have_fiq(state)) {
 #ifdef CONFIG_FIQ_GLUE
 #ifdef CONFIG_FIQ_DEBUGGER_TRUST_ZONE
@@ -1451,9 +1437,6 @@ static int fiq_debugger_probe(struct platform_device *pdev)
 		enable_irq_wake(state->uart_irq);
 	}
 
-	if (state->clk)
-		clk_disable(state->clk);
-
 	if (state->signal_irq >= 0) {
 		ret = request_irq(state->signal_irq, fiq_debugger_signal_irq,
 			  IRQF_TRIGGER_RISING, "debug-signal", state);
@@ -1485,6 +1468,15 @@ static int fiq_debugger_probe(struct platform_device *pdev)
 #ifdef CONFIG_FIQ_DEBUGGER_TRUST_ZONE
 	state_tf = state;
 #endif
+
+	if (pdata->uart_init) {
+		ret = pdata->uart_init(pdev);
+		if (ret)
+			goto err_uart_init;
+	}
+
+	if (state->clk)
+		clk_disable(state->clk);
 
 #if defined(CONFIG_FIQ_DEBUGGER_CONSOLE)
 	spin_lock_init(&state->console_lock);

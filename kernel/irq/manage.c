@@ -517,9 +517,15 @@ void __enable_irq(struct irq_desc *desc)
 			goto err_out;
 		/* Prevent probing on this irq: */
 		irq_settings_set_noprobe(desc);
-		irq_enable(desc);
-		check_irq_resend(desc);
-		/* fall-through */
+		/*
+		 * Call irq_startup() not irq_enable() here because the
+		 * interrupt might be marked NOAUTOEN. So irq_startup()
+		 * needs to be invoked when it gets enabled the first
+		 * time. If it was already started up, then irq_startup()
+		 * will invoke irq_enable() under the hood.
+		 */
+		irq_startup(desc, true);
+		break;
 	}
 	default:
 		desc->depth--;
@@ -1305,11 +1311,19 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		if (new->flags & IRQF_ONESHOT)
 			desc->istate |= IRQS_ONESHOT;
 
-		if (irq_settings_can_autoenable(desc))
+		if (irq_settings_can_autoenable(desc)) {
 			irq_startup(desc, true);
-		else
+		} else {
+			/*
+			 * Shared interrupts do not go well with disabling
+			 * auto enable. The sharing interrupt might request
+			 * it while it's still disabled and then wait for
+			 * interrupts forever.
+			 */
+			WARN_ON_ONCE(new->flags & IRQF_SHARED);
 			/* Undo nested disables: */
 			desc->depth = 1;
+		}
 
 		/* Exclude IRQ from balancing if requested */
 		if (new->flags & IRQF_NOBALANCING) {

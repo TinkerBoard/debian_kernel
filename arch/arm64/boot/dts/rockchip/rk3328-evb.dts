@@ -42,6 +42,7 @@
 
 /dts-v1/;
 #include "rk3328.dtsi"
+#include <dt-bindings/input/input.h>
 
 / {
 	model = "Rockchip RK3328 EVB";
@@ -126,6 +127,28 @@
 		#sound-dai-cells = <0>;
 	};
 
+	vcc_host_vbus: host-vbus-regulator {
+		compatible = "regulator-fixed";
+		gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&host_vbus_drv>;
+		regulator-name = "vcc_host_vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+	};
+
+	vcc_otg_vbus: otg-vbus-regulator {
+		compatible = "regulator-fixed";
+		gpio = <&gpio0 RK_PD3 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&otg_vbus_drv>;
+		regulator-name = "vcc_otg_vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+	};
+
 	vcc_phy: vcc-phy-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc_phy";
@@ -170,6 +193,7 @@
 &emmc {
 	bus-width = <8>;
 	cap-mmc-highspeed;
+	mmc-hs200-1_8v;
 	supports-emmc;
 	disable-wp;
 	non-removable;
@@ -257,7 +281,7 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			vdd_logic: RK805_DCDC1@0 {
+			vdd_logic: RK805_DCDC1 {
 				regulator-compatible = "RK805_DCDC1";
 				regulator-name = "vdd_logic";
 				regulator-min-microvolt = <712500>;
@@ -273,7 +297,7 @@
 				};
 			};
 
-			vdd_arm: RK805_DCDC2@1 {
+			vdd_arm: RK805_DCDC2 {
 				regulator-compatible = "RK805_DCDC2";
 				regulator-name = "vdd_arm";
 				regulator-min-microvolt = <712500>;
@@ -289,7 +313,7 @@
 				};
 			};
 
-			vcc_ddr: RK805_DCDC3@2 {
+			vcc_ddr: RK805_DCDC3 {
 				regulator-compatible = "RK805_DCDC3";
 				regulator-name = "vcc_ddr";
 				regulator-initial-mode = <0x1>;
@@ -301,7 +325,7 @@
 				};
 			};
 
-			vcc_io: RK805_DCDC4@3 {
+			vcc_io: RK805_DCDC4 {
 				regulator-compatible = "RK805_DCDC4";
 				regulator-name = "vcc_io";
 				regulator-min-microvolt = <3300000>;
@@ -316,7 +340,7 @@
 				};
 			};
 
-			vdd_18: RK805_LDO1@4 {
+			vdd_18: RK805_LDO1 {
 				regulator-compatible = "RK805_LDO1";
 				regulator-name = "vdd_18";
 				regulator-min-microvolt = <1800000>;
@@ -329,7 +353,7 @@
 				};
 			};
 
-			vcc_18emmc: RK805_LDO2@5 {
+			vcc_18emmc: RK805_LDO2 {
 				regulator-compatible = "RK805_LDO2";
 				regulator-name = "vcc_18emmc";
 				regulator-min-microvolt = <1800000>;
@@ -342,16 +366,16 @@
 				};
 			};
 
-			vdd_10: RK805_LDO3@6 {
+			vdd_11: RK805_LDO3 {
 				regulator-compatible = "RK805_LDO3";
-				regulator-name = "vdd_10";
-				regulator-min-microvolt = <1000000>;
-				regulator-max-microvolt = <1000000>;
+				regulator-name = "vdd_11";
+				regulator-min-microvolt = <1100000>;
+				regulator-max-microvolt = <1100000>;
 				regulator-boot-on;
 				regulator-always-on;
 				regulator-state-mem {
 					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <1000000>;
+					regulator-suspend-microvolt = <1100000>;
 				};
 			};
 		};
@@ -399,6 +423,115 @@
 			<1 18 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
+
+	usb {
+		host_vbus_drv: host-vbus-drv {
+			rockchip,pins =
+				<0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		otg_vbus_drv: otg-vbus-drv {
+			rockchip,pins =
+				<0 RK_PD3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};
+
+&pwm3 {
+	status = "okay";
+	compatible = "rockchip,remotectl-pwm";
+	remote_pwm_id = <3>;
+	handle_cpu_id = <1>;
+	remote_support_psci = <1>;
+
+	ir_key1 {
+		rockchip,usercode = <0x4040>;
+		rockchip,key_table =
+			<0xf2	KEY_REPLY>,
+			<0xba	KEY_BACK>,
+			<0xf4	KEY_UP>,
+			<0xf1	KEY_DOWN>,
+			<0xef	KEY_LEFT>,
+			<0xee	KEY_RIGHT>,
+			<0xbd	KEY_HOME>,
+			<0xea	KEY_VOLUMEUP>,
+			<0xe3	KEY_VOLUMEDOWN>,
+			<0xe2	KEY_SEARCH>,
+			<0xb2	KEY_POWER>,
+			<0xbc	KEY_MUTE>,
+			<0xec	KEY_MENU>,
+			<0xbf	0x190>,
+			<0xe0	0x191>,
+			<0xe1	0x192>,
+			<0xe9	183>,
+			<0xe6	248>,
+			<0xe8	185>,
+			<0xe7	186>,
+			<0xf0	388>,
+			<0xbe	0x175>;
+	};
+
+	ir_key2 {
+		rockchip,usercode = <0xff00>;
+		rockchip,key_table =
+			<0x39	KEY_POWER>,
+			<0x73	KEY_MUTE>,
+			<0xa4	KEY_PLAYPAUSE>,
+			<0x75	KEY_VOLUMEDOWN>,
+			<0x77	KEY_VOLUMEUP>,
+			<0x7d	KEY_MENU>,
+			<0xf9	KEY_HOME>,
+			<0x5f	KEY_BACK>,
+			<0xb9	KEY_UP>,
+			<0xe9	KEY_DOWN>,
+			<0xb8	KEY_LEFT>,
+			<0xea	KEY_RIGHT>,
+			<0xaa	KEY_REPLY>,
+			<0x55	KEY_1>,
+			<0x5b	KEY_2>,
+			<0xf8	KEY_3>,
+			<0x57	KEY_4>,
+			<0xed	KEY_5>,
+			<0xee	KEY_6>,
+			<0x59	KEY_7>,
+			<0xf1	KEY_8>,
+			<0xf2	KEY_9>,
+			<0xe0	KEY_BACKSPACE>,
+			<0x79	KEY_0>,
+			<0xa4	KEY_SETUP>;
+	};
+
+	ir_key3 {
+		rockchip,usercode = <0x1dcc>;
+		rockchip,key_table =
+			<0xee	KEY_REPLY>,
+			<0xf0	KEY_BACK>,
+			<0xf8	KEY_UP>,
+			<0xbb	KEY_DOWN>,
+			<0xef	KEY_LEFT>,
+			<0xed	KEY_RIGHT>,
+			<0xfc	KEY_HOME>,
+			<0xf1	KEY_VOLUMEUP>,
+			<0xfd	KEY_VOLUMEDOWN>,
+			<0xb7	KEY_SEARCH>,
+			<0xff	KEY_POWER>,
+			<0xf3	KEY_MUTE>,
+			<0xbf	KEY_MENU>,
+			<0xf9	0x191>,
+			<0xf5	0x192>,
+			<0xb3	388>,
+			<0xbe	KEY_1>,
+			<0xba	KEY_2>,
+			<0xb2	KEY_3>,
+			<0xbd	KEY_4>,
+			<0xf9	KEY_5>,
+			<0xb1	KEY_6>,
+			<0xfc	KEY_7>,
+			<0xf8	KEY_8>,
+			<0xb0	KEY_9>,
+			<0xb6	KEY_0>,
+			<0xb5	KEY_BACKSPACE>;
+	};
 };
 
 &rkvdec {
@@ -445,7 +578,6 @@
 };
 
 &u2phy {
-	otg-vbus-gpios = <&gpio0 RK_PD3 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 
 	u2phy_host: host-port {
@@ -453,12 +585,13 @@
 	};
 
 	u2phy_otg: otg-port {
+		vbus-supply = <&vcc_otg_vbus>;
 		status = "okay";
 	};
 };
 
 &u3phy {
-	vbus-drv-gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+	vbus-supply = <&vcc_host_vbus>;
 	status = "okay";
 };
 

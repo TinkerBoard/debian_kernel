@@ -52,7 +52,7 @@
 	compatible = "rockchip,px5-evb", "rockchip,px5", "rockchip,rk3368";
 
 	chosen {
-		bootargs = "earlycon=uart8250,mmio32,0xff1c0000";
+		bootargs = "earlycon=uart8250,mmio32,0xff1c0000 swiotlb=1 firmware_class.path=/system/vendor/firmware";
 	};
 
 	fiq_debugger: fiq-debugger {
@@ -65,7 +65,7 @@
 			rockchip,baudrate = <115200>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&uart4_xfer>;
-			interrupts = <GIC_SPI 154 IRQ_TYPE_LEVEL_HIGH 0>;
+			interrupts = <GIC_SPI 154 IRQ_TYPE_LEVEL_HIGH>;
 	};
 
 	firmware {
@@ -248,6 +248,28 @@
 		BT,wake_host_irq = <&gpio3 3 GPIO_ACTIVE_HIGH>; /* GPIO3_A3 */
 
 		status = "okay";
+	};
+
+	gpio_det: gpio-det {
+		compatible = "gpio-detection";
+		status = "okay";
+
+		pinctrl-0 = <&gpio3_b1 &gpio3_b2>;
+		pinctrl-names = "default";
+
+		car-reverse {
+			car-reverse-gpios = <&gpio3 10 GPIO_ACTIVE_LOW>;
+			linux,debounce-ms = <5>;
+			label = "car-reverse";
+			gpio,wakeup;
+		};
+
+		car-acc {
+			car-acc-gpios = <&gpio3 9 GPIO_ACTIVE_LOW>;
+			linux,debounce-ms = <5>;
+			label = "car-acc";
+			gpio,wakeup;
+		};
 	};
 
 	vcc_sys: vcc-sys-regulator {
@@ -521,6 +543,7 @@
 				regulator-ramp-delay = <6000>;
 				regulator-state-mem {
 					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <1000000>;
 				};
 			};
 
@@ -578,6 +601,7 @@
 				regulator-name = "vcca_33";
 				regulator-state-mem {
 					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <3300000>;
 				};
 			};
 
@@ -601,6 +625,7 @@
 				regulator-name = "avdd_33";
 				regulator-state-mem {
 					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <3300000>;
 				};
 			};
 
@@ -624,6 +649,7 @@
 				regulator-name = "vdd10_lcd";
 				regulator-state-mem {
 					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <1000000>;
 				};
 			};
 
@@ -634,7 +660,8 @@
 				regulator-max-microvolt = <1800000>;
 				regulator-name = "vcc_18";
 				regulator-state-mem {
-					regulator-off-in-suspend;
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <1800000>;
 				};
 			};
 
@@ -646,6 +673,7 @@
 				regulator-name = "vcc18_lcd";
 				regulator-state-mem {
 					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <1800000>;
 				};
 			};
 
@@ -825,9 +853,25 @@
 	status = "okay";
 };
 
+&dfi {
+	status = "okay";
+};
+
 &dmc {
 	vop-dclk-mode = <1>;
 	center-supply = <&vdd_log>;
+	system-status-freq = <
+		/*system status			freq(KHz)*/
+		SYS_STATUS_NORMAL		600000
+		SYS_STATUS_REBOOT		600000
+		SYS_STATUS_SUSPEND		192000
+		SYS_STATUS_VIDEO_1080P	600000
+		SYS_STATUS_VIDEO_4K		600000
+		SYS_STATUS_PERFORMANCE	600000
+		SYS_STATUS_BOOST		600000
+		SYS_STATUS_DUALVIEW		600000
+		SYS_STATUS_ISP			600000
+	>;
 	status = "okay";
 };
 

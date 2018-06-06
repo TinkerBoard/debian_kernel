@@ -115,59 +115,59 @@
 
 		opp-216000000 {
 			opp-hz = /bits/ 64 <216000000>;
-			opp-microvolt = <950000>;
-			opp-microvolt-L0 = <950000>;
-			opp-microvolt-L1 = <950000>;
-			opp-microvolt-L2 = <950000>;
+			opp-microvolt = <950000 950000 1425000>;
+			opp-microvolt-L0 = <950000 950000 1425000>;
+			opp-microvolt-L1 = <950000 950000 1425000>;
+			opp-microvolt-L2 = <950000 950000 1425000>;
 			clock-latency-ns = <40000>;
 		};
 		opp-408000000 {
 			opp-hz = /bits/ 64 <408000000>;
-			opp-microvolt = <950000>;
-			opp-microvolt-L0 = <950000>;
-			opp-microvolt-L1 = <950000>;
-			opp-microvolt-L2 = <950000>;
+			opp-microvolt = <950000 950000 1425000>;
+			opp-microvolt-L0 = <950000 950000 1425000>;
+			opp-microvolt-L1 = <950000 950000 1425000>;
+			opp-microvolt-L2 = <950000 950000 1425000>;
 			clock-latency-ns = <40000>;
 		};
 		opp-600000000 {
 			opp-hz = /bits/ 64 <600000000>;
-			opp-microvolt = <1075000>;
-			opp-microvolt-L0 = <1075000>;
-			opp-microvolt-L1 = <1025000>;
-			opp-microvolt-L2 = <975000>;
+			opp-microvolt = <1075000 1075000 1425000>;
+			opp-microvolt-L0 = <1075000 1075000 1425000>;
+			opp-microvolt-L1 = <1025000 1025000 1425000>;
+			opp-microvolt-L2 = <975000 975000 1425000>;
 			clock-latency-ns = <40000>;
 		};
 		opp-696000000 {
 			opp-hz = /bits/ 64 <696000000>;
-			opp-microvolt = <1150000>;
-			opp-microvolt-L0 = <1150000>;
-			opp-microvolt-L1 = <1100000>;
-			opp-microvolt-L2 = <1050000>;
+			opp-microvolt = <1150000 1150000 1425000>;
+			opp-microvolt-L0 = <1150000 1150000 1425000>;
+			opp-microvolt-L1 = <1100000 1100000 1425000>;
+			opp-microvolt-L2 = <1050000 1050000 1425000>;
 			clock-latency-ns = <40000>;
 		};
 		opp-816000000 {
 			opp-hz = /bits/ 64 <816000000>;
-			opp-microvolt = <1200000>;
-			opp-microvolt-L0 = <1200000>;
-			opp-microvolt-L1 = <1150000>;
-			opp-microvolt-L2 = <1100000>;
+			opp-microvolt = <1200000 1200000 1425000>;
+			opp-microvolt-L0 = <1200000 1200000 1425000>;
+			opp-microvolt-L1 = <1150000 1150000 1425000>;
+			opp-microvolt-L2 = <1100000 1100000 1425000>;
 			clock-latency-ns = <40000>;
 			opp-suspend;
 		};
 		opp-1008000000 {
 			opp-hz = /bits/ 64 <1008000000>;
-			opp-microvolt = <1325000>;
-			opp-microvolt-L0 = <1325000>;
-			opp-microvolt-L1 = <1275000>;
-			opp-microvolt-L2 = <1225000>;
+			opp-microvolt = <1325000 1325000 1425000>;
+			opp-microvolt-L0 = <1325000 1325000 1425000>;
+			opp-microvolt-L1 = <1275000 1275000 1425000>;
+			opp-microvolt-L2 = <1225000 1225000 1425000>;
 			clock-latency-ns = <40000>;
 		};
 		opp-1200000000 {
 			opp-hz = /bits/ 64 <1200000000>;
-			opp-microvolt = <1425000>;
-			opp-microvolt-L0 = <1425000>;
-			opp-microvolt-L1 = <1425000>;
-			opp-microvolt-L2 = <1375000>;
+			opp-microvolt = <1425000 1425000 1425000>;
+			opp-microvolt-L0 = <1425000 1425000 1425000>;
+			opp-microvolt-L1 = <1425000 1425000 1425000>;
+			opp-microvolt-L2 = <1375000 1375000 1425000>;
 			clock-latency-ns = <40000>;
 		};
 	};
@@ -214,7 +214,9 @@
 	timer {
 		compatible = "arm,armv7-timer";
 		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>,
-			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>;
+			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>,
+			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>,
+			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>;
 		clock-frequency = <24000000>;
 	};
 
@@ -449,7 +451,7 @@
 		iommu_enabled = <1>;
 		iommus = <&iep_mmu>;
 		reg = <0x10108000 0x800>;
-		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH 0>;
+		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&cru ACLK_IEP>, <&cru HCLK_IEP>;
 		clock-names = "aclk_iep", "hclk_iep";
 		power-domains = <&power RK3128_PD_VIO>;
@@ -461,7 +463,7 @@
 	iep_mmu: iommu@10108800 {
 		compatible = "rockchip,iommu";
 		reg = <0x10108800 0x40>;
-		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH 0>;
+		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "iep_mmu";
 		clocks = <&cru ACLK_IEP>, <&cru HCLK_IEP>;
 		clock-names = "aclk", "hclk";
@@ -613,8 +615,8 @@
 		clock-names = "otg";
 		dr_mode = "otg";
 		g-np-tx-fifo-size = <16>;
-		g-rx-fifo-size = <275>;
-		g-tx-fifo-size = <256 128 128 64 64 32>;
+		g-rx-fifo-size = <280>;
+		g-tx-fifo-size = <256 128 128 64 32 16>;
 		g-use-dma;
 		phys = <&u2phy_otg>;
 		phy-names = "usb2-phy";
@@ -817,6 +819,7 @@
 		resets = <&cru SRST_MIPIPHY_P>;
 		reset-names = "apb";
 		power-domains = <&power RK3128_PD_VIO>;
+		rockchip,grf = <&grf>;
 		#phy-cells = <0>;
 		status = "disabled";
 	};
@@ -856,7 +859,7 @@
 		compatible = "snps,dw-wdt";
 		reg = <0x2004c000 0x100>;
 		clocks = <&cru PCLK_WDT>;
-		interrupts = <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH 0>;
+		interrupts = <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
 		status = "disabled";
 	};
 
@@ -864,7 +867,7 @@
 		compatible = "rockchip,rk3288-pwm";
 		reg = <0x20050000 0x10>;
 		#pwm-cells = <3>;
-		pinctrl-names = "default";
+		pinctrl-names = "active";
 		pinctrl-0 = <&pwm0_pin>;
 		clocks = <&cru PCLK_PWM>;
 		clock-names = "pwm";
@@ -875,7 +878,7 @@
 		compatible = "rockchip,rk3288-pwm";
 		reg = <0x20050010 0x10>;
 		#pwm-cells = <3>;
-		pinctrl-names = "default";
+		pinctrl-names = "active";
 		pinctrl-0 = <&pwm1_pin>;
 		clocks = <&cru PCLK_PWM>;
 		clock-names = "pwm";
@@ -886,7 +889,7 @@
 		compatible = "rockchip,rk3288-pwm";
 		reg = <0x20050020 0x10>;
 		#pwm-cells = <3>;
-		pinctrl-names = "default";
+		pinctrl-names = "active";
 		pinctrl-0 = <&pwm2_pin>;
 		clocks = <&cru PCLK_PWM>;
 		clock-names = "pwm";
@@ -897,7 +900,7 @@
 		compatible = "rockchip,rk3288-pwm";
 		reg = <0x20050030 0x10>;
 		#pwm-cells = <3>;
-		pinctrl-names = "default";
+		pinctrl-names = "active";
 		pinctrl-0 = <&pwm3_pin>;
 		clocks = <&cru PCLK_PWM>;
 		clock-names = "pwm";
@@ -1246,7 +1249,7 @@
 			};
 
 			sdmmc_cmd: sdmmc-cmd {
-				rockchip,pins = <1 RK_PC1 1 &pcfg_pull_default>;
+				rockchip,pins = <1 RK_PB7 1 &pcfg_pull_default>;
 			};
 
 			sdmmc_wp: sdmmc-wp {
@@ -1290,6 +1293,14 @@
 			hdmii2c_xfer: hdmii2c-xfer {
 				rockchip,pins = <0 RK_PA6 2 &pcfg_pull_none>,
 						<0 RK_PA7 2 &pcfg_pull_none>;
+			};
+
+			hdmi_hpd: hdmi-hpd {
+				rockchip,pins = <0 RK_PB7 1 &pcfg_pull_none>;
+			};
+
+			hdmi_cec: hdmi-cec {
+				rockchip,pins = <0 RK_PC4 1 &pcfg_pull_none>;
 			};
 		};
 

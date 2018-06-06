@@ -48,15 +48,18 @@ obj-$(CONFIG_SOC_CAMERA)		+= soc_camera/
 obj-$(CONFIG_VIDEO_RENESAS_JPU) 	+= rcar_jpu.o
 obj-$(CONFIG_VIDEO_RENESAS_VSP1)	+= vsp1/
 
-obj-$(CONFIG_VIDEO_ROCKCHIP_RGA)	+= rockchip-rga/
+obj-$(CONFIG_VIDEO_ROCKCHIP_RGA)	+= rockchip/rga/
 
 obj-y	+= omap/
+obj-$(CONFIG_VIDEO_ROCKCHIP_ISP1)	+= rockchip/isp1/
 
 obj-$(CONFIG_VIDEO_AM437X_VPFE)		+= am437x/
 
 obj-$(CONFIG_VIDEO_XILINX)		+= xilinx/
 
 obj-$(CONFIG_VIDEO_ROCKCHIP_VPU)	+= rockchip-vpu/
+
+obj-$(CONFIG_ROCKCHIP_TSP)		+= rockchip-tsp/
 
 ccflags-y += -I$(srctree)/drivers/media/i2c
 

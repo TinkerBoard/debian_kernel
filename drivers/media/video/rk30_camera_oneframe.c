@@ -260,8 +260,12 @@ static inline unsigned int read_grf_reg(unsigned int addr)
 *       1.cif uses dmabuf,in this case,vb->boff is buffer fd.
 *v0.5.0:
 *	1. Only register cif driver here.
+*v0.5.1:
+*	1. fix fival_list alloc and free with API does't match.
+*v0.6.0:
+*   1. support px30.
 */
-#define RK_CAM_VERSION_CODE KERNEL_VERSION(0, 5, 0)
+#define RK_CAM_VERSION_CODE KERNEL_VERSION(0, 6, 0)
 static int version = RK_CAM_VERSION_CODE;
 module_param(version, int, S_IRUGO);
 
@@ -509,6 +513,12 @@ static void rk_camera_diffchips(const char *rockchip_name)
 		ENANABLE_INVERT_PCLK_CIF0 = ((0x1 << 31) | (0x1 << 15));
 		DISABLE_INVERT_PCLK_CIF0  = ((0x1 << 31) | (0x0 << 15));
 		CHIP_NAME = 3228;
+	} else if (strstr(rockchip_name, "px30") ||
+		strstr(rockchip_name, "3326")) {
+		CRU_PCLK_REG30 = 0x0430;
+		ENANABLE_INVERT_PCLK_CIF0 = ((0x1 << 28) | (0x1 << 12));
+		DISABLE_INVERT_PCLK_CIF0  = ((0x1 << 28) | (0x0 << 12));
+		CHIP_NAME = 3326;
 	}
 }
 static inline void rk_cru_set_soft_reset(int idx)
@@ -754,36 +764,44 @@ static int rk_videobuf_setup(struct videobuf_queue *vq, unsigned int *count,
 		}
 
 		if (pcdev->camera_work == NULL) {
-			pcdev->camera_work = wk = kzalloc(sizeof(struct rk_camera_work)*(*count), GFP_KERNEL);
+			pcdev->camera_work = kzalloc(
+				sizeof(struct rk_camera_work) * (*count),
+				GFP_KERNEL);
 			if (pcdev->camera_work == NULL) {
 				RKCAMERA_TR("kmalloc failed\n");
 				BUG();
 			}
-            INIT_LIST_HEAD(&pcdev->camera_work_queue);
+			wk = pcdev->camera_work;
+			INIT_LIST_HEAD(&pcdev->camera_work_queue);
 
-            for (i=0; i<(*count); i++) {
-                wk->index = i;                
-                list_add_tail(&wk->queue, &pcdev->camera_work_queue);
-                wk++; 
-            }
+			for (i = 0; i < (*count); i++) {
+				wk->index = i;
+				list_add_tail(&wk->queue,
+					      &pcdev->camera_work_queue);
+				wk++;
+			}
 			pcdev->camera_work_count = (*count);
 		}
 #if CAMERA_VIDEOBUF_ARM_ACCESS
-        if (pcdev->vbinfo && (pcdev->vbinfo_count != *count)) {
-            kfree(pcdev->vbinfo);
-            pcdev->vbinfo = NULL;
-            pcdev->vbinfo_count = 0x00;
-        }
+	if (pcdev->vbinfo && (pcdev->vbinfo_count != *count)) {
+		kfree(pcdev->vbinfo);
+		pcdev->vbinfo = NULL;
+		pcdev->vbinfo_count = 0x00;
+	}
 
-        if (pcdev->vbinfo == NULL) {
-            pcdev->vbinfo = kzalloc(sizeof(struct rk29_camera_vbinfo)*(*count), GFP_KERNEL);
-            if (pcdev->vbinfo == NULL) {
-				RKCAMERA_TR("vbinfo kmalloc fail\n");
-				BUG();
-			}
-            memset(pcdev->vbinfo,0,sizeof(struct rk29_camera_vbinfo)*(*count));
-			pcdev->vbinfo_count = *count;
-        }
+	if (!pcdev->vbinfo) {
+		pcdev->vbinfo = kzalloc(
+			sizeof(struct rk29_camera_vbinfo) * (*count),
+			GFP_KERNEL);
+		if (!pcdev->vbinfo) {
+			RKCAMERA_TR("vbinfo kmalloc fail\n");
+			WARN_ON(1);
+		}
+		memset(pcdev->vbinfo,
+		       0,
+		       sizeof(struct rk29_camera_vbinfo) * (*count));
+		pcdev->vbinfo_count = *count;
+	}
 #endif        
 	}
 	#ifdef RK_CAMERA_MODE_DMA_SG
@@ -1614,7 +1632,7 @@ static int rk_camera_mclk_ctrl(int cif_idx, int on, int clk_rate)
 	}
 
 	clk = &cif_clk[cif];
-	if (CHIP_NAME == 3228) {
+	if ((CHIP_NAME == 3228) || (CHIP_NAME == 3326)) {
 		if (!clk->aclk_cif || !clk->hclk_cif || !clk->cif_clk_out) {
 			RKCAMERA_TR("failed to get cif clock source\n");
 			err = -ENOENT;
@@ -1636,7 +1654,7 @@ static int rk_camera_mclk_ctrl(int cif_idx, int on, int clk_rate)
 
 		clk_prepare_enable(clk->aclk_cif);
 		clk_prepare_enable(clk->hclk_cif);
-		if (CHIP_NAME != 3228)
+		if ((CHIP_NAME != 3228) || (CHIP_NAME != 3326))
 			clk_prepare_enable(clk->cif_clk_in);
 
 		clk_prepare_enable(clk->cif_clk_out);
@@ -1648,7 +1666,7 @@ static int rk_camera_mclk_ctrl(int cif_idx, int on, int clk_rate)
 		clk_set_rate(clk->cif_clk_out,36000000);/*just for close clk which base on XIN24M */
 		clk_disable_unprepare(clk->aclk_cif);
 		clk_disable_unprepare(clk->hclk_cif);
-		if (CHIP_NAME != 3228)
+		if ((CHIP_NAME != 3228) || (CHIP_NAME != 3326))
 			clk_disable_unprepare(clk->cif_clk_in);
 		clk_disable_unprepare(clk->cif_clk_out);
 		if (CHIP_NAME == 3368)
@@ -1920,7 +1938,7 @@ static int rk_camera_set_bus_param(struct soc_camera_device *icd)
     
 	if (common_flags & V4L2_MBUS_PCLK_SAMPLE_FALLING) {
 		if (IS_CIF0()) {
-			if (CHIP_NAME == 3228)
+			if ((CHIP_NAME == 3228) || (CHIP_NAME == 3326))
 				write_grf_reg(CRU_PCLK_REG30,
 					      read_grf_reg(CRU_PCLK_REG30) | ENANABLE_INVERT_PCLK_CIF0);
 			else
@@ -1933,6 +1951,9 @@ static int rk_camera_set_bus_param(struct soc_camera_device *icd)
 			if (CHIP_NAME == 3228)
 				write_grf_reg(CRU_PCLK_REG30,
 					      (read_grf_reg(CRU_PCLK_REG30) & 0xFFFF7FFF) | DISABLE_INVERT_PCLK_CIF0);
+			else if (CHIP_NAME == 3326)
+				write_grf_reg(CRU_PCLK_REG30,
+					      (read_grf_reg(CRU_PCLK_REG30) & 0xFFFFEFFF) | DISABLE_INVERT_PCLK_CIF0);
 			else
 				clk_set_phase(cif_clk[0].pclk_cif, 0);
 		} else {
@@ -2187,9 +2208,9 @@ static int rk_camera_get_formats(struct soc_camera_device *icd, unsigned int idx
 		return 0;
 	}
 
-    ret = rk_camera_try_bus_param(icd, fmt->bits_per_sample);
-    if (ret < 0)
-        return 0;
+	ret = rk_camera_try_bus_param(icd, fmt->bits_per_sample);
+	if (ret < 0)
+		return 0;
 
 	switch (code) {
 		case MEDIA_BUS_FMT_UYVY8_2X8:
@@ -3038,23 +3059,33 @@ static enum hrtimer_restart rk_camera_fps_func(struct hrtimer *timer)
             fival_nxt = fival_nxt->nxt;            
         }
 
-        if ((rec_flag == 0) && fival_pre) {
-            fival_pre->nxt = kzalloc(sizeof(struct rk_camera_frmivalenum), GFP_ATOMIC);
-            if (fival_pre->nxt != NULL) {
-                fival_pre->nxt->fival.index = fival_pre->fival.index++;
-                fival_pre->nxt->fival.width = pcdev->icd->user_width;
-                fival_pre->nxt->fival.height= pcdev->icd->user_height;
-                fival_pre->nxt->fival.pixel_format = pcdev->pixfmt;
+		if ((rec_flag == 0) && fival_pre) {
+			fival_pre->nxt = kzalloc(
+				sizeof(struct rk_camera_frmivalenum),
+				GFP_ATOMIC);
+			if (fival_pre->nxt) {
+				fival_pre->nxt->fival.index =
+					fival_pre->fival.index++;
+				fival_pre->nxt->fival.width =
+					pcdev->icd->user_width;
+				fival_pre->nxt->fival.height =
+					pcdev->icd->user_height;
+				fival_pre->nxt->fival.pixel_format =
+					pcdev->pixfmt;
 
-                fival_pre->nxt->fival.discrete.denominator = pcdev->frame_interval;
-                fival_pre->nxt->fival.reserved[1] = (pcdev->icd_width<<16)
-                                                    |(pcdev->icd_height);
-                fival_pre->nxt->fival.discrete.numerator = 1000000;
-                fival_pre->nxt->fival.type = V4L2_FRMIVAL_TYPE_DISCRETE;
-                rec_flag = 1;
-                fival_rec = fival_pre->nxt;
-            }
-        }
+				fival_pre->nxt->fival.discrete.denominator =
+					pcdev->frame_interval;
+				fival_pre->nxt->fival.reserved[1] =
+					(pcdev->icd_width << 16) |
+					(pcdev->icd_height);
+				fival_pre->nxt->fival.discrete.numerator =
+					1000000;
+				fival_pre->nxt->fival.type =
+					V4L2_FRMIVAL_TYPE_DISCRETE;
+				rec_flag = 1;
+				fival_rec = fival_pre->nxt;
+			}
+		}
 	}
 
     if ((pcdev->last_fps != pcdev->fps) && (pcdev->reinit_times))             /*ddl@rock-chips.com v0.3.0x13*/
@@ -3524,12 +3555,12 @@ static int rk_camera_pltfrm_init(struct device *dev,
 	if (IS_CIF0()) {
 		debug_printk( "/$$$$$$$$$$$$$$$$$$$$$$/is_cif0\n");
 		clk = &cif_clk[0];
-		if (CHIP_NAME == 3368)
+		if ((CHIP_NAME == 3368) || (CHIP_NAME == 3326))
 			clk->pclk_cif =
 				devm_clk_get(dev, "pclk_cif");
 		clk->aclk_cif = devm_clk_get(dev, "aclk_cif0");
 		clk->hclk_cif = devm_clk_get(dev, "hclk_cif0");
-		if (CHIP_NAME != 3228)
+		if ((CHIP_NAME != 3228) && (CHIP_NAME != 3326))
 			clk->cif_clk_in = devm_clk_get(dev, "cif0_in");
 		clk->cif_clk_out = devm_clk_get(dev, "cif0_out");
 		clk->cif_rst = devm_reset_control_get(dev, "rst_cif");
@@ -3545,7 +3576,7 @@ static int rk_camera_pltfrm_init(struct device *dev,
 
 		clk->aclk_cif = devm_clk_get(dev, "aclk_cif0");
 		clk->hclk_cif = devm_clk_get(dev, "hclk_cif0");
-		if (CHIP_NAME != 3228)
+		if ((CHIP_NAME != 3228) || (CHIP_NAME != 3326))
 			clk->cif_clk_in = devm_clk_get(dev, "cif0_in");
 		clk->cif_clk_out = devm_clk_get(dev, "cif0_out");
 		/* spin_lock_init(&cif_clk[1].lock); */
@@ -3715,9 +3746,8 @@ static int rk_camera_probe(struct platform_device *pdev)
 	for (i = 0; i < 2; i++) {
 		pcdev->icd_frmival[i].icd = NULL;
 		pcdev->icd_frmival[i].fival_list =
-			devm_kzalloc(&pdev->dev,
-				     sizeof(struct rk_camera_frmivalenum),
-				     GFP_KERNEL);
+			kzalloc(sizeof(struct rk_camera_frmivalenum),
+				GFP_KERNEL);
 		if (IS_ERR_OR_NULL(pcdev->icd_frmival[i].fival_list)) {
 			dev_err(&pdev->dev, "Couldn't allocate fival_list[%d]\n",
 				i);
@@ -3766,6 +3796,7 @@ exit_free_irq:
 		fival_nxt = fival_list;
 		while (fival_nxt) {
 			fival_nxt = fival_list->nxt;
+			kfree(fival_list);
 			fival_list = fival_nxt;
 		}
 	}
@@ -3796,6 +3827,7 @@ static int rk_camera_remove(struct platform_device *pdev)
 		fival_nxt = fival_list;
 		while (fival_nxt) {
 			fival_nxt = fival_list->nxt;
+			kfree(fival_list);
 			fival_list = fival_nxt;
 		}
 	}

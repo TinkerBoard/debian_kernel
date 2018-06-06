@@ -22,6 +22,7 @@
 #include <dt-bindings/power/px30-power.h>
 #include <dt-bindings/power/rk3036-power.h>
 #include <dt-bindings/power/rk3128-power.h>
+#include <dt-bindings/power/rk3228-power.h>
 #include <dt-bindings/power/rk3288-power.h>
 #include <dt-bindings/power/rk3328-power.h>
 #include <dt-bindings/power/rk3366-power.h>
@@ -71,6 +72,8 @@ struct rockchip_pm_domain {
 	struct regmap **qos_regmap;
 	u32 *qos_save_regs[MAX_QOS_REGS_NUM];
 	int num_clks;
+	bool is_ignore_pwr;
+	bool is_qos_saved;
 	struct clk *clks[];
 };
 
@@ -272,6 +275,52 @@ static int rockchip_pmu_restore_qos(struct rockchip_pm_domain *pd)
 	return 0;
 }
 
+int rockchip_save_qos(struct device *dev)
+{
+	struct generic_pm_domain *genpd;
+	struct rockchip_pm_domain *pd;
+	int ret;
+
+	if (IS_ERR_OR_NULL(dev))
+		return -EINVAL;
+
+	if (IS_ERR_OR_NULL(dev->pm_domain))
+		return -EINVAL;
+
+	genpd = pd_to_genpd(dev->pm_domain);
+	pd = to_rockchip_pd(genpd);
+
+	mutex_lock(&pd->pmu->mutex);
+	ret = rockchip_pmu_save_qos(pd);
+	mutex_unlock(&pd->pmu->mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL(rockchip_save_qos);
+
+int rockchip_restore_qos(struct device *dev)
+{
+	struct generic_pm_domain *genpd;
+	struct rockchip_pm_domain *pd;
+	int ret;
+
+	if (IS_ERR_OR_NULL(dev))
+		return -EINVAL;
+
+	if (IS_ERR_OR_NULL(dev->pm_domain))
+		return -EINVAL;
+
+	genpd = pd_to_genpd(dev->pm_domain);
+	pd = to_rockchip_pd(genpd);
+
+	mutex_lock(&pd->pmu->mutex);
+	ret = rockchip_pmu_restore_qos(pd);
+	mutex_unlock(&pd->pmu->mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL(rockchip_restore_qos);
+
 static bool rockchip_pmu_domain_is_on(struct rockchip_pm_domain *pd)
 {
 	struct rockchip_pmu *pmu = pd->pmu;
@@ -298,7 +347,7 @@ static void rockchip_do_pmu_set_power_domain(struct rockchip_pm_domain *pd,
 		return;
 	else if (pd->info->pwr_w_mask)
 		regmap_write(pmu->regmap, pmu->info->pwr_offset,
-			     on ? pd->info->pwr_mask :
+			     on ? pd->info->pwr_w_mask :
 			     (pd->info->pwr_mask | pd->info->pwr_w_mask));
 	else
 		regmap_update_bits(pmu->regmap, pmu->info->pwr_offset,
@@ -327,6 +376,7 @@ static int rockchip_pd_power(struct rockchip_pm_domain *pd, bool power_on)
 
 		if (!power_on) {
 			rockchip_pmu_save_qos(pd);
+			pd->is_qos_saved = true;
 
 			/* if powering down, idle request to NIU first */
 			rockchip_pmu_set_idle_request(pd, true);
@@ -338,7 +388,8 @@ static int rockchip_pd_power(struct rockchip_pm_domain *pd, bool power_on)
 			/* if powering up, leave idle mode */
 			rockchip_pmu_set_idle_request(pd, false);
 
-			rockchip_pmu_restore_qos(pd);
+			if (pd->is_qos_saved)
+				rockchip_pmu_restore_qos(pd);
 		}
 
 		for (i = pd->num_clks - 1; i >= 0; i--)
@@ -353,12 +404,18 @@ static int rockchip_pd_power_on(struct generic_pm_domain *domain)
 {
 	struct rockchip_pm_domain *pd = to_rockchip_pd(domain);
 
+	if (pd->is_ignore_pwr)
+		return 0;
+
 	return rockchip_pd_power(pd, true);
 }
 
 static int rockchip_pd_power_off(struct generic_pm_domain *domain)
 {
 	struct rockchip_pm_domain *pd = to_rockchip_pd(domain);
+
+	if (pd->is_ignore_pwr)
+		return 0;
 
 	return rockchip_pd_power(pd, false);
 }
@@ -454,6 +511,8 @@ static int rockchip_pm_add_one_domain(struct rockchip_pmu *pmu,
 
 	pd->info = pd_info;
 	pd->pmu = pmu;
+	if (!pd_info->pwr_mask)
+		pd->is_ignore_pwr = true;
 
 	for (i = 0; i < clk_cnt; i++) {
 		clk = of_clk_get(node, i);
@@ -596,6 +655,7 @@ static int rockchip_pm_add_subdomain(struct rockchip_pmu *pmu,
 {
 	struct device_node *np;
 	struct generic_pm_domain *child_domain, *parent_domain;
+	struct rockchip_pm_domain *child_pd, *parent_pd;
 	int error;
 
 	for_each_child_of_node(parent, np) {
@@ -635,6 +695,17 @@ static int rockchip_pm_add_subdomain(struct rockchip_pmu *pmu,
 			dev_dbg(pmu->dev, "%s add subdomain: %s\n",
 				parent_domain->name, child_domain->name);
 		}
+
+		/*
+		 * If child_pd doesn't do idle request or power on/off,
+		 * parent_pd may fail to do power on/off, so if parent_pd
+		 * need to power on/off, child_pd can't ignore to do idle
+		 * request and power on/off.
+		 */
+		child_pd = to_rockchip_pd(child_domain);
+		parent_pd = to_rockchip_pd(parent_domain);
+		if (!parent_pd->is_ignore_pwr)
+			child_pd->is_ignore_pwr = false;
 
 		rockchip_pm_add_subdomain(pmu, np);
 	}
@@ -797,6 +868,20 @@ static const struct rockchip_domain_info rk3128_pm_domains[] = {
 	[RK3128_PD_GPU]		= DOMAIN_RK3288(1, 1, 3, false),
 };
 
+static const struct rockchip_domain_info rk3228_pm_domains[] = {
+	[RK3228_PD_CORE]	= DOMAIN_RK3036(0, 0, 16, true),
+	[RK3228_PD_MSCH]	= DOMAIN_RK3036(1, 1, 17, true),
+	[RK3228_PD_BUS]		= DOMAIN_RK3036(2, 2, 18, true),
+	[RK3228_PD_SYS]		= DOMAIN_RK3036(3, 3, 19, true),
+	[RK3228_PD_VIO]		= DOMAIN_RK3036(4, 4, 20, false),
+	[RK3228_PD_VOP]		= DOMAIN_RK3036(5, 5, 21, false),
+	[RK3228_PD_VPU]		= DOMAIN_RK3036(6, 6, 22, false),
+	[RK3228_PD_RKVDEC]	= DOMAIN_RK3036(7, 7, 23, false),
+	[RK3228_PD_GPU]		= DOMAIN_RK3036(8, 8, 24, false),
+	[RK3228_PD_PERI]	= DOMAIN_RK3036(9, 9, 25, true),
+	[RK3228_PD_GMAC]	= DOMAIN_RK3036(10, 10, 26, false),
+};
+
 static const struct rockchip_domain_info rk3288_pm_domains[] = {
 	[RK3288_PD_VIO]		= DOMAIN_RK3288(7, 7, 4, false),
 	[RK3288_PD_HEVC]	= DOMAIN_RK3288(14, 10, 9, false),
@@ -895,6 +980,15 @@ static const struct rockchip_pmu_info rk3128_pmu = {
 	.domain_info = rk3128_pm_domains,
 };
 
+static const struct rockchip_pmu_info rk3228_pmu = {
+	.req_offset = 0x40c,
+	.idle_offset = 0x488,
+	.ack_offset = 0x488,
+
+	.num_domains = ARRAY_SIZE(rk3228_pm_domains),
+	.domain_info = rk3228_pm_domains,
+};
+
 static const struct rockchip_pmu_info rk3288_pmu = {
 	.pwr_offset = 0x08,
 	.status_offset = 0x0c,
@@ -984,6 +1078,10 @@ static const struct of_device_id rockchip_pm_domain_dt_match[] = {
 	{
 		.compatible = "rockchip,rk3128-power-controller",
 		.data = (void *)&rk3128_pmu,
+	},
+	{
+		.compatible = "rockchip,rk3228-power-controller",
+		.data = (void *)&rk3228_pmu,
 	},
 	{
 		.compatible = "rockchip,rk3288-power-controller",

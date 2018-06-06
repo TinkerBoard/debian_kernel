@@ -658,6 +658,9 @@ int dwc_otg_hcd_endpoint_disable(dwc_otg_hcd_t *hcd, void *ep_handle,
 		DWC_SPINLOCK_IRQSAVE(hcd->lock, &flags);
 	}
 
+	if (qh->channel)
+		hc_regs = hcd->core_if->host_if->hc_regs[qh->channel->hc_num];
+
 	if (!DWC_CIRCLEQ_EMPTY(&qh->qtd_list) && hc_regs) {
 		hcchar.d32 = DWC_READ_REG32(&hc_regs->hcchar);
 		if (hcchar.b.chen) {
@@ -1240,6 +1243,7 @@ static int assign_and_init_hc(dwc_otg_hcd_t *hcd, dwc_otg_qh_t *qh)
 		uint32_t buf_size;
 		if (hc->ep_type != DWC_OTG_EP_TYPE_ISOC) {
 			buf_size = hcd->core_if->core_params->max_transfer_size;
+			buf_size = buf_size > 65536 ? 65536 : buf_size;
 		} else {
 			buf_size = 4096;
 		}

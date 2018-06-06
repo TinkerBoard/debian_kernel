@@ -40,10 +40,12 @@
 #define OUT_VOLUME	(0x18)
 #define RK3328_GRF_SOC_CON2	(0x0408)
 #define RK3328_GRF_SOC_CON10	(0x0428)
+#define INITIAL_FREQ	(11289600)
 
 struct rk3328_codec_priv {
 	struct regmap *regmap;
 	struct regmap *grf;
+	struct clk *mclk;
 	struct clk *pclk;
 	unsigned int sclk;
 	int spk_depop_time; /* msec */
@@ -358,6 +360,16 @@ static struct snd_soc_dai_driver rk3328_dai[] = {
 				    SNDRV_PCM_FMTBIT_S24_LE |
 				    SNDRV_PCM_FMTBIT_S32_LE),
 		},
+		.capture = {
+			.stream_name = "HIFI Capture",
+			.channels_min = 2,
+			.channels_max = 8,
+			.rates = SNDRV_PCM_RATE_8000_96000,
+			.formats = (SNDRV_PCM_FMTBIT_S16_LE |
+				    SNDRV_PCM_FMTBIT_S20_3LE |
+				    SNDRV_PCM_FMTBIT_S24_LE |
+				    SNDRV_PCM_FMTBIT_S32_LE),
+		},
 		.ops = &rk3328_dai_ops,
 	},
 };
@@ -468,6 +480,15 @@ static int rk3328_platform_probe(struct platform_device *pdev)
 	}
 
 	rk3328_analog_output(rk3328, 0);
+
+	rk3328->mclk = devm_clk_get(&pdev->dev, "mclk");
+	if (IS_ERR(rk3328->mclk))
+		return PTR_ERR(rk3328->mclk);
+
+	ret = clk_prepare_enable(rk3328->mclk);
+	if (ret)
+		return ret;
+	clk_set_rate(rk3328->mclk, INITIAL_FREQ);
 
 	rk3328->pclk = devm_clk_get(&pdev->dev, "pclk");
 	if (IS_ERR(rk3328->pclk)) {

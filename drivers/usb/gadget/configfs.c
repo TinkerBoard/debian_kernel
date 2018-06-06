@@ -301,6 +301,7 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 		ret = unregister_gadget(gi);
 		if (ret)
 			goto err;
+		kfree(name);
 	} else {
 		if (gi->udc_name) {
 			ret = -EBUSY;
@@ -1488,7 +1489,8 @@ static int android_setup(struct usb_gadget *gadget,
 	struct usb_function_instance *fi;
 
 	spin_lock_irqsave(&cdev->lock, flags);
-	if (!gi->connected) {
+	if (c->bRequest == USB_REQ_GET_DESCRIPTOR &&
+	    (c->wValue >> 8) == USB_DT_CONFIG && !gi->connected) {
 		gi->connected = 1;
 		schedule_work(&gi->work);
 	}

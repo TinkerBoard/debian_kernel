@@ -125,8 +125,8 @@ static int debug_port_init(struct platform_device *pdev)
 	rk_fiq_write(t, dlm, UART_DLM);
 	rk_fiq_write(t, 0x03, UART_LCR);
 
-	/* enable rx and lsr interrupt */
-	rk_fiq_write(t, UART_IER_RLSI | UART_IER_RDI, UART_IER);
+	/* enable rx interrupt */
+	rk_fiq_write(t, UART_IER_RDI, UART_IER);
 
 	/*
 	 * Interrupt on every character when received, but we can enable fifo for TX
@@ -152,13 +152,11 @@ static int debug_getc(struct platform_device *pdev)
 	static char buf[32];
 
 	t = container_of(dev_get_platdata(&pdev->dev), typeof(*t), pdata);
-
+	/*
+	 * Clear uart interrupt status
+	 */
+	rk_fiq_read(t, UART_USR);
 	lsr = rk_fiq_read_lsr(t);
-
-	if (lsr & UART_LSR_BI || t->break_seen) {
-		t->break_seen = false;
-		return FIQ_DEBUGGER_NO_CHAR;
-	}
 
 	if (lsr & UART_LSR_DR) {
 		temp = rk_fiq_read(t, UART_RX);
@@ -209,26 +207,95 @@ static void debug_flush(struct platform_device *pdev)
 
 #ifdef CONFIG_RK_CONSOLE_THREAD
 #define FIFO_SIZE SZ_64K
+#define LINE_MAX 1024
 static DEFINE_KFIFO(fifo, unsigned char, FIFO_SIZE);
+static char console_buf[LINE_MAX]; /* avoid FRAME WARN */
 static bool console_thread_stop;
+static unsigned int console_dropped_messages;
+
+static void console_putc(struct platform_device *pdev, unsigned int c)
+{
+	struct rk_fiq_debugger *t;
+	unsigned int count = 500;
+
+	t = container_of(dev_get_platdata(&pdev->dev), typeof(*t), pdata);
+
+	while (!(rk_fiq_read(t, UART_USR) & UART_USR_TX_FIFO_NOT_FULL) &&
+	       count--)
+		usleep_range(200, 210);
+	/* If uart is always busy, maybe it is abnormal, reinit it */
+	if ((count == 0) && (rk_fiq_read(t, UART_USR) & UART_USR_BUSY))
+		debug_port_init(pdev);
+
+	rk_fiq_write(t, c, UART_TX);
+}
+
+static void console_flush(struct platform_device *pdev)
+{
+	struct rk_fiq_debugger *t;
+	unsigned int count = 500;
+
+	t = container_of(dev_get_platdata(&pdev->dev), typeof(*t), pdata);
+
+	while (!(rk_fiq_read_lsr(t) & UART_LSR_TEMT) && count--)
+		usleep_range(200, 210);
+	/* If uart is always busy, maybe it is abnormal, reinit it */
+	if ((count == 0) && (rk_fiq_read(t, UART_USR) & UART_USR_BUSY))
+		debug_port_init(pdev);
+}
+
+static void console_put(struct platform_device *pdev,
+			const char *s, unsigned int count)
+{
+	while (count--) {
+		if (*s == '\n')
+			console_putc(pdev, '\r');
+		console_putc(pdev, *s++);
+	}
+}
+
+static void debug_put(struct platform_device *pdev,
+		      const char *s, unsigned int count)
+{
+	while (count--) {
+		if (*s == '\n')
+			debug_putc(pdev, '\r');
+		debug_putc(pdev, *s++);
+	}
+}
 
 static int console_thread(void *data)
 {
 	struct platform_device *pdev = data;
-	struct rk_fiq_debugger *t;
-	unsigned char c;
-	t = container_of(dev_get_platdata(&pdev->dev), typeof(*t), pdata);
+	char *buf = console_buf;
+	unsigned int len;
 
 	while (1) {
+		unsigned int dropped;
+
 		set_current_state(TASK_INTERRUPTIBLE);
-		schedule();
+		if (kfifo_is_empty(&fifo))
+			schedule();
 		if (kthread_should_stop())
 			break;
 		set_current_state(TASK_RUNNING);
-		while (!console_thread_stop && kfifo_get(&fifo, &c))
-			debug_putc(pdev, c);
+		while (!console_thread_stop) {
+			len = kfifo_out(&fifo, buf, LINE_MAX);
+			if (!len)
+				break;
+			console_put(pdev, buf, len);
+		}
+		dropped = console_dropped_messages;
+		if (dropped && !console_thread_stop) {
+			console_dropped_messages = 0;
+			smp_wmb();
+			len = snprintf(buf, LINE_MAX,
+				       "** %u console messages dropped **\n",
+				       dropped);
+			console_put(pdev, buf, len);
+		}
 		if (!console_thread_stop)
-			debug_flush(pdev);
+			console_flush(pdev);
 	}
 
 	return 0;
@@ -237,8 +304,9 @@ static int console_thread(void *data)
 static void console_write(struct platform_device *pdev, const char *s, unsigned int count)
 {
 	unsigned int fifo_count = FIFO_SIZE;
-	unsigned char c, r = '\r';
+	unsigned char c;
 	struct rk_fiq_debugger *t;
+
 	t = container_of(dev_get_platdata(&pdev->dev), typeof(*t), pdata);
 
 	if (console_thread_stop ||
@@ -251,23 +319,21 @@ static void console_write(struct platform_device *pdev, const char *s, unsigned 
 			smp_wmb();
 			debug_flush(pdev);
 			while (fifo_count-- && kfifo_get(&fifo, &c))
-				debug_putc(pdev, c);
+				debug_put(pdev, &c, 1);
 		}
-		while (count--) {
-			if (*s == '\n') {
-				debug_putc(pdev, r);
-			}
-			debug_putc(pdev, *s++);
-		}
+		debug_put(pdev, s, count);
 		debug_flush(pdev);
-	} else {
-		while (count--) {
-			if (*s == '\n') {
-				kfifo_put(&fifo, r);
-			}
-			kfifo_put(&fifo, *s++);
+	} else if (count) {
+		unsigned int ret = 0;
+
+		if (kfifo_len(&fifo) + count < FIFO_SIZE)
+			ret = kfifo_in(&fifo, s, count);
+		if (!ret) {
+			console_dropped_messages++;
+			smp_wmb();
+		} else {
+			wake_up_process(t->console_task);
 		}
-		wake_up_process(t->console_task);
 	}
 }
 #endif
@@ -466,8 +532,10 @@ void rk_serial_debug_init(void __iomem *base, phys_addr_t phy_base,
 	if (!pdev) {
 		pr_err("Failed to alloc fiq debugger platform device\n");
 		goto out3;
-	};
+	}
 
+	/* clear busy interrupt, make sure all interrupts are disabled */
+	rk_fiq_read(t, UART_USR);
 #ifdef CONFIG_FIQ_DEBUGGER_TRUST_ZONE
 	if ((signal_irq > 0) && (serial_hwirq > 0)) {
 		ret = fiq_debugger_bind_sip_smc(t, phy_base, serial_hwirq,
@@ -540,15 +608,18 @@ out2:
 	kfree(t);
 }
 
-static const struct of_device_id ids[] __initconst = {
-	{ .compatible = "rockchip,fiq-debugger" },
-	{}
+#if defined(CONFIG_OF)
+static const struct of_device_id rk_fiqdbg_of_match[] = {
+	{ .compatible = "rockchip,fiq-debugger", },
+	{},
 };
+MODULE_DEVICE_TABLE(of, rk_fiqdbg_of_match);
+#endif
 
-static int __init rk_fiq_debugger_init(void) {
-
+static int __init rk_fiqdbg_probe(struct platform_device *pdev)
+{
 	void __iomem *base;
-	struct device_node *np;
+	struct device_node *np = pdev->dev.of_node;
 	unsigned int id, ok = 0;
 	int irq, signal_irq = -1, wake_irq = -1;
 	unsigned int baudrate = 0, irq_mode = 0;
@@ -558,13 +629,6 @@ static int __init rk_fiq_debugger_init(void) {
 	struct clk *pclk;
 	struct of_phandle_args oirq;
 	struct resource res;
-
-	np = of_find_matching_node(NULL, ids);
-
-	if (!np) {
-		pr_err("fiq-debugger is missing in device tree!\n");
-		return -ENODEV;
-	}
 
 	if (!of_device_is_available(np)) {
 		pr_err("fiq-debugger is disabled in device tree\n");
@@ -635,8 +699,22 @@ static int __init rk_fiq_debugger_init(void) {
 				     irq, signal_irq, wake_irq, baudrate);
 	return 0;
 }
-#ifdef CONFIG_FIQ_GLUE
-postcore_initcall_sync(rk_fiq_debugger_init);
-#else
-arch_initcall_sync(rk_fiq_debugger_init);
-#endif
+
+static struct platform_driver rk_fiqdbg_driver = {
+	.driver = {
+		.name   = "rk-fiq-debugger",
+		.of_match_table = of_match_ptr(rk_fiqdbg_of_match),
+	},
+};
+
+static int __init rk_fiqdbg_init(void)
+{
+	return platform_driver_probe(&rk_fiqdbg_driver,
+				     rk_fiqdbg_probe);
+}
+arch_initcall_sync(rk_fiqdbg_init);
+
+MODULE_AUTHOR("Huibin Hong <huibin.hong@rock-chips.com>");
+MODULE_DESCRIPTION("Rockchip FIQ Debugger");
+MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:rk-fiq-debugger");

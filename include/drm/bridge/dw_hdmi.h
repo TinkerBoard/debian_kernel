@@ -139,7 +139,7 @@ struct dw_hdmi_phy_ops {
 
 struct dw_hdmi_property_ops {
 	void (*attatch_properties)(struct drm_connector *connector,
-				   int version,
+				   unsigned int color, int version,
 				   void *data);
 	void (*destroy_properties)(struct drm_connector *connector,
 				   void *data);
@@ -198,6 +198,7 @@ enum drm_connector_status dw_hdmi_phy_read_hpd(struct dw_hdmi *hdmi,
 void dw_hdmi_set_sample_rate(struct dw_hdmi *hdmi, unsigned int rate);
 void dw_hdmi_audio_enable(struct dw_hdmi *hdmi);
 void dw_hdmi_audio_disable(struct dw_hdmi *hdmi);
+void dw_hdmi_set_high_tmds_clock_ratio(struct dw_hdmi *hdmi);
 
 /* PHY configuration */
 void dw_hdmi_phy_i2c_write(struct dw_hdmi *hdmi, unsigned short data,

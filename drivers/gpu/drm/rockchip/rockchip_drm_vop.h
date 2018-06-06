@@ -30,6 +30,13 @@
 #define AFBDC_FMT_U8U8U8U8	0x5
 #define AFBDC_FMT_U8U8U8	0x4
 
+enum bcsh_out_mode {
+	BCSH_OUT_MODE_BLACK,
+	BCSH_OUT_MODE_BLUE,
+	BCSH_OUT_MODE_COLOR_BAR,
+	BCSH_OUT_MODE_NORMAL_VIDEO,
+};
+
 enum cabc_stage_mode {
 	LAST_FRAME_PWM_VAL	= 0x0,
 	CUR_FRAME_PWM_VAL	= 0x1,
@@ -95,6 +102,7 @@ struct vop_csc {
 struct vop_ctrl {
 	struct vop_reg version;
 	struct vop_reg standby;
+	struct vop_reg dma_stop;
 	struct vop_reg axi_outstanding_max_num;
 	struct vop_reg axi_max_outstanding_en;
 	struct vop_reg htotal_pw;
@@ -140,8 +148,11 @@ struct vop_ctrl {
 	struct vop_reg mipi_pin_pol;
 	struct vop_reg dp_dclk_pol;
 	struct vop_reg dp_pin_pol;
-	struct vop_reg dither_up;
-	struct vop_reg dither_down;
+	struct vop_reg dither_down_sel;
+	struct vop_reg dither_down_mode;
+	struct vop_reg dither_down_en;
+	struct vop_reg pre_dither_down_en;
+	struct vop_reg dither_up_en;
 
 	struct vop_reg sw_dac_sel;
 	struct vop_reg tve_sw_mode;
@@ -173,6 +184,9 @@ struct vop_ctrl {
 	struct vop_reg afbdc_pic_size;
 	struct vop_reg afbdc_hdr_ptr;
 	struct vop_reg afbdc_rstn;
+	struct vop_reg afbdc_pic_vir_width;
+	struct vop_reg afbdc_pic_offset;
+	struct vop_reg afbdc_axi_ctrl;
 
 	/* CABC */
 	struct vop_reg cabc_total_num;
@@ -207,6 +221,7 @@ struct vop_ctrl {
 	struct vop_reg level2_overlay_en;
 	struct vop_reg alpha_hard_calc;
 	struct vop_reg hdr2sdr_en;
+	struct vop_reg hdr2sdr_en_win0_csc;
 	struct vop_reg hdr2sdr_src_min;
 	struct vop_reg hdr2sdr_src_max;
 	struct vop_reg hdr2sdr_normfaceetf;
@@ -224,6 +239,21 @@ struct vop_ctrl {
 	struct vop_reg st2084oetf_post_conv_en;
 	struct vop_reg win_csc_mode_sel;
 
+	/* MCU OUTPUT */
+	struct vop_reg mcu_pix_total;
+	struct vop_reg mcu_cs_pst;
+	struct vop_reg mcu_cs_pend;
+	struct vop_reg mcu_rw_pst;
+	struct vop_reg mcu_rw_pend;
+	struct vop_reg mcu_clk_sel;
+	struct vop_reg mcu_hold_mode;
+	struct vop_reg mcu_frame_st;
+	struct vop_reg mcu_rs;
+	struct vop_reg mcu_bypass;
+	struct vop_reg mcu_type;
+	struct vop_reg mcu_rw_bypass_port;
+
+	struct vop_reg reg_done_frm;
 	struct vop_reg cfg_done;
 };
 
@@ -349,6 +379,12 @@ enum _vop_rgb2rgb_conv_mode {
 	BT2020_TO_BT709,
 };
 
+enum _MCU_IOCTL {
+	MCU_WRCMD = 0,
+	MCU_WRDATA,
+	MCU_SETBYPASS,
+};
+
 struct vop_win_phy {
 	const struct vop_scl_regs *scl;
 	const uint32_t *data_formats;
@@ -375,6 +411,8 @@ struct vop_win_phy {
 	struct vop_reg src_alpha_ctl;
 	struct vop_reg alpha_mode;
 	struct vop_reg alpha_en;
+	struct vop_reg alpha_pre_mul;
+	struct vop_reg global_alpha_val;
 	struct vop_reg key_color;
 	struct vop_reg key_en;
 };
@@ -389,12 +427,18 @@ struct vop_win_data {
 	u64 feature;
 };
 
+struct vop_grf_ctrl {
+	struct vop_reg grf_dclk_inv;
+};
+
 #define VOP_FEATURE_OUTPUT_10BIT	BIT(0)
 #define VOP_FEATURE_AFBDC		BIT(1)
+#define VOP_FEATURE_ALPHA_SCALE		BIT(2)
 
 #define WIN_FEATURE_HDR2SDR		BIT(0)
 #define WIN_FEATURE_SDR2HDR		BIT(1)
 #define WIN_FEATURE_PRE_OVERLAY		BIT(2)
+#define WIN_FEATURE_AFBDC		BIT(3)
 
 struct vop_rect {
 	int width;
@@ -409,6 +453,7 @@ struct vop_data {
 	const struct vop_win_data *win;
 	const struct vop_csc_table *csc_table;
 	const struct vop_hdr_table *hdr_table;
+	const struct vop_grf_ctrl *grf_ctrl;
 	unsigned int win_size;
 	uint32_t version;
 	struct vop_rect max_input;
@@ -433,13 +478,16 @@ struct vop_data {
 #define HWC_EMPTY_INTR			(1 << 11)
 #define POST_BUF_EMPTY_INTR		(1 << 12)
 #define PWM_GEN_INTR			(1 << 13)
+#define DMA_FINISH_INTR			(1 << 14)
 
 #define INTR_MASK			(DSP_HOLD_VALID_INTR | FS_INTR | \
 					 LINE_FLAG_INTR | BUS_ERROR_INTR | \
 					 FS_NEW_INTR | LINE_FLAG1_INTR | \
 					 WIN0_EMPTY_INTR | WIN1_EMPTY_INTR | \
 					 WIN2_EMPTY_INTR | WIN3_EMPTY_INTR | \
-					 HWC_EMPTY_INTR | POST_BUF_EMPTY_INTR)
+					 HWC_EMPTY_INTR | \
+					 POST_BUF_EMPTY_INTR | \
+					 DMA_FINISH_INTR)
 
 #define DSP_HOLD_VALID_INTR_EN(x)	((x) << 4)
 #define FS_INTR_EN(x)			((x) << 5)
@@ -553,11 +601,6 @@ enum dither_down_mode_sel {
 	DITHER_DOWN_FRC = 0x1
 };
 
-#define PRE_DITHER_DOWN_EN(x)	((x) << 0)
-#define DITHER_DOWN_EN(x)	((x) << 1)
-#define DITHER_DOWN_MODE(x)	((x) << 2)
-#define DITHER_DOWN_MODE_SEL(x)	((x) << 3)
-
 enum vop_pol {
 	HSYNC_POSITIVE = 0,
 	VSYNC_POSITIVE = 1,
@@ -621,9 +664,9 @@ static inline int scl_vop_cal_lb_mode(int width, bool is_yuv)
 {
 	int lb_mode;
 
-	if (width > 2560)
+	if (!is_yuv && (width > 2560))
 		lb_mode = LB_RGB_3840X2;
-	else if (width > 1920)
+	else if (!is_yuv && (width > 1920))
 		lb_mode = LB_RGB_2560X4;
 	else if (!is_yuv)
 		lb_mode = LB_RGB_1920X5;
@@ -646,4 +689,10 @@ static inline int interpolate(int x1, int y1, int x2, int y2, int x)
 }
 
 extern const struct component_ops vop_component_ops;
+
+#if defined(CONFIG_ROCKCHIP_DRM_DEBUG)
+int drm_debugfs_vop_add(struct drm_crtc *crtc, struct dentry *root);
+int vop_plane_dump(struct vop_dump_info *dump_info, int frame_count);
+#endif
+
 #endif /* _ROCKCHIP_DRM_VOP_H */

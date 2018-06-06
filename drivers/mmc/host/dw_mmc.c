@@ -378,7 +378,8 @@ static inline void dw_mci_set_cto(struct dw_mci *host)
 	cto_div = (mci_readl(host, CLKDIV) & 0xff) * 2;
 	if (cto_div == 0)
 		cto_div = 1;
-	cto_ms = DIV_ROUND_UP(MSEC_PER_SEC * cto_clks * cto_div, host->bus_hz);
+	cto_ms = DIV_ROUND_UP_ULL((u64)MSEC_PER_SEC * cto_clks * cto_div,
+				  host->bus_hz);
 
 	/* add a bit spare time */
 	cto_ms += 10;
@@ -511,6 +512,10 @@ static void dw_mci_dmac_complete_dma(void *arg)
 		set_bit(EVENT_XFER_COMPLETE, &host->pending_events);
 		tasklet_schedule(&host->tasklet);
 	}
+
+	if ((host->quirks & DW_MCI_QUIRK_BROKEN_XFER) &&
+	    host->dir_status == DW_MCI_RECV_STATUS)
+		del_timer(&host->xfer_timer);
 }
 
 static void dw_mci_translate_sglist(struct dw_mci *host, struct mmc_data *data,
@@ -663,6 +668,7 @@ static int dw_mci_idmac_init(struct dw_mci *host)
 					(sizeof(struct idmac_desc_64addr) *
 							(i + 1))) >> 32;
 			/* Initialize reserved and buffer size fields to "0" */
+			p->des0 = 0;
 			p->des1 = 0;
 			p->des2 = 0;
 			p->des3 = 0;
@@ -684,6 +690,7 @@ static int dw_mci_idmac_init(struct dw_mci *host)
 		     i++, p++) {
 			p->des3 = cpu_to_le32(host->sg_dma +
 					(sizeof(struct idmac_desc) * (i + 1)));
+			p->des0 = 0;
 			p->des1 = 0;
 		}
 
@@ -1132,6 +1139,8 @@ static void dw_mci_setup_bus(struct dw_mci_slot *slot, bool force_clkinit)
 	if (host->state == STATE_WAITING_CMD11_DONE)
 		sdmmc_cmd_bits |= SDMMC_CMD_VOLT_SWITCH;
 
+	slot->mmc->actual_clock = 0;
+
 	if (!clock) {
 		mci_writel(host, CLKENA, 0);
 		mci_send_cmd(slot, sdmmc_cmd_bits, 0);
@@ -1177,6 +1186,9 @@ static void dw_mci_setup_bus(struct dw_mci_slot *slot, bool force_clkinit)
 
 		/* keep the clock with reflecting clock dividor */
 		slot->__clk_old = clock << div;
+		slot->mmc->actual_clock = div ? ((host->bus_hz / div) >> 1) :
+						host->bus_hz;
+
 	}
 
 	host->current_speed = clock;
@@ -1770,8 +1782,8 @@ static void dw_mci_set_drto(struct dw_mci *host)
 	drto_div = (mci_readl(host, CLKDIV) & 0xff) * 2;
 	if (drto_div == 0)
 		drto_div = 1;
-	drto_ms = DIV_ROUND_UP(MSEC_PER_SEC * drto_clks * drto_div,
-			       host->bus_hz);
+	drto_ms = DIV_ROUND_UP_ULL((u64)MSEC_PER_SEC * drto_clks * drto_div,
+				   host->bus_hz);
 
 	/* add a bit spare time */
 	drto_ms += 10;
@@ -1780,6 +1792,30 @@ static void dw_mci_set_drto(struct dw_mci *host)
 	if (!test_bit(EVENT_DATA_COMPLETE, &host->pending_events))
 		mod_timer(&host->dto_timer,
 			  jiffies + msecs_to_jiffies(drto_ms));
+	spin_unlock_irqrestore(&host->irq_lock, irqflags);
+}
+
+static void dw_mci_set_xfer_timeout(struct dw_mci *host)
+{
+	unsigned int xfer_clks;
+	unsigned int xfer_div;
+	unsigned int xfer_ms;
+	unsigned long irqflags;
+
+	xfer_clks = mci_readl(host, TMOUT) >> 8;
+	xfer_div = (mci_readl(host, CLKDIV) & 0xff) * 2;
+	if (xfer_div == 0)
+		xfer_div = 1;
+	xfer_ms = DIV_ROUND_UP_ULL((u64)MSEC_PER_SEC * xfer_clks * xfer_div,
+				   host->bus_hz);
+
+	/* add a bit spare time */
+	xfer_ms += 10;
+
+	spin_lock_irqsave(&host->irq_lock, irqflags);
+	if (!test_bit(EVENT_XFER_COMPLETE, &host->pending_events))
+		mod_timer(&host->xfer_timer,
+			  jiffies + msecs_to_jiffies(xfer_ms));
 	spin_unlock_irqrestore(&host->irq_lock, irqflags);
 }
 
@@ -1917,6 +1953,9 @@ static void dw_mci_tasklet_func(unsigned long priv)
 				if ((host->quirks & DW_MCI_QUIRK_BROKEN_DTO) &&
 				    (host->dir_status == DW_MCI_RECV_STATUS))
 					dw_mci_set_drto(host);
+				if ((host->quirks & DW_MCI_QUIRK_BROKEN_XFER) &&
+				    host->dir_status == DW_MCI_RECV_STATUS)
+					dw_mci_set_xfer_timeout(host);
 				break;
 			}
 
@@ -2393,6 +2432,9 @@ done:
 	host->sg = NULL;
 	smp_wmb(); /* drain writebuffer */
 	set_bit(EVENT_XFER_COMPLETE, &host->pending_events);
+
+	if (host->quirks & DW_MCI_QUIRK_BROKEN_XFER)
+		del_timer(&host->xfer_timer);
 }
 
 static void dw_mci_write_data_pio(struct dw_mci *host)
@@ -2522,6 +2564,9 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 			del_timer(&host->cto_timer);
 			mci_writel(host, RINTSTS, DW_MCI_CMD_ERROR_FLAGS);
 			host->cmd_status = pending;
+			if ((host->quirks & DW_MCI_QUIRK_BROKEN_XFER) &&
+			    host->dir_status == DW_MCI_RECV_STATUS)
+				del_timer(&host->xfer_timer);
 			smp_wmb(); /* drain writebuffer */
 			set_bit(EVENT_CMD_COMPLETE, &host->pending_events);
 
@@ -2973,8 +3018,8 @@ static bool dw_mci_reset(struct dw_mci *host)
 	}
 
 	if (host->use_dma == TRANS_MODE_IDMAC)
-		/* It is also recommended that we reset and reprogram idmac */
-		dw_mci_idmac_reset(host);
+		/* It is also required that we reinit idmac */
+		dw_mci_idmac_init(host);
 
 	ret = true;
 
@@ -3097,6 +3142,36 @@ static void dw_mci_dto_timer(unsigned long arg)
 		break;
 	default:
 		dev_warn(host->dev, "Unexpected data timeout, state %d\n",
+			 host->state);
+		break;
+	}
+
+exit:
+	spin_unlock_irqrestore(&host->irq_lock, irqflags);
+}
+
+static void dw_mci_xfer_timer(unsigned long arg)
+{
+	struct dw_mci *host = (struct dw_mci *)arg;
+	unsigned long irqflags;
+
+	spin_lock_irqsave(&host->irq_lock, irqflags);
+
+	if (test_bit(EVENT_XFER_COMPLETE, &host->pending_events)) {
+		/* Presumably interrupt handler couldn't delete the timer */
+		dev_warn(host->dev, "xfer when already completed\n");
+		goto exit;
+	}
+
+	switch (host->state) {
+	case STATE_SENDING_DATA:
+		host->data_status = SDMMC_INT_DRTO;
+		set_bit(EVENT_DATA_ERROR, &host->pending_events);
+		set_bit(EVENT_DATA_COMPLETE, &host->pending_events);
+		tasklet_schedule(&host->tasklet);
+		break;
+	default:
+		dev_warn(host->dev, "Unexpected xfer timeout, state %d\n",
 			 host->state);
 		break;
 	}
@@ -3289,6 +3364,10 @@ int dw_mci_probe(struct dw_mci *host)
 	if (host->quirks & DW_MCI_QUIRK_BROKEN_DTO)
 		setup_timer(&host->dto_timer,
 			    dw_mci_dto_timer, (unsigned long)host);
+
+	if (host->quirks & DW_MCI_QUIRK_BROKEN_XFER)
+		setup_timer(&host->xfer_timer,
+			    dw_mci_xfer_timer, (unsigned long)host);
 
 	spin_lock_init(&host->lock);
 	spin_lock_init(&host->irq_lock);

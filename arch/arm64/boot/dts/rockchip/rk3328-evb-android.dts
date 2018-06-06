@@ -1,91 +1,17 @@
 /*
- * Copyright (c) 2016 Fuzhou Rockchip Electronics Co., Ltd
+ * Copyright (c) 2017 Fuzhou Rockchip Electronics Co., Ltd
  *
- * This file is dual-licensed: you can use it either under the terms
- * of the GPL or the X11 license, at your option. Note that this dual
- * licensing only applies to this file, and not this project as a
- * whole.
- *
- *  a) This library is free software; you can redistribute it and/or
- *     modify it under the terms of the GNU General Public License as
- *     published by the Free Software Foundation; either version 2 of the
- *     License, or (at your option) any later version.
- *
- *     This library is distributed in the hope that it will be useful,
- *     but WITHOUT ANY WARRANTY; without even the implied warranty of
- *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *     GNU General Public License for more details.
- *
- * Or, alternatively,
- *
- *  b) Permission is hereby granted, free of charge, to any person
- *     obtaining a copy of this software and associated documentation
- *     files (the "Software"), to deal in the Software without
- *     restriction, including without limitation the rights to use,
- *     copy, modify, merge, publish, distribute, sublicense, and/or
- *     sell copies of the Software, and to permit persons to whom the
- *     Software is furnished to do so, subject to the following
- *     conditions:
- *
- *     The above copyright notice and this permission notice shall be
- *     included in all copies or substantial portions of the Software.
- *
- *     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- *     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- *     OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- *     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
- *     HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
- *     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- *     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
- *     OTHER DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: (GPL-2.0+ OR MIT)
  */
 
 /dts-v1/;
 #include "rk3328.dtsi"
+#include "rk3328-android.dtsi"
 #include <dt-bindings/input/input.h>
 
 / {
 	model = "Rockchip RK3328 EVB";
 	compatible = "rockchip,rk3328-evb", "rockchip,rk3328";
-
-	chosen {
-		bootargs = "rockchip_jtag earlyprintk=uart8250-32bit,0xff130000";
-	};
-
-	fiq-debugger {
-		compatible = "rockchip,fiq-debugger";
-		rockchip,serial-id = <2>;
-		rockchip,signal-irq = <159>;
-		rockchip,wake-irq = <0>;
-		/* If enable uart uses irq instead of fiq */
-		rockchip,irq-mode-enable = <0>;
-		rockchip,baudrate = <1500000>;  /* Only 115200 and 1500000 */
-		interrupts = <GIC_SPI 127 IRQ_TYPE_LEVEL_LOW>;
-		status = "okay";
-	};
-
-	firmware {
-		android {
-			compatible = "android,firmware";
-			fstab {
-				compatible = "android,fstab";
-				system {
-					compatible = "android,system";
-					dev = "/dev/block/platform/ff520000.dwmmc/by-name/system";
-					type = "ext4";
-					mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
-					fsmgr_flags = "wait,verify";
-				};
-				vendor {
-					compatible = "android,vendor";
-					dev = "/dev/block/platform/ff520000.dwmmc/by-name/vendor";
-					type = "ext4";
-					mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
-					fsmgr_flags = "wait,verify";
-				};
-			};
-		};
-	};
 
 	gmac_clkin: external-gmac-clock {
 		compatible = "fixed-clock";
@@ -134,17 +60,6 @@
 		};
 	};
 
-	reserved-memory {
-		#address-cells = <2>;
-		#size-cells = <2>;
-		ranges;
-
-		drm_logo: drm-logo@00000000 {
-			compatible = "rockchip,drm-logo";
-			reg = <0x0 0x0 0x0 0x0>;
-		};
-	};
-
 	spdif-sound {
 		compatible = "simple-audio-card";
 		simple-audio-card,name = "rockchip,spdif";
@@ -159,6 +74,28 @@
 	spdif_out: spdif-out {
 		compatible = "linux,spdif-dit";
 		#sound-dai-cells = <0>;
+	};
+
+	vcc_host_vbus: host-vbus-regulator {
+		compatible = "regulator-fixed";
+		gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&host_vbus_drv>;
+		regulator-name = "vcc_host_vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+	};
+
+	vcc_otg_vbus: otg-vbus-regulator {
+		compatible = "regulator-fixed";
+		gpio = <&gpio0 RK_PD3 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&otg_vbus_drv>;
+		regulator-name = "vcc_otg_vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
 	};
 
 	vcc_phy: vcc-phy-regulator {
@@ -211,25 +148,19 @@
 	cpu-supply = <&vdd_arm>;
 };
 
-&display_subsystem {
-	logo-memory-region = <&drm_logo>;
+&dfi {
 	status = "okay";
+};
 
-	route {
-		route_hdmi: route-hdmi {
-			status = "okay";
-			logo,uboot = "logo.bmp";
-			logo,kernel = "logo_kernel.bmp";
-			logo,mode = "center";
-			charge_logo,mode = "center";
-			connect = <&vop_out_hdmi>;
-		};
-	};
+&dmc {
+	center-supply = <&vdd_logic>;
+	status = "okay";
 };
 
 &emmc {
 	bus-width = <8>;
 	cap-mmc-highspeed;
+	mmc-hs200-1_8v;
 	supports-emmc;
 	disable-wp;
 	non-removable;
@@ -278,6 +209,13 @@
 };
 
 &hdmiphy {
+	rockchip,phy-table =
+		<165000000 0x07 0x0a 0x0a 0x0a 0x00 0x00 0x08
+			   0x08 0x08 0x00 0xac 0xcc 0xcc 0xcc>,
+		<340000000 0x0b 0x0d 0x0d 0x0d 0x07 0x15 0x08
+			   0x08 0x08 0x3f 0xac 0xcc 0xcd 0xdd>,
+		<594000000 0x10 0x1a 0x1a 0x1a 0x07 0x15 0x08
+			   0x08 0x08 0x00 0xac 0xcc 0xcc 0xcc>;
 	status = "okay";
 };
 
@@ -292,7 +230,6 @@
 		interrupts = <6 IRQ_TYPE_LEVEL_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&pmic_int_l>;
-		rockchip,system-power-controller;
 		wakeup-source;
 		gpio-controller;
 		#gpio-cells = <2>;
@@ -317,7 +254,7 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			vdd_logic: RK805_DCDC1@0 {
+			vdd_logic: RK805_DCDC1 {
 				regulator-compatible = "RK805_DCDC1";
 				regulator-name = "vdd_logic";
 				regulator-min-microvolt = <712500>;
@@ -333,7 +270,7 @@
 				};
 			};
 
-			vdd_arm: RK805_DCDC2@1 {
+			vdd_arm: RK805_DCDC2 {
 				regulator-compatible = "RK805_DCDC2";
 				regulator-name = "vdd_arm";
 				regulator-init-microvolt = <1225000>;
@@ -350,7 +287,7 @@
 				};
 			};
 
-			vcc_ddr: RK805_DCDC3@2 {
+			vcc_ddr: RK805_DCDC3 {
 				regulator-compatible = "RK805_DCDC3";
 				regulator-name = "vcc_ddr";
 				regulator-initial-mode = <0x1>;
@@ -362,7 +299,7 @@
 				};
 			};
 
-			vcc_io: RK805_DCDC4@3 {
+			vcc_io: RK805_DCDC4 {
 				regulator-compatible = "RK805_DCDC4";
 				regulator-name = "vcc_io";
 				regulator-min-microvolt = <3300000>;
@@ -377,7 +314,7 @@
 				};
 			};
 
-			vdd_18: RK805_LDO1@4 {
+			vdd_18: RK805_LDO1 {
 				regulator-compatible = "RK805_LDO1";
 				regulator-name = "vdd_18";
 				regulator-min-microvolt = <1800000>;
@@ -390,7 +327,7 @@
 				};
 			};
 
-			vcc_18emmc: RK805_LDO2@5 {
+			vcc_18emmc: RK805_LDO2 {
 				regulator-compatible = "RK805_LDO2";
 				regulator-name = "vcc_18emmc";
 				regulator-min-microvolt = <1800000>;
@@ -403,20 +340,28 @@
 				};
 			};
 
-			vdd_10: RK805_LDO3@6 {
+			vdd_11: RK805_LDO3 {
 				regulator-compatible = "RK805_LDO3";
-				regulator-name = "vdd_10";
-				regulator-min-microvolt = <1000000>;
-				regulator-max-microvolt = <1000000>;
+				regulator-name = "vdd_11";
+				regulator-min-microvolt = <1100000>;
+				regulator-max-microvolt = <1100000>;
 				regulator-boot-on;
 				regulator-always-on;
 				regulator-state-mem {
 					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <1000000>;
+					regulator-suspend-microvolt = <1100000>;
 				};
 			};
 		};
 	};
+};
+
+&secure_memory {
+	/*
+	 * enable like this:
+	 * reg = <0x0 0x20000000 0x0 0x10000000>;
+	 */
+	reg = <0x0 0x20000000 0x0 0x0>;
 };
 
 &h265e {
@@ -431,6 +376,14 @@
 
 &i2s1 {
 	#sound-dai-cells = <0>;
+	status = "okay";
+};
+
+&iep {
+	status = "okay";
+};
+
+&iep_mmu {
 	status = "okay";
 };
 
@@ -458,6 +411,18 @@
 		wifi_enable_h: wifi-enable-h {
 		rockchip,pins =
 			<1 18 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	usb {
+		host_vbus_drv: host-vbus-drv {
+			rockchip,pins =
+				<0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		otg_vbus_drv: otg-vbus-drv {
+			rockchip,pins =
+				<0 RK_PD3 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
@@ -578,6 +543,12 @@
 
 &rkvdec {
 	status = "okay";
+	vcodec-supply = <&vdd_logic>;
+};
+
+&rockchip_suspend {
+	status = "okay";
+	rockchip,virtual-poweroff = <1>;
 };
 
 &uart0 {
@@ -620,16 +591,32 @@
 &spdif {
 	#sound-dai-cells = <0>;
 	pinctrl-names = "default";
-	pinctrl-0 = <&spdifm0_tx>;
+	pinctrl-0 = <&spdifm2_tx>;
 	status = "okay";
 };
 
+&threshold {
+	temperature = <90000>; /* millicelsius */
+};
+
+&target {
+	temperature = <105000>; /* millicelsius */
+};
+
+&soc_crit {
+	temperature = <110000>; /* millicelsius */
+};
+
 &tsadc {
+	rockchip,hw-tshut-temp = <120000>;
+	status = "okay";
+};
+
+&tve {
 	status = "okay";
 };
 
 &u2phy {
-	otg-vbus-gpios = <&gpio0 RK_PD3 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 
 	u2phy_host: host-port {
@@ -637,12 +624,13 @@
 	};
 
 	u2phy_otg: otg-port {
+		vbus-supply = <&vcc_otg_vbus>;
 		status = "okay";
 	};
 };
 
 &u3phy {
-	vbus-drv-gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+	vbus-supply = <&vcc_host_vbus>;
 	status = "okay";
 };
 

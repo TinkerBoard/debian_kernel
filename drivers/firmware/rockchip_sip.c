@@ -127,6 +127,15 @@ struct arm_smccc_res sip_smc_mcu_el3fiq(u32 arg0, u32 arg1, u32 arg2)
 	return __invoke_sip_fn_smc(SIP_MCU_EL3FIQ_CFG, arg0, arg1, arg2);
 }
 
+struct arm_smccc_res sip_smc_vpu_reset(u32 arg0, u32 arg1, u32 arg2)
+{
+	struct arm_smccc_res res;
+
+	res = __invoke_sip_fn_smc(PSCI_SIP_VPU_RESET, arg0, arg1, arg2);
+	return res;
+}
+EXPORT_SYMBOL_GPL(sip_smc_vpu_reset);
+
 /************************** fiq debugger **************************************/
 #ifdef CONFIG_ARM64
 #define SIP_UARTDBG_FN		SIP_UARTDBG_CFG64

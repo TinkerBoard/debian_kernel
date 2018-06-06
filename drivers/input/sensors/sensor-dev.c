@@ -126,8 +126,8 @@ static ssize_t accel_calibration_show(struct class *class,
 
 #define ACCEL_CAPTURE_TIMES 20
 #define ACCEL_SENSITIVE 16384
-/* +-0.6 * 16384 / 9.8 */
-#define ACCEL_OFFSET_MAX 1000
+/* +-1 * 16384 / 9.8 */
+#define ACCEL_OFFSET_MAX 1600
 static int accel_do_calibration(struct sensor_private_data *sensor)
 {
 	int i;
@@ -483,10 +483,11 @@ static int sensor_reset_rate(struct i2c_client *client, int rate)
 	struct sensor_private_data *sensor = (struct sensor_private_data *) i2c_get_clientdata(client);
 	int result = 0;
 
-	if ((rate < 5) || (rate > 250)) {
-		dev_err(&client->dev, "sensor rate %d out of rang\n", rate);
-		return -1;
-	}
+	if (rate < 5)
+		rate = 5;
+	else if (rate > 200)
+		rate = 200;
+
 	dev_info(&client->dev, "set sensor poll time to %dms\n", rate);
 
 	/* work queue is always slow, we need more quickly to match hal rate */
@@ -2011,6 +2012,7 @@ static const struct i2c_device_id sensor_id[] = {
 	{"mpu6500_acc", ACCEL_ID_MPU6500},
 	{"lsm330_acc", ACCEL_ID_LSM330},
 	{"bma2xx_acc", ACCEL_ID_BMA2XX},
+	{"gs_stk8baxx", ACCEL_ID_STK8BAXX},
 	/*compass*/
 	{"compass", COMPASS_ID_ALL},
 	{"ak8975", COMPASS_ID_AK8975},
@@ -2065,6 +2067,7 @@ static struct of_device_id sensor_dt_ids[] = {
 	{ .compatible = "gs_mc3230" },
 	{ .compatible = "lsm330_acc" },
 	{ .compatible = "bma2xx_acc" },
+	{ .compatible = "gs_stk8baxx" },
 	/*compass*/
 	{ .compatible = "ak8975" },
 	{ .compatible = "ak8963" },

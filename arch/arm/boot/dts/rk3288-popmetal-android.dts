@@ -223,6 +223,8 @@
 };
 
 &lvds {
+	pinctrl-names = "default";
+	pinctrl-0 = <&lcdc_ctl>;
 	status = "okay";
 };
 
@@ -550,7 +552,6 @@
 };
 
 &tsadc {
-	rockchip,hw-tshut-mode = <0>;
 	rockchip,hw-tshut-polarity = <0>;
 	status = "okay";
 };

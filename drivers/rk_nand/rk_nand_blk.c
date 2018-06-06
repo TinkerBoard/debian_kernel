@@ -584,26 +584,13 @@ static int nand_add_dev(struct nand_blk_ops *nandr, struct nand_part *part)
 
 	gd->fops = &nand_blktrans_ops;
 
-	if (part->name[0])
+	if (part->name[0]) {
 		snprintf(gd->disk_name,
 			 sizeof(gd->disk_name),
 			 "%s_%s",
 			 nandr->name,
 			 part->name);
-	else
-		snprintf(gd->disk_name,
-			 sizeof(gd->disk_name),
-			 "%s%d",
-			 nandr->name,
-			 dev->devnum);
-
-	set_capacity(gd, dev->size);
-
-	gd->private_data = dev;
-	dev->blkcore_priv = gd;
-	gd->queue = nandr->rq;
-	gd->queue->bypass_depth = 1;
-	if (part->size == rk_ftl_get_capacity()) {
+	} else {
 		gd->flags = GENHD_FL_EXT_DEVT;
 		gd->minors = 255;
 		snprintf(gd->disk_name,
@@ -612,6 +599,12 @@ static int nand_add_dev(struct nand_blk_ops *nandr, struct nand_part *part)
 			 nandr->name,
 			 dev->devnum);
 	}
+	set_capacity(gd, dev->size);
+
+	gd->private_data = dev;
+	dev->blkcore_priv = gd;
+	gd->queue = nandr->rq;
+	gd->queue->bypass_depth = 1;
 
 	if (part->type == PART_NO_ACCESS)
 		dev->disable_access = 1;
@@ -708,7 +701,13 @@ static int nand_blk_register(struct nand_blk_ops *nandr)
 			nand_add_dev(nandr, &disk_array[i]);
 		}
 	} else {
-		nand_blk_add_whole_disk();
+		struct nand_part part;
+
+		part.offset = 0;
+		part.size = rk_ftl_get_capacity();
+		part.type = 0;
+		part.name[0] = 0;
+		nand_add_dev(&mytr, &part);
 	}
 
 	rknand_create_procfs();
@@ -730,6 +729,8 @@ static void nand_blk_unregister(struct nand_blk_ops *nandr)
 {
 	struct list_head *this, *next;
 
+	if (!rk_nand_dev_initialised)
+		return;
 	nandr->quit = 1;
 	wake_up(&nandr->thread_wq);
 	wait_for_completion(&nandr->thread_exit);
@@ -745,6 +746,8 @@ static void nand_blk_unregister(struct nand_blk_ops *nandr)
 
 void rknand_dev_flush(void)
 {
+	if (!rk_nand_dev_initialised)
+		return;
 	rknand_device_lock();
 	rk_ftl_cache_write_back();
 	rknand_device_unlock();
@@ -779,21 +782,23 @@ int __init rknand_dev_init(void)
 
 int rknand_dev_exit(void)
 {
-	if (rk_nand_dev_initialised) {
-		rk_nand_dev_initialised = 0;
-		if (rknand_device_trylock()) {
-			rk_ftl_cache_write_back();
-			rknand_device_unlock();
-		}
-		nand_blk_unregister(&mytr);
-		rk_ftl_de_init();
-		pr_info("nand_blk_dev_exit:OK\n");
+	if (!rk_nand_dev_initialised)
+		return -1;
+	rk_nand_dev_initialised = 0;
+	if (rknand_device_trylock()) {
+		rk_ftl_cache_write_back();
+		rknand_device_unlock();
 	}
+	nand_blk_unregister(&mytr);
+	rk_ftl_de_init();
+	pr_info("nand_blk_dev_exit:OK\n");
 	return 0;
 }
 
 void rknand_dev_suspend(void)
 {
+	if (!rk_nand_dev_initialised)
+		return;
 	pr_info("rk_nand_suspend\n");
 	rk_nand_schedule_enable_config(0);
 	rknand_device_lock();
@@ -802,6 +807,8 @@ void rknand_dev_suspend(void)
 
 void rknand_dev_resume(void)
 {
+	if (!rk_nand_dev_initialised)
+		return;
 	pr_info("rk_nand_resume\n");
 	rk_nand_resume();
 	rknand_device_unlock();
@@ -811,6 +818,8 @@ void rknand_dev_resume(void)
 void rknand_dev_shutdown(void)
 {
 	pr_info("rknand_shutdown...\n");
+	if (!rk_nand_dev_initialised)
+		return;
 	if (mytr.quit == 0) {
 		mytr.quit = 1;
 		wake_up(&mytr.thread_wq);
@@ -819,4 +828,3 @@ void rknand_dev_shutdown(void)
 	}
 	pr_info("rknand_shutdown:OK\n");
 }
-

@@ -1,0 +1,60 @@
+// Definitions for ds1307
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
+
+	fragment@0 {
+		target = <&i2c2>;
+		__overlay__ {
+
+			camera0: ov5647@36 {
+				compatible = "ovti,ov5647";
+				reg = <0x36>;
+				clocks = <&ext_cam_clk>;
+				status = "okay";
+
+				port {
+					ov5647_out: endpoint {
+						remote-endpoint = <&mipi_dphy_in>;
+						data-lanes = <1 2>;
+					};
+				};
+			};
+
+			camera1: imx219@10 {
+				compatible = "sony,imx219";
+				reg = <0x10>;
+				clocks = <&ext_cam_clk>;
+				status = "disabled";
+				port {
+					imx219_out: endpoint {
+						remote-endpoint;
+						data-lanes = <1 2>;
+					};
+				};
+			};
+
+		};
+	};
+
+	fragment@1 {
+		target = <&mipi_phy_rx0>;
+		__overlay__ {
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				port@0 {
+					reg = <0>;
+
+					mipi_dphy_in: endpoint {
+						remote-endpoint = <&ov5647_out>;
+						data-lanes = <1 2>;
+					};
+				};
+			};
+		};
+	};
+};
