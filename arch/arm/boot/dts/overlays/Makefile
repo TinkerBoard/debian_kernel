@@ -22,6 +22,7 @@ dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
 	mcp2515-can0.dtbo \
 	googlevoicehat-soundcard.dtbo \
 	ads7846-tinker.dtbo \
+	camera-ov5647.dtbo
 
 targets += dtbs dtbs_install
 targets += $(dtbo-y)

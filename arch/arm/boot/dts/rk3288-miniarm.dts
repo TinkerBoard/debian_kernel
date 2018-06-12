@@ -903,8 +903,7 @@
 	cam_pins {
 		cam_pwr: cam-pwr {
 			rockchip,pins = <0 17 RK_FUNC_GPIO &pcfg_pull_none>,
-			<2 0 RK_FUNC_GPIO &pcfg_pull_none>,
-			<2 11 RK_FUNC_1 &pcfg_pull_none>;
+			<2 0 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 };
