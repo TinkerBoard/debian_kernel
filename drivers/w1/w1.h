@@ -63,6 +63,7 @@ struct w1_reg_num
 #define W1_READ_PSUPPLY		0xB4
 #define W1_MATCH_ROM		0x55
 #define W1_RESUME_CMD		0xA5
+#define W1_WRITE_SCRATCHPAD	0x4E
 
 #define W1_SLAVE_ACTIVE		0
 #define W1_SLAVE_DETACH		1

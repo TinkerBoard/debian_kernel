@@ -29,6 +29,7 @@
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
+#include <linux/uaccess.h>
 
 #include "../w1.h"
 #include "../w1_int.h"
@@ -58,6 +59,9 @@ MODULE_ALIAS("w1-family-" __stringify(W1_THERM_DS28EA00));
  */
 static int w1_strong_pullup = 1;
 module_param_named(strong_pullup, w1_strong_pullup, int, 0);
+
+/* resolution of ds18b20, use for temperture convert */
+static int w1_ds18b20_res = 3;
 
 struct w1_therm_family_data {
 	uint8_t rom[9];
@@ -95,11 +99,19 @@ static ssize_t w1_slave_show(struct device *device,
 static ssize_t w1_seq_show(struct device *device,
 	struct device_attribute *attr, char *buf);
 
+static ssize_t w1_res_show(struct device *device,
+        struct device_attribute *attr, char *buf);
+
+static ssize_t w1_res_store(struct device *device,
+        struct device_attribute *attr, const char *buf, size_t count);
+
 static DEVICE_ATTR_RO(w1_slave);
 static DEVICE_ATTR_RO(w1_seq);
+static DEVICE_ATTR_RW(w1_res);
 
 static struct attribute *w1_therm_attrs[] = {
 	&dev_attr_w1_slave.attr,
+	&dev_attr_w1_res.attr,
 	NULL,
 };
 
@@ -414,6 +426,144 @@ static ssize_t w1_seq_show(struct device *device,
 error:
 	mutex_unlock(&sl->master->bus_mutex);
 	return -EIO;
+}
+
+static ssize_t w1_res_show(struct device *device,
+        struct device_attribute *attr, char *buf)
+{
+        struct w1_slave *sl = dev_to_w1_slave(device);
+        struct w1_master *dev = sl->master;
+        u8 rom[9], crc, verdict;
+        int res, ret, max_trying = 10, count = 0;
+        u8 *family_data = sl->family_data;
+
+        ret = mutex_lock_interruptible(&dev->bus_mutex);
+        if (ret != 0)
+                goto post_unlock;
+
+        if(!sl->family_data)
+        {
+                ret = -ENODEV;
+                goto pre_unlock;
+        }
+
+        /* prevent the slave from going away in sleep */
+        atomic_inc(THERM_REFCNT(family_data));
+        memset(rom, 0, sizeof(rom));
+
+        while (max_trying--) {
+		verdict = 0;
+		crc = 0 ;
+
+                if (!w1_reset_select_slave(sl)) {
+                        w1_write_8(dev, W1_READ_SCRATCHPAD);
+                        if ((count = w1_read_block(dev, rom, 9)) != 9) {
+                                dev_warn(device, "w1_read_block() "
+                                        "returned %u instead of 9.\n",
+                                        count);
+                        }
+
+                        crc = w1_calc_crc8(rom, 8);
+
+                        if (rom[8] == crc)
+                                verdict = 1;
+                }
+
+                if (verdict)
+                        break;
+        }
+
+	res = (rom[4] & 0x60) >> 5;
+	ret = sprintf(buf, "Resolution is %d\n", res);
+
+pre_unlock:
+        mutex_unlock(&dev->bus_mutex);
+
+post_unlock:
+        atomic_dec(THERM_REFCNT(family_data));
+        return ret;
+}
+
+static ssize_t w1_res_store(struct device *device,
+        struct device_attribute *attr, const char *buf, size_t count)
+{
+        struct w1_slave *sl = dev_to_w1_slave(device);
+        struct w1_master *dev = sl->master;
+        u8 rom[9], crc, verdict;
+        int ret, max_trying = 10, val, res;
+        u8 *family_data = sl->family_data;
+
+        ret = mutex_lock_interruptible(&dev->bus_mutex);
+        if (ret != 0)
+                goto post_unlock;
+
+        if(!sl->family_data)
+        {
+                ret = -ENODEV;
+                goto pre_unlock;
+        }
+
+        /* prevent the slave from going away in sleep */
+        atomic_inc(THERM_REFCNT(family_data));
+        memset(rom, 0, sizeof(rom));
+
+        while (max_trying--) {
+		verdict = 0;
+		crc = 0;
+
+                if (!w1_reset_select_slave(sl)) {
+                        w1_write_8(dev, W1_READ_SCRATCHPAD);
+                        if ((count = w1_read_block(dev, rom, 9)) != 9) {
+                                dev_warn(device, "w1_read_block() "
+                                        "returned %u instead of 9.\n",
+                                        count);
+                        }
+
+                        crc = w1_calc_crc8(rom, 8);
+
+                        if (rom[8] == crc)
+                                verdict = 1;
+                }
+
+                if (verdict)
+                        break;
+        }
+
+        res = (rom[4] & 0x60) >> 5;
+
+	ret = kstrtoint(buf, 10, &val);
+	if (ret)
+	{
+		ret = -EINVAL;
+		goto pre_unlock;
+	}
+
+	if (val == res)
+	{
+		dev_warn(device, "w1_res_store() "
+                                        "the same resolution setting! ignore\n");
+		goto pre_unlock;
+	}
+	else
+		res = val;
+	
+	rom[4] &= 0x9f;
+	rom[4] |= (res << 5); 
+
+        if (!w1_reset_select_slave(sl)) {
+                w1_write_8(dev, W1_WRITE_SCRATCHPAD);
+                w1_write_block(dev, rom+2, 3); 
+        }
+
+	w1_ds18b20_res = res;
+
+pre_unlock:
+        mutex_unlock(&dev->bus_mutex);
+
+post_unlock:
+        atomic_dec(THERM_REFCNT(family_data));
+
+	return sizeof(w1_ds18b20_res);
 }
 
 static int __init w1_therm_init(void)
