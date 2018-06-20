@@ -29,7 +29,6 @@
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
-#include <linux/uaccess.h>
 
 #include "../w1.h"
 #include "../w1_int.h"
@@ -264,7 +263,7 @@ static ssize_t w1_slave_show(struct device *device,
 
 		if (!w1_reset_select_slave(sl)) {
 			int count = 0;
-			unsigned int tm = 750;
+			unsigned int tm = 750/(1 << (3 - w1_ds18b20_res));
 			unsigned long sleep_rem;
 
 			w1_write_8(dev, W1_READ_PSUPPLY);
