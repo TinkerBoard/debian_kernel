@@ -110,57 +110,57 @@ static const struct imx219_reg imx219_init_tab_3280_2464_21fps[] = {
 	{IMX219_TABLE_END, 0x00}
 };
 
-/* MCLK:24MHz  1920x1080  30fps	MIPI LANE2 */
+/* MCLK:24MHz  1920x1080  30fps   MIPI LANE2 */
 static const struct imx219_reg imx219_init_tab_1920_1080_30fps[] = {
-	{0x30EB,0x05},
-	{0x30EB,0x0C},
-	{0x300A,0xFF},
-	{0x300B,0xFF},
-	{0x30EB,0x05},
-	{0x30EB,0x09},
-	{0x0114,0x01},
-	{0x0128,0x00},
-	{0x012A,0x18},
-	{0x012B,0x00},
-	{0x0160,0x06},
-	{0x0161,0xE6},
-	{0x0162,0x0D},
-	{0x0163,0x78},
-	{0x0164,0x02},
-	{0x0165,0xA8},
-	{0x0166,0x0A},
-	{0x0167,0x27},
-	{0x0168,0x02},
-	{0x0169,0xB4},
-	{0x016A,0x06},
-	{0x016B,0xEB},
-	{0x016C,0x07},
-	{0x016D,0x80},
-	{0x016E,0x04},
-	{0x016F,0x38},
-	{0x0170,0x01},
-	{0x0171,0x01},
-	{0x0174,0x00},
-	{0x0175,0x00},
-	{0x018C,0x0A},
-	{0x018D,0x0A},
-	{0x0301,0x05},
-	{0x0303,0x01},
-	{0x0304,0x03},
-	{0x0305,0x03},
-	{0x0306,0x00},
-	{0x0307,0x39},
-	{0x0309,0x0A},
-	{0x030B,0x01},
-	{0x030C,0x00},
-	{0x030D,0x72},
-	{0x455E,0x00},
-	{0x471E,0x4B},
-	{0x4767,0x0F},
-	{0x4750,0x14},
-	{0x4540,0x00},
-	{0x47B4,0x14},
- 	{IMX219_TABLE_END, 0x00}
+	{0x30EB, 0x05},
+	{0x30EB, 0x0C},
+	{0x300A, 0xFF},
+	{0x300B, 0xFF},
+	{0x30EB, 0x05},
+	{0x30EB, 0x09},
+	{0x0114, 0x01},
+	{0x0128, 0x00},
+	{0x012A, 0x18},
+	{0x012B, 0x00},
+	{0x0160, 0x06},
+	{0x0161, 0xE6},
+	{0x0162, 0x0D},
+	{0x0163, 0x78},
+	{0x0164, 0x02},
+	{0x0165, 0xA8},
+	{0x0166, 0x0A},
+	{0x0167, 0x27},
+	{0x0168, 0x02},
+	{0x0169, 0xB4},
+	{0x016A, 0x06},
+	{0x016B, 0xEB},
+	{0x016C, 0x07},
+	{0x016D, 0x80},
+	{0x016E, 0x04},
+	{0x016F, 0x38},
+	{0x0170, 0x01},
+	{0x0171, 0x01},
+	{0x0174, 0x00},
+	{0x0175, 0x00},
+	{0x018C, 0x0A},
+	{0x018D, 0x0A},
+	{0x0301, 0x05},
+	{0x0303, 0x01},
+	{0x0304, 0x03},
+	{0x0305, 0x03},
+	{0x0306, 0x00},
+	{0x0307, 0x39},
+	{0x0309, 0x0A},
+	{0x030B, 0x01},
+	{0x030C, 0x00},
+	{0x030D, 0x72},
+	{0x455E, 0x00},
+	{0x471E, 0x4B},
+	{0x4767, 0x0F},
+	{0x4750, 0x14},
+	{0x4540, 0x00},
+	{0x47B4, 0x14},
+	{IMX219_TABLE_END, 0x00}
 };
 
 static const struct imx219_reg start[] = {
@@ -238,8 +238,7 @@ static const struct imx219_mode supported_modes[] = {
 		.width = 1920,
 		.height = 1080,
 		.max_fps = 30,
-		.hts_def = 0x0d78,
-//.hts_def = 0x0d78 - IMX219_EXP_LINES_MARGIN,
+		.hts_def = 0x0d78 - IMX219_EXP_LINES_MARGIN,
 		.vts_def = 0x06E6,
 		.reg_list = imx219_init_tab_1920_1080_30fps,
 	},
@@ -502,7 +501,7 @@ static int imx219_s_ctrl(struct v4l2_ctrl *ctrl)
 	    container_of(ctrl->handler, struct imx219, ctrl_handler);
 	struct i2c_client *client = v4l2_get_subdevdata(&priv->subdev);
 	u8 reg;
-	int ret = 0;
+	int ret;
 	u16 gain = 256;
 	u16 a_gain = 256;
 	u16 d_gain = 1;
@@ -511,41 +510,41 @@ static int imx219_s_ctrl(struct v4l2_ctrl *ctrl)
 	case V4L2_CID_HFLIP:
 		priv->hflip = ctrl->val;
 		break;
+
 	case V4L2_CID_VFLIP:
 		priv->vflip = ctrl->val;
 		break;
+
 	case V4L2_CID_ANALOGUE_GAIN:
 	case V4L2_CID_GAIN:
 		/*
-		*   hal transfer (gain * 256)  to kernel
-		*   than devide into analog gain & digital gain in kernel
-		*/
-		
-		gain = ctrl->val;
-		if(gain < 256)
-			gain = 256;
+		 * hal transfer (gain * 256)  to kernel
+		 * than divide into analog gain & digital gain in kernel
+		 */
 
-		if(gain > 43663)
+		gain = ctrl->val;
+		if (gain < 256)
+			gain = 256;
+		if (gain > 43663)
 			gain = 43663;
-		
-		if(gain >= 256 && gain <= 2728){
+		if (gain >= 256 && gain <= 2728) {
 			a_gain = gain;
-			d_gain = 1*256;
-		}else{
+			d_gain = 1 * 256;
+		} else {
 			a_gain = 2728;
-			d_gain = (gain*256) / a_gain;
+			d_gain = (gain * 256) / a_gain;
 		}
 
 		/*
-		* Analog gain, reg range[0, 232], gain value[1, 10.66]
-		* reg = 256 - 256/again
-		* a_gain here is 256 multify
-		* so the reg = 256 - 256*256 /a_gain
-		*/
-		priv->analogue_gain = (256 - (256*256)/a_gain);
-		if(priv->analogue_gain < 0)
+		 * Analog gain, reg range[0, 232], gain value[1, 10.66]
+		 * reg = 256 - 256 / again
+		 * a_gain here is 256 multify
+		 * so the reg = 256 - 256 * 256 / a_gain
+		 */
+		priv->analogue_gain = (256 - (256 * 256) / a_gain);
+		if (a_gain < 256)
 			priv->analogue_gain = 0;
-		if(priv->analogue_gain > 232)
+		if (priv->analogue_gain > 232)
 			priv->analogue_gain = 232;
 
 		/*
@@ -553,50 +552,41 @@ static int imx219_s_ctrl(struct v4l2_ctrl *ctrl)
 		 * reg = dgain * 256
 		 */
 		priv->digital_gain = d_gain;
-		if(priv->digital_gain < 256)
+		if (priv->digital_gain < 256)
 			priv->digital_gain = 256;
-		if(priv->digital_gain > 4095)
+		if (priv->digital_gain > 4095)
 			priv->digital_gain = 4095;
 
-		/* for bank A and bank B switch 
-		*	exposure time , gain, vts must change at the same time
-		*	so the exposure & gain can reflect at the same frame
-		*/
-		printk("oyyf gain: value:%u a_gain:%u 0x%x d_gain:%u 0x%x vts:0x%x\n", 
-				ctrl->val, a_gain, priv->analogue_gain, 
-				d_gain, priv->digital_gain, priv->cur_vts);
-		
-		
+		/*
+		 * for bank A and bank B switch
+		 * exposure time , gain, vts must change at the same time
+		 * so the exposure & gain can reflect at the same frame
+		 */
+
 		ret = reg_write(client, 0x0157, priv->analogue_gain);
 		ret |= reg_write(client, 0x0158, priv->digital_gain >> 8);
 		ret |= reg_write(client, 0x0159, priv->digital_gain & 0xff);
 		
 		return ret;
+
 	case V4L2_CID_EXPOSURE:
 		priv->exposure_time = ctrl->val;
-		printk("oyyf exposure: value:%u\n", ctrl->val);
-
-/* To do: not same as 3A
-		if(priv->exposure_time > priv->cur_vts)
-			priv->exposure_time = priv->cur_vts;
-		if(priv->exposure_time < 1)
-			priv->exposure_time = 1;
-*/
-
-printk("oyyf 00 exposure: value:%u\n", priv->exposure_time);
 		ret = reg_write(client, 0x015a, priv->exposure_time >> 8);
 		ret |= reg_write(client, 0x015b, priv->exposure_time & 0xff);
 		return ret;
+
 	case V4L2_CID_TEST_PATTERN:
 		return imx219_s_ctrl_test_pattern(ctrl);
+
 	case V4L2_CID_VBLANK:
-		if(ctrl->val < priv->cur_mode->vts_def)
-			ctrl->val = priv->cur_mode->vts_def; 
-		if((ctrl->val - IMX219_EXP_LINES_MARGIN) != priv->cur_vts)
+		if (ctrl->val < priv->cur_mode->vts_def)
+			ctrl->val = priv->cur_mode->vts_def;
+		if ((ctrl->val - IMX219_EXP_LINES_MARGIN) != priv->cur_vts)
 			priv->cur_vts = ctrl->val - IMX219_EXP_LINES_MARGIN;
-		ret |= reg_write(client, 0x0160, ((priv->cur_vts>>8)&0xff));
-		ret |= reg_write(client, 0x0161, (priv->cur_vts&0xff));
+		ret = reg_write(client, 0x0160, ((priv->cur_vts >> 8) & 0xff));
+		ret |= reg_write(client, 0x0161, (priv->cur_vts & 0xff));
 		return ret;
+
 	default:
 		return -EINVAL;
 	}
@@ -676,10 +666,10 @@ static int imx219_set_fmt(struct v4l2_subdev *sd,
 					pixel_rate, 1, pixel_rate);
 
 	/* reset crop window */
-	priv->crop_rect.left = 1640 - (mode->width/2);
+	priv->crop_rect.left = 1640 - (mode->width / 2);
 	if (priv->crop_rect.left < 0)
 		priv->crop_rect.left = 0;
-	priv->crop_rect.top = 1232 - (mode->height/2);
+	priv->crop_rect.top = 1232 - (mode->height / 2);
 	if (priv->crop_rect.top < 0)
 		priv->crop_rect.top = 0;
 	priv->crop_rect.width = mode->width;

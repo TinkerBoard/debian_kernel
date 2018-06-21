@@ -2015,8 +2015,13 @@ dont_test_tx_en:
 	if (up->dma) {
 		retval = serial8250_request_dma(up);
 		if (retval) {
+#ifdef CONFIG_ARCH_ROCKCHIP
+			pr_warn_ratelimited("ttyS%d - failed to request DMA, use interrupt mode\n",
+					    serial_index(port));
+#else
 			pr_warn_ratelimited("ttyS%d - failed to request DMA\n",
 					    serial_index(port));
+#endif
 			up->dma = NULL;
 		}
 	}
@@ -2358,10 +2363,7 @@ serial8250_do_set_termios(struct uart_port *port, struct ktermios *termios,
 
 	serial8250_set_divisor(port, baud, quot, frac);
 #ifdef CONFIG_ARCH_ROCKCHIP
-	if (up->dma)
-		up->fcr = UART_FCR_ENABLE_FIFO | UART_FCR_T_TRIG_10 | UART_FCR_R_TRIG_10;
-	else
-		up->fcr = UART_FCR_ENABLE_FIFO | UART_FCR_T_TRIG_10 | UART_FCR_R_TRIG_00;
+	up->fcr = UART_FCR_ENABLE_FIFO | UART_FCR_T_TRIG_10 | UART_FCR_R_TRIG_10;
 #endif
 	/*
 	 * LCR DLAB must be set to enable 64-byte FIFO mode. If the FCR

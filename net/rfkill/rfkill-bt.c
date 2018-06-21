@@ -488,16 +488,16 @@ static int bluetooth_platdata_parse_dt(struct device *dev,
 		if (!IS_ERR(data->pinctrl)) {
             data->rts_gpio.default_state = pinctrl_lookup_state(data->pinctrl, "default");
             data->rts_gpio.gpio_state = pinctrl_lookup_state(data->pinctrl, "rts_gpio");
-		} else {
-			data->pinctrl = NULL;
-			LOG("%s: dts does't define the uart rts iomux.\n", __func__);
-			return -EINVAL;
-		}
-	} else {
-		data->pinctrl = NULL;
-		LOG("%s: uart_rts_gpios is unvalid.\n", __func__);
-		return -EINVAL;
-	}
+        } else {
+            data->pinctrl = NULL;
+            LOG("%s: dts does't define the uart rts iomux.\n", __func__);
+            return -EINVAL;
+        }
+    } else {
+        data->pinctrl = NULL;
+        data->rts_gpio.io = -EINVAL;
+        LOG("%s: uart_rts_gpios is no-in-use.\n", __func__);
+    }
 
 	gpio = of_get_named_gpio_flags(node, "BT,power_gpio", 0, &flags);
 	if (gpio_is_valid(gpio)) {

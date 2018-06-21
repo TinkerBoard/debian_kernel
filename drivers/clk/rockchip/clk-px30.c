@@ -22,6 +22,7 @@
 
 #define PX30_GRF_SOC_STATUS0		0x480
 #define PX30_I2S_FRAC_MAX_PRATE		600000000
+#define PX30_PDM_FRAC_MAX_PRATE		600000000
 
 enum px30_plls {
 	apll, dpll, cpll, npll, apll_b_h, apll_b_l,
@@ -143,7 +144,7 @@ static const struct rockchip_cpuclk_reg_data px30_cpuclk_data = {
 	.pll_name = "pll_apll",
 };
 
-PNAME(mux_pll_p)		= { "xin24m", "clk_rtc32k_pmu" };
+PNAME(mux_pll_p)		= { "xin24m"};
 PNAME(mux_usb480m_p)		= { "xin24m", "usb480m_phy", "clk_rtc32k_pmu" };
 PNAME(mux_armclk_p)		= { "apll_core", "gpll_core" };
 PNAME(mux_ddrphy_p)		= { "dpll_ddr", "gpll_ddr" };
@@ -186,28 +187,23 @@ PNAME(mux_usbphy_ref_p)		= { "xin24m", "clk_ref24m_pmu" };
 PNAME(mux_mipidsiphy_ref_p)	= { "xin24m", "clk_ref24m_pmu" };
 
 static struct rockchip_pll_clock px30_pll_clks[] __initdata = {
-	[apll] = PLL(pll_px30, PLL_APLL, "apll", mux_pll_p,
+	[apll] = PLL_BOOST(pll_rk3328, PLL_APLL, "apll", mux_pll_p,
 		     0, PX30_PLL_CON(0),
 		     PX30_MODE_CON, 0, 0, 0, px30_pll_rates),
-	[dpll] = PLL(pll_rk3036, PLL_DPLL, "dpll", mux_pll_p,
+	[dpll] = PLL(pll_rk3328, PLL_DPLL, "dpll", mux_pll_p,
 		     0, PX30_PLL_CON(8),
 		     PX30_MODE_CON, 4, 1, 0, NULL),
-	[cpll] = PLL(pll_rk3036, PLL_CPLL, "cpll", mux_pll_p,
+	[cpll] = PLL(pll_rk3328, PLL_CPLL, "cpll", mux_pll_p,
 		     0, PX30_PLL_CON(16),
 		     PX30_MODE_CON, 2, 2, 0, px30_pll_rates),
-	[npll] = PLL(pll_rk3036, PLL_NPLL, "npll", mux_pll_p,
+	[npll] = PLL(pll_rk3328, PLL_NPLL, "npll", mux_pll_p,
 		     0, PX30_PLL_CON(24),
 		     PX30_MODE_CON, 6, 4, 0, px30_pll_rates),
-	[apll_b_h] = PLL(pll_rk3036, APLL_BOOST_H, "apll_b_h", mux_pll_p,
-		     0, PX30_BOOST_PLL_H_CON(0),
-		     PX30_MODE_CON, 0, 0, 0, px30_pll_rates),
-	[apll_b_l] = PLL(pll_rk3036, APLL_BOOST_L, "apll_b_l", mux_pll_p,
-		     0, PX30_BOOST_PLL_L_CON(0),
-		     PX30_MODE_CON, 0, 0, 0, px30_pll_rates),
 };
 
 static struct rockchip_pll_clock px30_pmu_pll_clks[] __initdata = {
-	[gpll] = PLL(pll_rk3036, PLL_GPLL, "gpll",  mux_pll_p, 0, PX30_PMU_PLL_CON(0),
+	[gpll] = PLL(pll_rk3328, PLL_GPLL, "gpll",  mux_pll_p,
+		     0, PX30_PMU_PLL_CON(0),
 		     PX30_PMU_MODE, 0, 3, 0, px30_pll_rates),
 };
 
@@ -564,7 +560,7 @@ static struct rockchip_clk_branch px30_clk_branches[] __initdata = {
 	COMPOSITE_FRACMUX(0, "clk_pdm_frac", "clk_pdm_src", CLK_SET_RATE_PARENT,
 			PX30_CLKSEL_CON(27), 0,
 			PX30_CLKGATE_CON(9), 10, GFLAGS,
-			&px30_pdm_fracmux, 0),
+			&px30_pdm_fracmux, PX30_PDM_FRAC_MAX_PRATE),
 	GATE(SCLK_PDM, "clk_pdm", "clk_pdm_mux", CLK_SET_RATE_PARENT,
 			PX30_CLKGATE_CON(9), 11, GFLAGS),
 
@@ -940,6 +936,8 @@ static const char *const px30_pmucru_critical_clocks[] __initconst = {
 	"hclk_usb_niu",
 	"pll_npll",
 	"usb480m",
+	"clk_uart2",
+	"pclk_uart2",
 };
 
 static void __iomem *px30_cru_base;

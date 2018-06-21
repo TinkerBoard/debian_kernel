@@ -37,8 +37,8 @@
 		keyup-threshold-microvolt = <1800000>;
 
 		esc-key {
-			linux,code = <KEY_MUTE>;
-			label = "mute";
+			linux,code = <KEY_MICMUTE>;
+			label = "micmute";
 			press-threshold-microvolt = <1130000>;
 		};
 
@@ -102,20 +102,13 @@
 		reset-gpios = <&gpio0 RK_PA2 GPIO_ACTIVE_LOW>;
 	};
 
-	sound {
-		compatible = "simple-audio-card";
-		simple-audio-card,format = "i2s";
-		simple-audio-card,name = "rockchip,rk3308-acodec";
-		simple-audio-card,mclk-fs = <256>;
-		simple-audio-card,codec-hp-det;
-		simple-audio-card,widgets =
-			"Headphone", "Headphones";
-		simple-audio-card,cpu {
-			sound-dai = <&i2s_8ch_2>;
-		};
-		simple-audio-card,codec {
-			sound-dai = <&acodec>;
-		};
+	acodec_sound: acodec-sound {
+		compatible = "rockchip,multicodecs-card";
+		rockchip,card-name = "rockchip,rk3308-acodec";
+		rockchip,codec-hp-det;
+		rockchip,mclk-fs = <256>;
+		rockchip,cpu = <&i2s_8ch_2>;
+		rockchip,codec = <&acodec>;
 	};
 
 	spdif_tx_sound: spdif-tx-sound {
@@ -246,8 +239,7 @@
 &acodec {
 	status = "okay";
 
-	#sound-dai-cells = <0>;
-
+	rockchip,loopback-grp = <3>;
 	hp-ctl-gpios = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
 	spk-ctl-gpios = <&gpio0 RK_PA5 GPIO_ACTIVE_HIGH>;
 };
@@ -640,11 +632,19 @@
 
 &i2s_8ch_2 {
 	status = "okay";
-
-	#sound-dai-cells = <0>;
 };
 
 &nandc {
+	status = "okay";
+};
+
+&rockchip_suspend {
+	rockchip,pwm-regulator-config = <
+		(0
+		| RKPM_PWM_REGULATOR
+		)
+	>;
+
 	status = "okay";
 };
 
@@ -707,6 +707,8 @@
 
 &pwm0 {
 	status = "okay";
+	pinctrl-names = "active";
+	pinctrl-0 = <&pwm0_pin_pull_down>;
 };
 
 &u2phy {

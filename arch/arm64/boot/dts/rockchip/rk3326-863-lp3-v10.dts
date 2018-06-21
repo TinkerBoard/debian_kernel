@@ -228,6 +228,11 @@
 	};
 };
 
+&bus_apll {
+	bus-supply = <&vdd_logic>;
+	status = "okay";
+};
+
 &cpu0 {
 	cpu-supply = <&vdd_arm>;
 };
@@ -303,7 +308,7 @@
 		clock-output-names = "rk808-clkout1", "rk808-clkout2";
 		//fb-inner-reg-idxs = <2>;
 		/* 1: rst regs (default in codes), 0: rst the pmic */
-		pmic-reset-func = <0>;
+		pmic-reset-func = <1>;
 
 		vcc1-supply = <&vccsys>;
 		vcc2-supply = <&vccsys>;
@@ -473,7 +478,7 @@
 			vccio_sd: LDO_REG5 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <3300000>;
+				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <3300000>;
 
 				regulator-name = "vccio_sd";

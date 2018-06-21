@@ -2443,6 +2443,9 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 
 	noalign		[KNL,ARM]
 
+	noaltinstr	[S390] Disables alternative instructions patching
+			(CPU alternatives feature).
+
 	noapic		[SMP,APIC] Tells the kernel to not make use of any
 			IOAPICs that may be present in the system.
 
@@ -3501,6 +3504,12 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 			Set number of hash buckets for route cache
 
 	ro		[KNL] Mount root device read-only on boot
+
+	rockchip.usb_uart
+			Enable the uart passthrough on the designated usb port
+			on Rockchip SoCs. When active, the signals of the
+			debug-uart get routed to the D+ and D- pins of the usb
+			port and the regular usb controller gets disabled.
 
 	rodata=		[KNL]
 		on	Mark read-only kernel memory as read-only (default).

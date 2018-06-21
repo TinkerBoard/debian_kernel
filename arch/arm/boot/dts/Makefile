@@ -512,6 +512,7 @@ dtb-$(CONFIG_ARCH_QCOM) += \
 dtb-$(CONFIG_ARCH_REALVIEW) += \
 	arm-realview-pb1176.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += \
+	px3se-evb.dtb \
 	rk3036-echo.dtb \
 	rk3036-evb.dtb \
 	rk3036-kylin.dtb \
@@ -556,12 +557,14 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3288-popmetal-android-vga.dtb \
 	rk3288-r89.dtb \
 	rk3288-rock2-square.dtb \
+	rk3288-th804.dtb \
 	rk3288-veyron-jaq.dtb \
 	rk3288-veyron-jerry.dtb \
 	rk3288-veyron-minnie.dtb \
 	rk3288-veyron-pinky.dtb \
 	rk3288-veyron-speedy.dtb \
-	rk3288-x7811-rk818-dual-dsi.dtb
+	rk3288-x7811-rk818-dual-dsi.dtb \
+	rk3308-evb-dmic-i2s-v10-aarch32.dtb
 dtb-$(CONFIG_ARCH_S3C24XX) += \
 	s3c2416-smdk2416.dtb
 dtb-$(CONFIG_ARCH_S3C64XX) += \

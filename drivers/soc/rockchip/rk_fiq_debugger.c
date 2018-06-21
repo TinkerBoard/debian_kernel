@@ -185,9 +185,6 @@ static void debug_putc(struct platform_device *pdev, unsigned int c)
 
 	while (!(rk_fiq_read(t, UART_USR) & UART_USR_TX_FIFO_NOT_FULL) && count--)
 		udelay(10);
-	/* If uart is always busy, maybe it is abnormal, reinit it */
-	if ((count == 0) && (rk_fiq_read(t, UART_USR) & UART_USR_BUSY))
-		debug_port_init(pdev);
 
 	rk_fiq_write(t, c, UART_TX);
 }
@@ -200,9 +197,6 @@ static void debug_flush(struct platform_device *pdev)
 
 	while (!(rk_fiq_read_lsr(t) & UART_LSR_TEMT) && count--)
 		udelay(10);
-	/* If uart is always busy, maybe it is abnormal, reinit it */
-	if ((count == 0) && (rk_fiq_read(t, UART_USR) & UART_USR_BUSY))
-		debug_port_init(pdev);
 }
 
 #ifdef CONFIG_RK_CONSOLE_THREAD
@@ -223,9 +217,6 @@ static void console_putc(struct platform_device *pdev, unsigned int c)
 	while (!(rk_fiq_read(t, UART_USR) & UART_USR_TX_FIFO_NOT_FULL) &&
 	       count--)
 		usleep_range(200, 210);
-	/* If uart is always busy, maybe it is abnormal, reinit it */
-	if ((count == 0) && (rk_fiq_read(t, UART_USR) & UART_USR_BUSY))
-		debug_port_init(pdev);
 
 	rk_fiq_write(t, c, UART_TX);
 }
@@ -239,9 +230,6 @@ static void console_flush(struct platform_device *pdev)
 
 	while (!(rk_fiq_read_lsr(t) & UART_LSR_TEMT) && count--)
 		usleep_range(200, 210);
-	/* If uart is always busy, maybe it is abnormal, reinit it */
-	if ((count == 0) && (rk_fiq_read(t, UART_USR) & UART_USR_BUSY))
-		debug_port_init(pdev);
 }
 
 static void console_put(struct platform_device *pdev,
@@ -378,8 +366,14 @@ static int rk_fiq_debugger_uart_dev_resume(struct platform_device *pdev)
 	return 0;
 }
 
-static int fiq_debugger_cpu_resume_fiq(struct notifier_block *nb,
-				       unsigned long action, void *hcpu)
+/*
+ * We don't need to migrate fiq before cpuidle, because EL3 can promise to
+ * resume all fiq configure. We don't want fiq to break kernel cpu_resume(),
+ * so that fiq would be disabled in EL3 on purpose when cpu resume. We enable
+ * it here since everything is okay.
+ */
+static int fiq_debugger_cpuidle_resume_fiq(struct notifier_block *nb,
+					   unsigned long action, void *hcpu)
 {
 	switch (action) {
 	case CPU_PM_EXIT:
@@ -394,8 +388,13 @@ static int fiq_debugger_cpu_resume_fiq(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-static int fiq_debugger_cpu_migrate_fiq(struct notifier_block *nb,
-					unsigned long action, void *hcpu)
+/*
+ * We must migrate fiq before cpu offline, because EL3 doesn't promise to
+ * resume all fiq configure at this sisutation. Here, we migrate fiq to any
+ * online cpu.
+ */
+static int fiq_debugger_cpu_offine_migrate_fiq(struct notifier_block *nb,
+					       unsigned long action, void *hcpu)
 {
 	int target_cpu, cpu = (long)hcpu;
 
@@ -415,12 +414,12 @@ static int fiq_debugger_cpu_migrate_fiq(struct notifier_block *nb,
 }
 
 static struct notifier_block fiq_debugger_pm_notifier = {
-	.notifier_call = fiq_debugger_cpu_resume_fiq,
+	.notifier_call = fiq_debugger_cpuidle_resume_fiq,
 	.priority = 100,
 };
 
 static struct notifier_block fiq_debugger_cpu_notifier = {
-	.notifier_call = fiq_debugger_cpu_migrate_fiq,
+	.notifier_call = fiq_debugger_cpu_offine_migrate_fiq,
 	.priority = 100,
 };
 
