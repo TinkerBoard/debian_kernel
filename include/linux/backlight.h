@@ -47,6 +47,7 @@ enum backlight_notification {
 
 struct backlight_device;
 struct fb_info;
+extern struct class *backlight_class;
 
 struct backlight_ops {
 	unsigned int options;

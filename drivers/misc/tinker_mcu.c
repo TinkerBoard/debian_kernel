@@ -22,12 +22,14 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/workqueue.h>
+#include <linux/backlight.h>
 #include "tinker_mcu.h"
 
 #define BL_DEBUG 0
 static struct tinker_mcu_data *g_mcu_data;
 static int connected = 0;
 static int lcd_bright_level = 0;
+static struct device *rpi_backlight_device;
 
 static int is_hex(char num)
 {
@@ -187,6 +189,7 @@ static ssize_t tinker_mcu_bl_store(struct device *dev, struct device_attribute *
 	return strnlen(buf, count);
 }
 static DEVICE_ATTR(tinker_mcu_bl, S_IRUGO | S_IWUSR, tinker_mcu_bl_show, tinker_mcu_bl_store);
+static DEVICE_ATTR(brightness, S_IRUGO | S_IWUSR, tinker_mcu_bl_show, tinker_mcu_bl_store);
 
 int tinker_mcu_is_connected(void)
 {
@@ -228,6 +231,22 @@ static int tinker_mcu_probe(struct i2c_client *client,
 	if (ret != 0) {
 		dev_err(&client->dev, "Failed to create tinker_mcu_bl sysfs files %d\n", ret);
 		return ret;
+	}
+
+	rpi_backlight_device = device_create(backlight_class, NULL, MKDEV(0, 0), NULL,
+				     "rpi_backlight");
+	if (IS_ERR(rpi_backlight_device)) {
+		printk(KERN_WARNING "Unable to create device "
+		       "for rpi_backlight; errno = %ld\n",
+		       PTR_ERR(rpi_backlight_device));
+		rpi_backlight_device = NULL;
+	} else {
+		//init_device
+		ret = device_create_file(rpi_backlight_device, &dev_attr_brightness);
+		if (ret != 0) {
+			dev_err(&client->dev, "Failed to create brightness sysfs files %d\n", ret);
+			return ret;
+		}
 	}
 
 	return 0;

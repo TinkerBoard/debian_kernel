@@ -124,6 +124,7 @@ static void backlight_generate_event(struct backlight_device *bd,
 	sysfs_notify(&bd->dev.kobj, NULL, "actual_brightness");
 }
 
+#ifndef CONFIG_TINKER_MCU
 static ssize_t bl_power_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
@@ -242,8 +243,10 @@ static ssize_t actual_brightness_show(struct device *dev,
 	return rc;
 }
 static DEVICE_ATTR_RO(actual_brightness);
+#endif
 
-static struct class *backlight_class;
+struct class *backlight_class;
+EXPORT_SYMBOL(backlight_class);
 
 #ifdef CONFIG_PM_SLEEP
 static int backlight_suspend(struct device *dev)
@@ -285,11 +288,13 @@ static void bl_device_release(struct device *dev)
 }
 
 static struct attribute *bl_device_attrs[] = {
+#ifndef CONFIG_TINKER_MCU
 	&dev_attr_bl_power.attr,
 	&dev_attr_brightness.attr,
 	&dev_attr_actual_brightness.attr,
 	&dev_attr_max_brightness.attr,
 	&dev_attr_type.attr,
+#endif
 	NULL,
 };
 ATTRIBUTE_GROUPS(bl_device);
@@ -594,6 +599,7 @@ static int __init backlight_class_init(void)
 
 	backlight_class->dev_groups = bl_device_groups;
 	backlight_class->pm = &backlight_class_dev_pm_ops;
+
 	INIT_LIST_HEAD(&backlight_dev_list);
 	mutex_init(&backlight_dev_list_mutex);
 	BLOCKING_INIT_NOTIFIER_HEAD(&backlight_notifier);
