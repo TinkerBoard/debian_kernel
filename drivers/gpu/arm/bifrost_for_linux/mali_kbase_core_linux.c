@@ -3170,6 +3170,8 @@ static ssize_t kbase_show_gpuinfo(struct device *dev,
 		  .name = "Mali-G72" },
 		{ .id = GPU_ID2_PRODUCT_TSIX >> GPU_ID_VERSION_PRODUCT_ID_SHIFT,
 		  .name = "Mali-G51" },
+		{ .id = GPU_ID2_PRODUCT_TDVX >> GPU_ID_VERSION_PRODUCT_ID_SHIFT,
+		  .name = "Mali-G31" },
 	};
 	const char *product_name = "(Unknown Mali GPU)";
 	struct kbase_device *kbdev;
@@ -3202,7 +3204,7 @@ static ssize_t kbase_show_gpuinfo(struct device *dev,
 		}
 	}
 
-	return scnprintf(buf, PAGE_SIZE, "%s %d cores r%dp%d 0x%04X\n",
+	return scnprintf(buf, PAGE_SIZE, "%s %d cores 2EE r%dp%d 0x%04X\n",
 		product_name, kbdev->gpu_props.num_cores,
 		(gpu_id & GPU_ID_VERSION_MAJOR) >> GPU_ID_VERSION_MAJOR_SHIFT,
 		(gpu_id & GPU_ID_VERSION_MINOR) >> GPU_ID_VERSION_MINOR_SHIFT,

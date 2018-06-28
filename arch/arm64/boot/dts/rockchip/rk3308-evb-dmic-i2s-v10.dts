@@ -13,6 +13,7 @@
 	compatible = "rockchip,rk3308-evb-dmic-i2s-v10", "rockchip,rk3308";
 
 	i2s-dmic-array {
+		status = "okay";
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,name = "rockchip,i2s-dmic-array";
@@ -24,6 +25,14 @@
 			sound-dai = <&dummy_codec>;
 		};
 	};
+
+	vad-sound {
+		status = "disabled";
+		compatible = "rockchip,multicodecs-card";
+		rockchip,card-name = "rockchip,rk3308-vad";
+		rockchip,cpu = <&i2s_8ch_0>;
+		rockchip,codec = <&dummy_codec>, <&vad>;
+	};
 };
 
 &dummy_codec {
@@ -33,5 +42,13 @@
 
 &i2s_8ch_0 {
 	status = "okay";
+	#sound-dai-cells = <0>;
+};
+
+&vad {
+	status = "disabled";
+	rockchip,audio-src = <&i2s_8ch_0>;
+	rockchip,det-channel = <0>;
+	rockchip,mode = <1>;
 	#sound-dai-cells = <0>;
 };

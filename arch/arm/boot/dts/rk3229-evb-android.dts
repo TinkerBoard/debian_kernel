@@ -341,10 +341,14 @@
 
 &pwm1 {
 	status = "okay";
+	pinctrl-names = "active";
+	pinctrl-0 = <&pwm1_pin_pull_down>;
 };
 
 &pwm2 {
 	status = "okay";
+	pinctrl-names = "active";
+	pinctrl-0 = <&pwm2_pin_pull_up>;
 };
 
 &pwm3 {
@@ -487,7 +491,7 @@
 };
 
 &soc_crit {
-	temperature = <110000>; /* millicelsius */
+	temperature = <115000>; /* millicelsius */
 };
 
 &tsadc {

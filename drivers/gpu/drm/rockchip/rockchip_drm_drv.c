@@ -49,12 +49,13 @@
 #define DRIVER_DATE	"20140818"
 #define DRIVER_MAJOR	1
 #define DRIVER_MINOR	0
-#define DRIVER_VERSION	"v1.0.0"
+#define DRIVER_VERSION	"v1.0.1"
 
 /***********************************************************************
  *  Rockchip DRM driver version
  *
  *  v1.0.0	: add basic version for rockchip drm driver(hjc)
+ *  v1.0.1	: set frame start to field start for interlace mode(hjc)
  *
  **********************************************************************/
 
@@ -443,9 +444,9 @@ of_parse_display_resource(struct drm_device *drm_dev, struct device_node *route)
 	return set;
 }
 
-int setup_initial_state(struct drm_device *drm_dev,
-			struct drm_atomic_state *state,
-			struct rockchip_drm_mode_set *set)
+static int setup_initial_state(struct drm_device *drm_dev,
+			       struct drm_atomic_state *state,
+			       struct rockchip_drm_mode_set *set)
 {
 	struct rockchip_drm_private *priv = drm_dev->dev_private;
 	struct drm_connector *connector = set->connector;
@@ -987,7 +988,7 @@ static void rockchip_drm_crtc_disable_vblank(struct drm_device *dev,
 	struct drm_crtc *crtc = rockchip_crtc_from_pipe(dev, pipe);
 
 	if (crtc && priv->crtc_funcs[pipe] &&
-	    priv->crtc_funcs[pipe]->enable_vblank)
+	    priv->crtc_funcs[pipe]->disable_vblank)
 		priv->crtc_funcs[pipe]->disable_vblank(crtc);
 }
 
@@ -1630,7 +1631,7 @@ static void rockchip_drm_postclose(struct drm_device *dev, struct drm_file *file
 	file->driver_priv = NULL;
 }
 
-void rockchip_drm_lastclose(struct drm_device *dev)
+static void rockchip_drm_lastclose(struct drm_device *dev)
 {
 	struct rockchip_drm_private *priv = dev->dev_private;
 

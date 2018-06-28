@@ -21,6 +21,8 @@
 #include <linux/io.h>
 #include <linux/delay.h>
 #include <linux/clk-provider.h>
+#include <linux/device.h>
+#include <linux/list.h>
 #include <linux/regmap.h>
 #include <linux/clk.h>
 #include <linux/gcd.h>
@@ -53,9 +55,14 @@ struct rockchip_clk_pll {
 	int			sel;
 	unsigned long		scaling;
 	spinlock_t		*lock;
+	bool			boost_enabled;
 
 	struct rockchip_clk_provider *ctx;
 	u8			id;
+#ifdef CONFIG_DEBUG_FS
+	struct hlist_node	debug_node;
+#endif
+
 };
 
 #define to_rockchip_clk_pll(_hw) container_of(_hw, struct rockchip_clk_pll, hw)
@@ -89,6 +96,10 @@ static int rockchip_rk3366_pll_set_params(struct rockchip_clk_pll *pll,
 #define MAX_FOUTVCO_FREQ	(2000 * MHZ)
 
 static struct rockchip_pll_rate_table auto_table;
+#ifdef CONFIG_DEBUG_FS
+static HLIST_HEAD(clk_boost_list);
+static DEFINE_MUTEX(clk_boost_lock);
+#endif
 
 int rockchip_pll_clk_adaptive_scaling(struct clk *clk, int sel)
 {
@@ -107,12 +118,12 @@ int rockchip_pll_clk_adaptive_scaling(struct clk *clk, int sel)
 	return 0;
 }
 
-int rockchip_pll_clk_adaptive_rate(struct clk *clk, unsigned long rate)
+int rockchip_pll_clk_rate_to_scale(struct clk *clk, unsigned long rate)
 {
 	const struct rockchip_pll_rate_table *rate_table;
 	struct clk *parent = clk_get_parent(clk);
 	struct rockchip_clk_pll *pll;
-	int i;
+	unsigned int i;
 
 	if (IS_ERR_OR_NULL(parent))
 		return -EINVAL;
@@ -123,13 +134,34 @@ int rockchip_pll_clk_adaptive_rate(struct clk *clk, unsigned long rate)
 
 	rate_table = pll->rate_table;
 	for (i = 0; i < pll->rate_count; i++) {
-		if (rate >= rate_table[i].rate) {
-			pll->sel = i;
-			break;
-		}
+		if (rate >= rate_table[i].rate)
+			return i;
 	}
 
-	return 0;
+	return -EINVAL;
+}
+
+int rockchip_pll_clk_scale_to_rate(struct clk *clk, unsigned int scale)
+{
+	const struct rockchip_pll_rate_table *rate_table;
+	struct clk *parent = clk_get_parent(clk);
+	struct rockchip_clk_pll *pll;
+	unsigned int i;
+
+	if (IS_ERR_OR_NULL(parent))
+		return -EINVAL;
+
+	pll = to_rockchip_clk_pll(__clk_get_hw(parent));
+	if (!pll)
+		return -EINVAL;
+
+	rate_table = pll->rate_table;
+	for (i = 0; i < pll->rate_count; i++) {
+		if (i == scale)
+			return rate_table[i].rate;
+	}
+
+	return -EINVAL;
 }
 
 static struct rockchip_pll_rate_table *rk_pll_rate_table_get(void)
@@ -362,54 +394,60 @@ static int rockchip_pll_wait_lock(struct rockchip_clk_pll *pll)
 void rockchip_boost_enable_recovery_sw_low(struct clk_hw *hw)
 {
 	struct rockchip_clk_pll *pll;
-	int ret;
+	struct regmap *boost;
+	unsigned int val;
 
 	if (!hw)
 		return;
 	pll = to_rockchip_clk_pll(hw);
+	if (!pll->boost_enabled || IS_ERR(pll->ctx->boost))
+		return;
 
-	if (pll->type == pll_px30) {
-		writel_relaxed(HIWORD_UPDATE(1, PX30_BOOST_RECOVERY_MASK,
-					     PX30_BOOST_RECOVERY_SHIFT),
-			       pll->reg_base + PX30_BOOST_BOOST_CON);
-		do {
-			ret = readl_relaxed(pll->reg_base +
-					    PX30_BOOST_FSM_STATUS);
-		} while (!(ret & PX30_BOOST_BUSY_STATE));
+	boost = pll->ctx->boost;
+	regmap_write(boost, BOOST_BOOST_CON,
+		     HIWORD_UPDATE(1, BOOST_RECOVERY_MASK,
+				   BOOST_RECOVERY_SHIFT));
+	do {
+		regmap_read(boost, BOOST_FSM_STATUS, &val);
+	} while (!(val & BOOST_BUSY_STATE));
 
-		writel_relaxed(HIWORD_UPDATE(1, PX30_BOOST_SW_CTRL_MASK,
-					     PX30_BOOST_SW_CTRL_SHIFT) |
-			       HIWORD_UPDATE(1, PX30_BOOST_LOW_FREQ_EN_MASK,
-					     PX30_BOOST_LOW_FREQ_EN_SHIFT),
-			       pll->reg_base + PX30_BOOST_BOOST_CON);
-	}
+	regmap_write(boost, BOOST_BOOST_CON,
+		     HIWORD_UPDATE(1, BOOST_SW_CTRL_MASK,
+				   BOOST_SW_CTRL_SHIFT) |
+		     HIWORD_UPDATE(1, BOOST_LOW_FREQ_EN_MASK,
+				   BOOST_LOW_FREQ_EN_SHIFT));
 }
 
 void rockchip_boost_disable_low(struct rockchip_clk_pll *pll)
 {
-	if (pll->type == pll_px30) {
-		writel_relaxed(HIWORD_UPDATE(0, PX30_BOOST_LOW_FREQ_EN_MASK,
-					     PX30_BOOST_LOW_FREQ_EN_SHIFT),
-			       pll->reg_base + PX30_BOOST_BOOST_CON);
-	}
+	struct regmap *boost = pll->ctx->boost;
+
+	if (!pll->boost_enabled || IS_ERR(boost))
+		return;
+
+	regmap_write(boost, BOOST_BOOST_CON,
+		     HIWORD_UPDATE(0, BOOST_LOW_FREQ_EN_MASK,
+				   BOOST_LOW_FREQ_EN_SHIFT));
 }
 
 void rockchip_boost_disable_recovery_sw(struct clk_hw *hw)
 {
 	struct rockchip_clk_pll *pll;
+	struct regmap *boost;
 
 	if (!hw)
 		return;
 	pll = to_rockchip_clk_pll(hw);
+	if (!pll->boost_enabled || IS_ERR(pll->ctx->boost))
+		return;
 
-	if (pll->type == pll_px30) {
-		writel_relaxed(HIWORD_UPDATE(0, PX30_BOOST_RECOVERY_MASK,
-					     PX30_BOOST_RECOVERY_SHIFT),
-			       pll->reg_base + PX30_BOOST_BOOST_CON);
-		writel_relaxed(HIWORD_UPDATE(0, PX30_BOOST_SW_CTRL_MASK,
-					     PX30_BOOST_SW_CTRL_SHIFT),
-			       pll->reg_base + PX30_BOOST_BOOST_CON);
-	}
+	boost = pll->ctx->boost;
+	regmap_write(boost, BOOST_BOOST_CON,
+		     HIWORD_UPDATE(0, BOOST_RECOVERY_MASK,
+				   BOOST_RECOVERY_SHIFT));
+	regmap_write(boost, BOOST_BOOST_CON,
+		     HIWORD_UPDATE(0, BOOST_SW_CTRL_MASK,
+				   BOOST_SW_CTRL_SHIFT));
 }
 
 /**
@@ -1374,7 +1412,8 @@ struct clk *rockchip_clk_register_pll(struct rockchip_clk_provider *ctx,
 		u8 num_parents, int con_offset, int grf_lock_offset,
 		int lock_shift, int mode_offset, int mode_shift,
 		struct rockchip_pll_rate_table *rate_table,
-		unsigned long flags, u8 clk_pll_flags, u8 id)
+		unsigned long flags, u8 clk_pll_flags, u8 id,
+		bool boost_enabled)
 {
 	const char *pll_parents[3];
 	struct clk_init_data init;
@@ -1409,8 +1448,7 @@ struct clk *rockchip_clk_register_pll(struct rockchip_clk_provider *ctx,
 	pll_mux->lock = &ctx->lock;
 	pll_mux->hw.init = &init;
 
-	if (pll_type == pll_px30 ||
-	    pll_type == pll_rk3036 ||
+	if (pll_type == pll_rk3036 ||
 	    pll_type == pll_rk3066 ||
 	    pll_type == pll_rk3328 ||
 	    pll_type == pll_rk3366 ||
@@ -1462,7 +1500,6 @@ struct clk *rockchip_clk_register_pll(struct rockchip_clk_provider *ctx,
 	}
 
 	switch (pll_type) {
-	case pll_px30:
 	case pll_rk3036:
 	case pll_rk3328:
 		if (!pll->rate_table)
@@ -1502,6 +1539,7 @@ struct clk *rockchip_clk_register_pll(struct rockchip_clk_provider *ctx,
 	pll->lock = &ctx->lock;
 	pll->ctx = ctx;
 	pll->id = id;
+	pll->boost_enabled = boost_enabled;
 
 	pll_clk = clk_register(NULL, &pll->hw);
 	if (IS_ERR(pll_clk)) {
@@ -1509,6 +1547,14 @@ struct clk *rockchip_clk_register_pll(struct rockchip_clk_provider *ctx,
 			__func__, name, PTR_ERR(pll_clk));
 		goto err_pll;
 	}
+
+#ifdef CONFIG_DEBUG_FS
+	if (boost_enabled && !IS_ERR(ctx->boost)) {
+		mutex_lock(&clk_boost_lock);
+		hlist_add_head(&pll->debug_node, &clk_boost_list);
+		mutex_unlock(&clk_boost_lock);
+	}
+#endif
 
 	return mux_clk;
 
@@ -1519,3 +1565,95 @@ err_mux:
 	kfree(pll);
 	return mux_clk;
 }
+
+#ifdef CONFIG_DEBUG_FS
+#include <linux/debugfs.h>
+
+static int boost_summary_show(struct seq_file *s, void *data)
+{
+	struct rockchip_clk_pll *pll = (struct rockchip_clk_pll *)s->private;
+	struct regmap *boost = pll->ctx->boost;
+	u32 boost_count = 0;
+	u32 freq_cnt0 = 0, freq_cnt1 = 0;
+	u64 high_freq_time = 0;
+	u32 short_count = 0, short_threshold = 0;
+	u32 interval_time = 0;
+
+	seq_puts(s, " device   boost_count   high_freq_time(us)   short_count   short_threshold   interval_time\n");
+	seq_puts(s, "------------------------------------------------------------------------------------------\n");
+	seq_printf(s, " %s\n", clk_hw_get_name(&pll->hw));
+
+	regmap_read(boost, BOOST_SWITCH_CNT, &boost_count);
+
+	regmap_read(boost, BOOST_HIGH_PERF_CNT0, &freq_cnt0);
+	regmap_read(boost, BOOST_HIGH_PERF_CNT1, &freq_cnt1);
+	high_freq_time = ((u64)freq_cnt1 << 32) + (u64)freq_cnt0;
+	do_div(high_freq_time, 24);
+
+	regmap_read(boost, BOOST_SHORT_SWITCH_CNT, &short_count);
+	regmap_read(boost, BOOST_STATIS_THRESHOLD, &short_threshold);
+	regmap_read(boost, BOOST_SWITCH_THRESHOLD, &interval_time);
+
+	seq_printf(s, "%21u %20llu %13u %17u %15u\n",
+		   boost_count, high_freq_time, short_count,
+		   short_threshold, interval_time);
+
+	return 0;
+}
+
+static int boost_summary_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, boost_summary_show, inode->i_private);
+}
+
+static const struct file_operations boost_summary_fops = {
+	.open		= boost_summary_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int boost_debug_create_one(struct rockchip_clk_pll *pll,
+				  struct dentry *rootdir)
+{
+	struct dentry *pdentry, *d;
+
+	pdentry = debugfs_lookup(clk_hw_get_name(&pll->hw), rootdir);
+	if (!pdentry) {
+		pr_err("%s: failed to lookup %s dentry\n", __func__,
+		       clk_hw_get_name(&pll->hw));
+		return -ENOMEM;
+	}
+
+	d = debugfs_create_file("boost_summary", 0444, pdentry,
+				pll, &boost_summary_fops);
+	if (!d) {
+		pr_err("%s: failed to create boost_summary file\n", __func__);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static int __init boost_debug_init(void)
+{
+	struct rockchip_clk_pll *pll;
+	struct dentry *rootdir;
+
+	rootdir = debugfs_lookup("clk", NULL);
+	if (!rootdir) {
+		pr_err("%s: failed to lookup clk dentry\n", __func__);
+		return -ENOMEM;
+	}
+
+	mutex_lock(&clk_boost_lock);
+
+	hlist_for_each_entry(pll, &clk_boost_list, debug_node)
+		boost_debug_create_one(pll, rootdir);
+
+	mutex_unlock(&clk_boost_lock);
+
+	return 0;
+}
+late_initcall(boost_debug_init);
+#endif

@@ -45,7 +45,6 @@
 #include <linux/iopoll.h>
 
 #include <linux/regulator/consumer.h>
-#include <linux/rockchip/pmu.h>
 #include <linux/rockchip/grf.h>
 #include <linux/rockchip/rockchip_sip.h>
 #include <linux/thermal.h>
@@ -54,6 +53,7 @@
 #include <linux/dma-buf.h>
 #include <linux/rockchip-iovmm.h>
 #include <video/rk_vpu_service.h>
+#include <soc/rockchip/pm_domains.h>
 #include <soc/rockchip/rockchip_opp_select.h>
 
 #include "vcodec_hw_info.h"
@@ -446,7 +446,6 @@ struct vcodec_hw_ops {
 struct vcodec_hw_var {
 	s32 device_type;
 	u8 *name;
-	enum pmu_idle_req pmu_type;
 	struct vcodec_hw_ops *ops;
 	int (*init)(struct vpu_service_info *pservice);
 	void (*config)(struct vpu_subdev_data *data);
@@ -2600,7 +2599,6 @@ static struct vcodec_hw_ops hw_ops_rk3328_rkvdec = {
 static struct vcodec_hw_var rk3328_rkvdec_var = {
 	.device_type = VCODEC_DEVICE_TYPE_RKVD,
 	.name = "rkvdec",
-	.pmu_type = -1,
 	.ops = &hw_ops_rk3328_rkvdec,
 	.init = vcodec_spec_init_rk3328,
 	.config = vcodec_spec_config_rk3328,
@@ -2609,7 +2607,6 @@ static struct vcodec_hw_var rk3328_rkvdec_var = {
 static struct vcodec_hw_var rk3328_vpucombo_var = {
 	.device_type = VCODEC_DEVICE_TYPE_VPUC,
 	.name = "vpu-combo",
-	.pmu_type = -1,
 	.ops = NULL,
 	.init = NULL,
 	.config = NULL,
@@ -2619,7 +2616,6 @@ static struct vcodec_hw_var rk3328_vpucombo_var = {
 static struct vcodec_hw_var vpu_device_info = {
 	.device_type = VCODEC_DEVICE_TYPE_VPUX,
 	.name = "vpu-service",
-	.pmu_type = -1,
 	.ops = NULL,
 	.init = NULL,
 	.config = NULL,
@@ -2628,7 +2624,6 @@ static struct vcodec_hw_var vpu_device_info = {
 static struct vcodec_hw_var vpu_combo_device_info = {
 	.device_type = VCODEC_DEVICE_TYPE_VPUC,
 	.name = "vpu-combo",
-	.pmu_type = -1,
 	.ops = NULL,
 	.init = NULL,
 	.config = NULL,
@@ -2637,7 +2632,6 @@ static struct vcodec_hw_var vpu_combo_device_info = {
 static struct vcodec_hw_var hevc_device_info = {
 	.device_type = VCODEC_DEVICE_TYPE_HEVC,
 	.name = "hevc-service",
-	.pmu_type = -1,
 	.ops = NULL,
 	.init = NULL,
 	.config = NULL,
@@ -2646,7 +2640,6 @@ static struct vcodec_hw_var hevc_device_info = {
 static struct vcodec_hw_var rkvd_device_info = {
 	.device_type = VCODEC_DEVICE_TYPE_RKVD,
 	.name = "rkvdec",
-	.pmu_type = -1,
 	.ops = NULL,
 	.init = NULL,
 	.config = NULL,
@@ -3111,10 +3104,13 @@ static int devfreq_vcodec_target(struct device *dev, unsigned long *freq,
 			return ret;
 		ret = regulator_set_voltage(pservice->vdd_vcodec, target_volt,
 					    INT_MAX);
-		if (ret)
+		if (ret) {
 			dev_err(dev, "Cannot set voltage %lu uV\n",
 				target_volt);
-		return ret;
+			return ret;
+		}
+		pservice->volt = target_volt;
+		return 0;
 	}
 
 	if (old_clk_rate < target_rate) {
@@ -3293,9 +3289,6 @@ static int vcodec_probe(struct platform_device *pdev)
 	struct devfreq_dev_status *stat;
 	struct vpu_service_info *pservice = NULL;
 	struct vpu_session *session = NULL;
-#define MAX_PROP_NAME_LEN	3
-	char name[MAX_PROP_NAME_LEN];
-	int lkg_volt_sel;
 
 	pservice = devm_kzalloc(dev, sizeof(struct vpu_service_info),
 				GFP_KERNEL);
@@ -3389,21 +3382,12 @@ static int vcodec_probe(struct platform_device *pdev)
 		goto err;
 
 	if (!IS_ERR(pservice->vdd_vcodec)) {
-		lkg_volt_sel = rockchip_of_get_lkg_volt_sel(dev,
-							    "rkvdec_leakage");
-		if (lkg_volt_sel >= 0) {
-			snprintf(name, MAX_PROP_NAME_LEN, "L%d", lkg_volt_sel);
-			ret = dev_pm_opp_set_prop_name(dev, name);
-			if (ret)
-				dev_err(dev, "Failed to set prop name\n");
+		ret = rockchip_init_opp_table(dev, NULL,
+					      "rkvdec_leakage", "vcodec");
+		if (ret) {
+			dev_err(dev, "Failed to init_opp_table (%d)\n", ret);
+			return ret;
 		}
-
-		if (dev_pm_opp_of_add_table(dev)) {
-			dev_err(dev, "Invalid operating-points\n");
-			ret = -EINVAL;
-			goto err;
-		}
-
 		pservice->devfreq = devm_devfreq_add_device(dev, devp,
 							    "userspace", NULL);
 		if (IS_ERR(pservice->devfreq)) {
@@ -3413,7 +3397,6 @@ static int vcodec_probe(struct platform_device *pdev)
 
 		stat = &pservice->devfreq->last_status;
 		stat->current_frequency = clk_get_rate(pservice->aclk_vcodec);
-		pservice->volt = regulator_get_voltage(pservice->vdd_vcodec);
 
 		ret = devfreq_register_opp_notifier(dev, pservice->devfreq);
 		if (ret)
