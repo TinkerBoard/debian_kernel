@@ -86,6 +86,9 @@ static void dwc2_handle_usb_port_intr(struct dwc2_hsotg *hsotg)
 		hprt0 &= ~HPRT0_ENA;
 		dwc2_writel(hprt0, hsotg->regs + HPRT0);
 	}
+
+	/* Clear interrupt */
+	dwc2_writel(GINTSTS_PRTINT, hsotg->regs + GINTSTS);
 }
 
 /**
@@ -236,7 +239,7 @@ static void dwc2_handle_otg_intr(struct dwc2_hsotg *hsotg)
 			dev_dbg(hsotg->dev, "a_suspend->a_peripheral (%d)\n",
 				hsotg->op_state);
 			spin_unlock(&hsotg->lock);
-			dwc2_hcd_disconnect(hsotg, false);
+			dwc2_hcd_disconnect(hsotg);
 			spin_lock(&hsotg->lock);
 			hsotg->op_state = OTG_STATE_A_PERIPHERAL;
 		} else {
@@ -345,11 +348,6 @@ static void dwc2_handle_session_req_intr(struct dwc2_hsotg *hsotg)
 static void dwc2_handle_wakeup_detected_intr(struct dwc2_hsotg *hsotg)
 {
 	int ret;
-	struct device_node *np = hsotg->dev->of_node;
-
-	/* Clear interrupt */
-	dwc2_writel(GINTSTS_WKUPINT, hsotg->regs + GINTSTS);
-
 	dev_dbg(hsotg->dev, "++Resume or Remote Wakeup Detected Interrupt++\n");
 	dev_dbg(hsotg->dev, "%s lxstate = %d\n", __func__, hsotg->lx_state);
 
@@ -371,27 +369,16 @@ static void dwc2_handle_wakeup_detected_intr(struct dwc2_hsotg *hsotg)
 		/* Change to L0 state */
 		hsotg->lx_state = DWC2_L0;
 	} else {
-		if (hsotg->core_params->hibernation)
+		if (hsotg->core_params->hibernation) {
+			dwc2_writel(GINTSTS_WKUPINT, hsotg->regs + GINTSTS);
 			return;
-
+		}
 		if (hsotg->lx_state != DWC2_L1) {
 			u32 pcgcctl = dwc2_readl(hsotg->regs + PCGCTL);
 
 			/* Restart the Phy Clock */
 			pcgcctl &= ~PCGCTL_STOPPCLK;
 			dwc2_writel(pcgcctl, hsotg->regs + PCGCTL);
-
-			/*
-			 * It is a quirk in Rockchip RK3288, causing by
-			 * a hardware bug. This will propagate out and
-			 * eventually we'll re-enumerate the device.
-			 * Not great but the best we can do.
-			 */
-			if (of_device_is_compatible(np, "rockchip,rk3288-usb")) {
-				/* FIXME: wkp_timer might run early than phy_rst_work */
-				schedule_work(&hsotg->phy_rst_work);
-			}
-
 			mod_timer(&hsotg->wkp_timer,
 				  jiffies + msecs_to_jiffies(71));
 		} else {
@@ -399,6 +386,9 @@ static void dwc2_handle_wakeup_detected_intr(struct dwc2_hsotg *hsotg)
 			hsotg->lx_state = DWC2_L0;
 		}
 	}
+
+	/* Clear interrupt */
+	dwc2_writel(GINTSTS_WKUPINT, hsotg->regs + GINTSTS);
 }
 
 /*
@@ -414,7 +404,7 @@ static void dwc2_handle_disconnect_intr(struct dwc2_hsotg *hsotg)
 		dwc2_op_state_str(hsotg));
 
 	if (hsotg->op_state == OTG_STATE_A_HOST)
-		dwc2_hcd_disconnect(hsotg, false);
+		dwc2_hcd_disconnect(hsotg);
 }
 
 /*
@@ -429,9 +419,6 @@ static void dwc2_handle_usb_suspend_intr(struct dwc2_hsotg *hsotg)
 {
 	u32 dsts;
 	int ret;
-
-	/* Clear interrupt */
-	dwc2_writel(GINTSTS_USBSUSP, hsotg->regs + GINTSTS);
 
 	dev_dbg(hsotg->dev, "USB SUSPEND\n");
 
@@ -451,7 +438,7 @@ static void dwc2_handle_usb_suspend_intr(struct dwc2_hsotg *hsotg)
 			if (!dwc2_is_device_connected(hsotg)) {
 				dev_dbg(hsotg->dev,
 						"ignore suspend request before enumeration\n");
-				return;
+				goto clear_int;
 			}
 
 			ret = dwc2_enter_hibernation(hsotg);
@@ -490,6 +477,8 @@ skip_power_saving:
 			hsotg->op_state = OTG_STATE_A_HOST;
 		}
 	}
+clear_int:
+	dwc2_writel(GINTSTS_USBSUSP, hsotg->regs + GINTSTS);
 }
 
 #define GINTMSK_COMMON	(GINTSTS_WKUPINT | GINTSTS_SESSREQINT |		\

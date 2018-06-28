@@ -2520,7 +2520,7 @@ void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *hsotg,
 	kill_all_requests(hsotg, hsotg->eps_out[0], -ECONNRESET);
 
 	if (!is_usb_reset)
-		if (dwc2_core_reset(hsotg, true))
+		if (dwc2_core_reset(hsotg))
 			return;
 
 	/*

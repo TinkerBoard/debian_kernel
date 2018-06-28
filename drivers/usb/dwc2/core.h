@@ -221,6 +221,7 @@ struct dwc2_hsotg_ep {
 	unsigned int            target_frame;
 #define TARGET_FRAME_INITIAL   0xFFFFFFFF
 	bool			frame_overrun;
+	unsigned int            has_correct_parity:1;
 
 	char                    name[10];
 };
@@ -797,6 +798,7 @@ struct dwc2_hregs_backup {
  * @hs_periodic_bitmap: Bitmap used by the microframe scheduler any time the
  *                      host is in high speed mode; low speed schedules are
  *                      stored elsewhere since we need one per TT.
+ * @frame_usecs:        Internal variable used by the microframe scheduler
  * @frame_number:       Frame number read from the core at SOF. The value ranges
  *                      from 0 to HFNUM_MAX_FRNUM.
  * @periodic_qh_count:  Count of periodic QHs, if using several eps. Used for
@@ -874,6 +876,7 @@ struct dwc2_hsotg {
 	int     irq;
 	struct clk *clks[DWC2_MAX_CLKS];
 	struct reset_control *reset;
+	struct clk *clk;
 
 	unsigned int queuing_high_bandwidth:1;
 	unsigned int srp_success:1;
@@ -924,6 +927,7 @@ struct dwc2_hsotg {
 	u16 periodic_usecs;
 	unsigned long hs_periodic_bitmap[
 		DIV_ROUND_UP(DWC2_HS_SCHEDULE_US, BITS_PER_LONG)];
+	u16 frame_usecs[8];
 	u16 frame_number;
 	u16 periodic_qh_count;
 	bool bus_suspended;
@@ -933,6 +937,7 @@ struct dwc2_hsotg {
 
 #ifdef CONFIG_USB_DWC2_TRACK_MISSED_SOFS
 #define FRAME_NUM_ARRAY_SIZE 1000
+	u16 last_frame_num;
 	u16 *frame_num_array;
 	u16 *last_frame_num_array;
 	int frame_num_idx;
@@ -1028,8 +1033,9 @@ enum dwc2_halt_status {
  * The following functions support initialization of the core driver component
  * and the DWC_otg controller
  */
-extern int dwc2_core_reset(struct dwc2_hsotg *hsotg, bool skip_wait);
+extern int dwc2_core_reset(struct dwc2_hsotg *hsotg);
 extern int dwc2_core_reset_and_force_dr_mode(struct dwc2_hsotg *hsotg);
+extern void dwc2_core_host_init(struct dwc2_hsotg *hsotg);
 extern int dwc2_enter_hibernation(struct dwc2_hsotg *hsotg);
 extern int dwc2_exit_hibernation(struct dwc2_hsotg *hsotg, bool restore);
 
@@ -1046,6 +1052,7 @@ extern void dwc2_read_packet(struct dwc2_hsotg *hsotg, u8 *dest, u16 bytes);
 extern void dwc2_flush_tx_fifo(struct dwc2_hsotg *hsotg, const int num);
 extern void dwc2_flush_rx_fifo(struct dwc2_hsotg *hsotg);
 
+extern int dwc2_core_init(struct dwc2_hsotg *hsotg, bool select_phy, int irq);
 extern void dwc2_enable_global_interrupts(struct dwc2_hsotg *hcd);
 extern void dwc2_disable_global_interrupts(struct dwc2_hsotg *hcd);
 
@@ -1084,16 +1091,6 @@ extern void dwc2_set_param_dma_enable(struct dwc2_hsotg *hsotg, int val);
  * 1 - DMA Descriptor(default, if available)
  */
 extern void dwc2_set_param_dma_desc_enable(struct dwc2_hsotg *hsotg, int val);
-
-/*
- * When DMA mode is enabled specifies whether to use
- * address DMA or DMA Descritor mode with full speed devices
- * for accessing the data FIFOs in host mode.
- * 0 - address DMA
- * 1 - FS DMA Descriptor(default, if available)
- */
-extern void dwc2_set_param_dma_desc_fs_enable(struct dwc2_hsotg *hsotg,
-					      int val);
 
 /*
  * Specifies the maximum speed of operation in host and device mode.
@@ -1339,20 +1336,14 @@ static inline int dwc2_restore_device_registers(struct dwc2_hsotg *hsotg)
 
 #if IS_ENABLED(CONFIG_USB_DWC2_HOST) || IS_ENABLED(CONFIG_USB_DWC2_DUAL_ROLE)
 extern int dwc2_hcd_get_frame_number(struct dwc2_hsotg *hsotg);
-extern int dwc2_hcd_get_future_frame_number(struct dwc2_hsotg *hsotg, int us);
-extern void dwc2_hcd_connect(struct dwc2_hsotg *hsotg);
-extern void dwc2_hcd_disconnect(struct dwc2_hsotg *hsotg, bool force);
+extern void dwc2_hcd_disconnect(struct dwc2_hsotg *hsotg);
 extern void dwc2_hcd_start(struct dwc2_hsotg *hsotg);
 int dwc2_backup_host_registers(struct dwc2_hsotg *hsotg);
 int dwc2_restore_host_registers(struct dwc2_hsotg *hsotg);
 #else
 static inline int dwc2_hcd_get_frame_number(struct dwc2_hsotg *hsotg)
 { return 0; }
-static inline int dwc2_hcd_get_future_frame_number(struct dwc2_hsotg *hsotg,
-						   int us)
-{ return 0; }
-static inline void dwc2_hcd_connect(struct dwc2_hsotg *hsotg) {}
-static inline void dwc2_hcd_disconnect(struct dwc2_hsotg *hsotg, bool force) {}
+static inline void dwc2_hcd_disconnect(struct dwc2_hsotg *hsotg) {}
 static inline void dwc2_hcd_start(struct dwc2_hsotg *hsotg) {}
 static inline void dwc2_hcd_remove(struct dwc2_hsotg *hsotg) {}
 static inline int dwc2_hcd_init(struct dwc2_hsotg *hsotg, int irq)
