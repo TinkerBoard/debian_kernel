@@ -1,0 +1,47 @@
+// Definitions for es90x8q2m dac
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "rockchip,rk3288";
+
+	fragment@0 {
+		target-path ="/sound-simple-card";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@1 {
+		target = <&i2c1>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			i-sabre-codec@48 {
+				#sound-dai-cells = <0>;
+				compatible = "xiao,es90x8q2m-i2c";
+				reg = <0x48>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/sound-ext-card";
+		es90x8q2m: __overlay__ {
+			compatible = "xiao,es90x8q2m-dac";
+			i2s-controller = <&i2s>;
+			status = "okay";
+		};
+	};
+
+	fragment@3 {
+		target = <&hdmi>;
+		__overlay__ {
+			hdmi-i2s-audio-disable;
+		};
+	};
+
+};

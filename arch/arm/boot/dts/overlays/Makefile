@@ -1,6 +1,7 @@
 # Overlays for the Tinker board platform
 
 dtbo-$(CONFIG_ARCH_ROCKCHIP) += \
+	es90x8q2m-dac.dtbo \
 	hifiberry-amp.dtbo \
 	hifiberry-dac.dtbo \
 	hifiberry-dacplus.dtbo \
