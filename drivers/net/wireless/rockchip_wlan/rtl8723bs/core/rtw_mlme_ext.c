@@ -8062,7 +8062,13 @@ void issue_probersp(_adapter *padapter, unsigned char *da, u8 is_valid_p2p_probe
 	    /* IOT issue, When wifi_spec is not set, send probe_resp with P2P IE even if probe_req has no P2P IE */
 	    && (is_valid_p2p_probereq || !padapter->registrypriv.wifi_spec)) {
 		u32 len;
-#ifdef CONFIG_IOCTL_CFG80211
+// FIXME:
+// Driver did not get P2P IE from wpa_supplicant
+// So p2p_go_probe_resp_ie_len always equal to 0
+// build_probe_resp_p2p_ie will build a generic P2P IE
+//
+// #ifdef CONFIG_IOCTL_CFG80211
+#if 0
 		if (adapter_wdev_data(padapter)->p2p_enabled && pwdinfo->driver_interface == DRIVER_CFG80211) {
 			/* if pwdinfo->role == P2P_ROLE_DEVICE will call issue_probersp_p2p() */
 			len = pmlmepriv->p2p_go_probe_resp_ie_len;
