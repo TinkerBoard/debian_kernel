@@ -225,7 +225,7 @@ void config_mi_ctrl(struct rkisp1_stream *stream)
 	reg = readl(addr) & ~GENMASK(17, 16);
 	writel(reg | CIF_MI_CTRL_BURST_LEN_LUM_64, addr);
 	reg = readl(addr) & ~GENMASK(19, 18);
-	writel(reg | CIF_MI_CTRL_BURST_LEN_CHROM_64, addr);
+	writel(reg | CIF_MI_CTRL_BURST_LEN_CHROM_16, addr);
 	reg = readl(addr);
 	writel(reg | CIF_MI_CTRL_INIT_BASE_EN, addr);
 	reg = readl(addr);
