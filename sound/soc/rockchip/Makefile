@@ -62,3 +62,4 @@ obj-$(CONFIG_SND_SOC_JUSTBOOM_DAC) += snd-soc-justboom-dac.o
 obj-$(CONFIG_SND_SOC_JUSTBOOM_DIGI) += snd-soc-justboom-digi.o
 obj-$(CONFIG_SND_SOC_GOOGLEVOICEHAT_CARD) += snd-soc-googlevoicehat-soundcard.o
 obj-$(CONFIG_SND_SOC_GOOGLEVOICEHAT_CARD) += snd-soc-googlevoicehat-codec.o
+obj-$(CONFIG_SND_SOC_SEEEDVOICEHAT_CARD) += seeedvoicehat/

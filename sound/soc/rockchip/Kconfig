@@ -196,3 +196,8 @@ config SND_SOC_GOOGLEVOICEHAT_CARD
         select SND_SOC_VOICEHAT
         help
           Say Y or M if you want to add support for Google voice HAT sound card.
+
+config SND_SOC_SEEEDVOICEHAT_CARD
+        tristate "Support for Seeed voice HAT sound card"
+        help
+           Say Y or M if you want to add support for Seeed voice sound card.
