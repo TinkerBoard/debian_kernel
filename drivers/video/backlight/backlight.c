@@ -124,7 +124,6 @@ static void backlight_generate_event(struct backlight_device *bd,
 	sysfs_notify(&bd->dev.kobj, NULL, "actual_brightness");
 }
 
-#ifndef CONFIG_TINKER_MCU
 static ssize_t bl_power_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
@@ -160,6 +159,7 @@ static ssize_t bl_power_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(bl_power);
 
+#ifndef CONFIG_TINKER_MCU
 static ssize_t brightness_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -207,6 +207,32 @@ static ssize_t brightness_store(struct device *dev,
 
 	return rc ? rc : count;
 }
+#else
+extern int tinker_mcu_set_bright(int bright);
+extern int tinker_mcu_get_brightness(void);
+static ssize_t brightness_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int level;
+
+	level = tinker_mcu_get_brightness();
+
+    return sprintf(buf, "%d\n", level);
+}
+
+static ssize_t brightness_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int value;
+
+	value = simple_strtoul(buf, NULL, 0);
+
+	if((value < 0) || (value > 255)) {
+		pr_err("Invalid value for backlight setting, value = %d\n", value);
+	} else
+		tinker_mcu_set_bright(value);
+
+	return strnlen(buf, count);
+}
+#endif
 static DEVICE_ATTR_RW(brightness);
 
 static ssize_t type_show(struct device *dev, struct device_attribute *attr,
@@ -243,10 +269,8 @@ static ssize_t actual_brightness_show(struct device *dev,
 	return rc;
 }
 static DEVICE_ATTR_RO(actual_brightness);
-#endif
 
 struct class *backlight_class;
-EXPORT_SYMBOL(backlight_class);
 
 #ifdef CONFIG_PM_SLEEP
 static int backlight_suspend(struct device *dev)
@@ -288,13 +312,11 @@ static void bl_device_release(struct device *dev)
 }
 
 static struct attribute *bl_device_attrs[] = {
-#ifndef CONFIG_TINKER_MCU
 	&dev_attr_bl_power.attr,
 	&dev_attr_brightness.attr,
 	&dev_attr_actual_brightness.attr,
 	&dev_attr_max_brightness.attr,
 	&dev_attr_type.attr,
-#endif
 	NULL,
 };
 ATTRIBUTE_GROUPS(bl_device);
