@@ -152,3 +152,14 @@ MODULE_DEVICE_TABLE(of, snd_soc_es90x8q2m_dac_of_match);
 static struct platform_driver snd_soc_es90x8q2m_dac_driver = {
 	.driver = {
 		.name           = "snd-soc-es90x8q2m-dac",
+		.owner          = THIS_MODULE,
+		.of_match_table = snd_soc_es90x8q2m_dac_of_match,
+	},
+	.probe  = snd_soc_es90x8q2m_dac_probe,
+	.remove = snd_soc_es90x8q2m_dac_remove,
+};
+module_platform_driver(snd_soc_es90x8q2m_dac_driver);
+
+MODULE_DESCRIPTION("ASoC Driver for ES90X8Q2M");
+MODULE_AUTHOR("Xiao <http://xiaoqingyong@sina.com>");
+MODULE_LICENSE("GPL");
