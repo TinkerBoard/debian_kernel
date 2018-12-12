@@ -112,6 +112,58 @@ static const struct imx219_reg imx219_init_tab_3280_2464_21fps[] = {
 	{IMX219_TABLE_END, 0x00}
 };
 
+/* MCLK:24MHz  3280x1848  28fps   MIPI LANE2 */
+static const struct imx219_reg imx219_init_tab_3280_1848_28fps[] = {
+	{0x30EB, 0x05},		/* Access Code for address over 0x3000 */
+	{0x30EB, 0x0C},		/* Access Code for address over 0x3000 */
+	{0x300A, 0xFF},		/* Access Code for address over 0x3000 */
+	{0x300B, 0xFF},		/* Access Code for address over 0x3000 */
+	{0x30EB, 0x05},		/* Access Code for address over 0x3000 */
+	{0x30EB, 0x09},		/* Access Code for address over 0x3000 */
+	{0x0114, 0x01},		/* CSI_LANE_MODE[1:0} */
+	{0x0128, 0x00},		/* DPHY_CNTRL */
+	{0x012A, 0x18},		/* EXCK_FREQ[15:8] */
+	{0x012B, 0x00},		/* EXCK_FREQ[7:0] */
+	{0x015A, 0x01},		/* INTEG TIME[15:8] */
+	{0x015B, 0xF4},		/* INTEG TIME[7:0] */
+	{0x0160, 0x07},		/* FRM_LENGTH_A[15:8] */
+	{0x0161, 0x60},		/* FRM_LENGTH_A[7:0] */
+	{0x0162, 0x0F},		/* LINE_LENGTH_A[15:8] */
+	{0x0163, 0xA0},		/* LINE_LENGTH_A[7:0] */
+	{0x0260, 0x07},		/* FRM_LENGTH_B[15:8] */
+	{0x0261, 0x60},		/* FRM_LENGTH_B[7:0] */
+	{0x0262, 0x0F},		/* LINE_LENGTH_B[15:8] */
+	{0x0263, 0xA0},		/* LINE_LENGTH_B[7:0] */
+	{0x0170, 0x01},		/* X_ODD_INC_A[2:0] */
+	{0x0171, 0x01},		/* Y_ODD_INC_A[2:0] */
+	{0x0270, 0x01},		/* X_ODD_INC_B[2:0] */
+	{0x0271, 0x01},		/* Y_ODD_INC_B[2:0] */
+	{0x0174, 0x00},		/* BINNING_MODE_H_A */
+	{0x0175, 0x00},		/* BINNING_MODE_V_A */
+	{0x0274, 0x00},		/* BINNING_MODE_H_B */
+	{0x0275, 0x00},		/* BINNING_MODE_V_B */
+	{0x018C, 0x0A},		/* CSI_DATA_FORMAT_A[15:8] */
+	{0x018D, 0x0A},		/* CSI_DATA_FORMAT_A[7:0] */
+	{0x028C, 0x0A},		/* CSI_DATA_FORMAT_B[15:8] */
+	{0x028D, 0x0A},		/* CSI_DATA_FORMAT_B[7:0] */
+	{0x0301, 0x05},		/* VTPXCK_DIV */
+	{0x0303, 0x01},		/* VTSYCK_DIV */
+	{0x0304, 0x03},		/* PREPLLCK_VT_DIV[3:0] */
+	{0x0305, 0x03},		/* PREPLLCK_OP_DIV[3:0] */
+	{0x0306, 0x00},		/* PLL_VT_MPY[10:8] */
+	{0x0307, 0x42},		/* PLL_VT_MPY[7:0] */
+	{0x0309, 0x0A},		/* OPPXCK_DIV[4:0] */
+	{0x030B, 0x01},		/* OPSYCK_DIV */
+	{0x030C, 0x00},		/* PLL_OP_MPY[10:8] */
+	{0x030D, 0x72},		/* PLL_OP_MPY[7:0] */
+	{0x455E, 0x00},		/* CIS Tuning */
+	{0x471E, 0x4B},		/* CIS Tuning */
+	{0x4767, 0x0F},		/* CIS Tuning */
+	{0x4750, 0x14},		/* CIS Tuning */
+	{0x47B4, 0x14},		/* CIS Tuning */
+	{IMX219_TABLE_END, 0x00}
+};
+
 /* MCLK:24MHz  1920x1080  30fps   MIPI LANE2 */
 static const struct imx219_reg imx219_init_tab_1920_1080_30fps[] = {
 	{0x30EB, 0x05},
@@ -317,6 +369,16 @@ static const struct imx219_mode supported_modes[] = {
 		.reg_list = imx219_init_tab_1640_1232_30fps,
 		.binning_h = 1,
 		.binning_v = 1,
+	},
+	{
+		.width = 3280,
+		.height = 1848,
+		.max_fps = 28,
+		.hts_def = 0x0fa0 - IMX219_EXP_LINES_MARGIN,
+		.vts_def = 0x0760,
+		.reg_list = imx219_init_tab_3280_1848_28fps,
+		.binning_h = 0,
+		.binning_v = 0,
 	},
 };
 
