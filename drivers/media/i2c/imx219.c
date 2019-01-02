@@ -72,8 +72,6 @@ static const struct imx219_reg imx219_init_tab_3280_2464_21fps[] = {
 	{0x0128, 0x00},		/* DPHY_CNTRL */
 	{0x012A, 0x18},		/* EXCK_FREQ[15:8] */
 	{0x012B, 0x00},		/* EXCK_FREQ[7:0] */
-	{0x015A, 0x01},		/* INTEG TIME[15:8] */
-	{0x015B, 0xF4},		/* INTEG TIME[7:0] */
 	{0x0160, 0x09},		/* FRM_LENGTH_A[15:8] */
 	{0x0161, 0xC4},		/* FRM_LENGTH_A[7:0] */
 	{0x0162, 0x0D},		/* LINE_LENGTH_A[15:8] */
@@ -124,8 +122,6 @@ static const struct imx219_reg imx219_init_tab_3280_1848_28fps[] = {
 	{0x0128, 0x00},		/* DPHY_CNTRL */
 	{0x012A, 0x18},		/* EXCK_FREQ[15:8] */
 	{0x012B, 0x00},		/* EXCK_FREQ[7:0] */
-	{0x015A, 0x01},		/* INTEG TIME[15:8] */
-	{0x015B, 0xF4},		/* INTEG TIME[7:0] */
 	{0x0160, 0x07},		/* FRM_LENGTH_A[15:8] */
 	{0x0161, 0x60},		/* FRM_LENGTH_A[7:0] */
 	{0x0162, 0x0F},		/* LINE_LENGTH_A[15:8] */
@@ -229,8 +225,6 @@ static const struct imx219_reg imx219_init_tab_1640_1232_30fps[] = {
 	{0x0128, 0x00},		/* DPHY_CNTRL */
 	{0x012A, 0x18},		/* EXCK_FREQ[15:8] */
 	{0x012B, 0x00},		/* EXCK_FREQ[7:0] */
-	{0x015A, 0x01},		/* INTEG TIME[15:8] */
-	{0x015B, 0xF4},		/* INTEG TIME[7:0] */
 	{0x0160, 0x06},		/* FRM_LENGTH_A[15:8] */
 	{0x0161, 0xE6},		/* FRM_LENGTH_A[7:0] */
 	{0x0162, 0x0D},		/* LINE_LENGTH_A[15:8] */
@@ -526,6 +520,15 @@ static int imx219_s_stream(struct v4l2_subdev *sd, int enable)
 	}
 
 	priv->cur_vts = priv->cur_mode->vts_def - IMX219_EXP_LINES_MARGIN;
+	if (ret)
+		return ret;
+
+	/* Set exposure and gain */
+	ret = reg_write(client, 0x0157, priv->analogue_gain);
+	ret |= reg_write(client, 0x0158, priv->digital_gain >> 8);
+	ret |= reg_write(client, 0x0159, priv->digital_gain & 0xff);
+	ret |= reg_write(client, 0x015a, priv->exposure_time >> 8);
+	ret |= reg_write(client, 0x015b, priv->exposure_time & 0xff);
 	if (ret)
 		return ret;
 
