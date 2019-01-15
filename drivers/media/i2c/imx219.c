@@ -452,8 +452,11 @@ static int imx219_s_stream(struct v4l2_subdev *sd, int enable)
 	u8 reg = 0x00;
 	int ret;
 
-	if (!enable)
-		return reg_write_table(client, stop);
+	if (!enable) {
+		ret = reg_write_table(client, stop);
+		mdelay(100);
+		return ret;
+	}
 
 	ret = reg_write_table(client, priv->cur_mode->reg_list);
 	if (ret)
