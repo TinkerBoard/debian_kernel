@@ -76,6 +76,8 @@ static void read_project_id(void)
 
 	if (project_id_2 == 0 && project_id_1 == 0 && project_id_0 == 0)
 		board_type = "Tinker Board S";
+	else if (project_id_2 == 1 && project_id_1 == 0 && project_id_0 == 0)
+		board_type = "Tinker R/BR";
 	else if (project_id_2 == 1 && project_id_1 == 1 && project_id_0 == 1)
 		board_type = "Tinker Board";
 	else
