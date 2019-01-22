@@ -118,6 +118,21 @@ int rockchip_pll_clk_adaptive_scaling(struct clk *clk, int sel)
 	return 0;
 }
 
+/**
+ * The scale and rate is something like this
+ * i    rate_table[i].rate
+ * -----------------------
+ * 0    2208000000
+ * 1    2184000000
+ * 2    2160000000
+ * 3    2136000000
+ * 4    2112000000
+ * ...
+ * 25   1608000000
+ * 26   1560000000
+ * 27   1512000000
+ * ...
+ */
 int rockchip_pll_clk_rate_to_scale(struct clk *clk, unsigned long rate)
 {
 	const struct rockchip_pll_rate_table *rate_table;
@@ -141,6 +156,21 @@ int rockchip_pll_clk_rate_to_scale(struct clk *clk, unsigned long rate)
 	return -EINVAL;
 }
 
+/**
+ * The scale and rate is something like this
+ * i    rate_table[i].rate
+ * -----------------------
+ * 0    2208000000
+ * 1    2184000000
+ * 2    2160000000
+ * 3    2136000000
+ * 4    2112000000
+ * ...
+ * 25   1608000000
+ * 26   1560000000
+ * 27   1512000000
+ * ...
+ */
 int rockchip_pll_clk_scale_to_rate(struct clk *clk, unsigned int scale)
 {
 	const struct rockchip_pll_rate_table *rate_table;

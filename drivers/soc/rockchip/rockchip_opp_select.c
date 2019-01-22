@@ -672,6 +672,21 @@ out:
 	return ret;
 }
 
+/**
+ * The scale and rate is something like this
+ * scale  rate
+ * -----------------------
+ *  0     2208000000
+ *  1     2184000000
+ *  2     2160000000
+ *  3     2136000000
+ *  4     2112000000
+ *  ...
+ *  25    1608000000
+ *  26    1560000000
+ *  27    1512000000
+ * ...
+ */
 int rockchip_adjust_power_scale(struct device *dev, int scale)
 {
 	struct device_node *np;
