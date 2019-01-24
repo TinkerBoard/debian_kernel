@@ -3060,6 +3060,8 @@ int stmmac_dvr_probe(struct device *device,
 		goto error_netdev_register;
 	}
 
+	netif_carrier_off(ndev);
+
 	wake_lock_init(&priv->plat->wol_wake_lock, WAKE_LOCK_SUSPEND, "wol_wake_lock");
 
 	return ret;
