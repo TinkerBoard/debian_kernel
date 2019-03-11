@@ -7,3 +7,10 @@ config SND_BCM2835_SOC_I2S
 	  Say Y or M if you want to add support for codecs attached to
 	  the BCM2835 I2S interface. You will also need
 	  to select the audio interfaces to support below.
+
+config SND_AUDIOINJECTOR_OCTO_SOUNDCARD
+	tristate "Support for audioinjector.net Octo channel (Hat) soundcard"
+	depends on SND_BCM2708_SOC_I2S || SND_BCM2835_SOC_I2S
+	select SND_SOC_CS42XX8_I2C
+	help
+	  Say Y or M if you want to add support for audioinjector.net octo add on
