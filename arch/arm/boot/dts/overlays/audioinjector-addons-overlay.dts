@@ -2,13 +2,16 @@
 /dts-v1/;
 /plugin/;
 
+#include <dt-bindings/pinctrl/rockchip.h>
+
 / {
-	compatible = "brcm,bcm2708";
+	compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
 
 	fragment@0 {
 		target = <&i2s>;
 		__overlay__ {
 			status = "okay";
+			rockchip,bcm2835_compatibility_mode = <1>;
 		};
 	};
 
@@ -37,15 +40,29 @@
 	};
 
 	fragment@2 {
-		target = <&sound>;
+		target-path = "/sound-ext-card";
 		snd: __overlay__ {
 			compatible = "ai,audioinjector-octo-soundcard";
-			mult-gpios = <&gpio 27 0>, <&gpio 22 0>, <&gpio 23 0>,
-				     <&gpio 24 0>;
-			reset-gpios = <&gpio 5 0>;
+			mult-gpios = <&gpio5 RK_PB6 0>, <&gpio5 RK_PB7 0>, <&gpio5 RK_PB2 0>,
+				     <&gpio5 RK_PB3 0>;
+			reset-gpios = <&gpio5 RK_PB5 0>;
 			i2s-controller = <&i2s>;
 			codec = <&cs42448>;
 			status = "okay";
+		};
+	};
+
+	fragment@3 {
+		target-path = "/sound-simple-card";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@4 {
+		target = <&hdmi>;
+		__overlay__ {
+			hdmi-i2s-audio-disable;
 		};
 	};
 

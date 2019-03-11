@@ -57,6 +57,7 @@ struct rk_i2s_dev {
 	int xfer_mode; /* 0: i2s, 1: pcm */
 	const struct rk_i2s_pins *pins;
 	unsigned int bclk_fs;
+	bool bcm2835_compat_mode;
 };
 
 /* txctrl/rxctrl lock */
@@ -339,23 +340,27 @@ static int rockchip_i2s_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-	switch (params_channels(params)) {
-	case 8:
-		val |= I2S_CHN_8;
-		break;
-	case 6:
-		val |= I2S_CHN_6;
-		break;
-	case 4:
-		val |= I2S_CHN_4;
-		break;
-	case 2:
+	if (i2s->bcm2835_compat_mode) {
 		val |= I2S_CHN_2;
-		break;
-	default:
-		dev_err(i2s->dev, "invalid channel: %d\n",
-			params_channels(params));
-		return -EINVAL;
+	} else {
+		switch (params_channels(params)) {
+		case 8:
+			val |= I2S_CHN_8;
+			break;
+		case 6:
+			val |= I2S_CHN_6;
+			break;
+		case 4:
+			val |= I2S_CHN_4;
+			break;
+		case 2:
+			val |= I2S_CHN_2;
+			break;
+		default:
+			dev_err(i2s->dev, "invalid channel: %d\n",
+				params_channels(params));
+			return -EINVAL;
+		}
 	}
 
 	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
@@ -691,6 +696,14 @@ static int rockchip_i2s_probe(struct platform_device *pdev)
 		if ((val >= 32) && (val % 2 == 0))
 			i2s->bclk_fs = val;
 	}
+
+	// If enabled, the behaviour of the rockchip I2S will more closely
+	// resemble that of the BCM 2835 I2S controlller (as used in the
+	// raspberry pi). This can be usuful to achieve compatibility with
+	// Raspberry Pi Audio HATs.
+	i2s->bcm2835_compat_mode =
+		of_property_read_bool(node,
+				      "rockchip,bcm2835_compatibility_mode");
 
 	ret = devm_snd_soc_register_component(&pdev->dev,
 					      &rockchip_i2s_component,

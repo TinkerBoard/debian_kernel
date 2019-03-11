@@ -41,6 +41,7 @@ snd-soc-justboom-dac-objs := justboom-dac.o
 snd-soc-justboom-digi-objs := justboom-digi.o
 snd-soc-googlevoicehat-soundcard-objs := googlevoicehat-soundcard.o
 snd-soc-googlevoicehat-codec-objs := googlevoicehat-codec.o
+snd-soc-audioinjector-octo-soundcard-objs := audioinjector-octo-soundcard.o
 
 obj-$(CONFIG_SND_SOC_ROCKCHIP_DA7219) += snd-soc-rockchip-da7219.o
 obj-$(CONFIG_SND_SOC_ROCKCHIP_HDMI_ANALOG) += snd-soc-rockchip-hdmi-analog.o
@@ -63,3 +64,4 @@ obj-$(CONFIG_SND_SOC_JUSTBOOM_DIGI) += snd-soc-justboom-digi.o
 obj-$(CONFIG_SND_SOC_GOOGLEVOICEHAT_CARD) += snd-soc-googlevoicehat-soundcard.o
 obj-$(CONFIG_SND_SOC_GOOGLEVOICEHAT_CARD) += snd-soc-googlevoicehat-codec.o
 obj-$(CONFIG_SND_SOC_SEEEDVOICEHAT_CARD) += seeedvoicehat/
+obj-$(CONFIG_SND_AUDIOINJECTOR_OCTO_SOUNDCARD) += snd-soc-audioinjector-octo-soundcard.o

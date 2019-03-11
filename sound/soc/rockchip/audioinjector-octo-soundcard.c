@@ -17,6 +17,7 @@
  * General Public License for more details.
  */
 
+#include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/gpio/consumer.h>
@@ -42,7 +43,11 @@ static struct snd_pcm_hw_constraint_list audioinjector_octo_constraints = {
 
 static int audioinjector_octo_dai_init(struct snd_soc_pcm_runtime *rtd)
 {
+#ifdef ROCKCHIP_AUDIO
+    return 0;
+#else
 	return snd_soc_dai_set_bclk_ratio(rtd->cpu_dai, 64);
+#endif
 }
 
 static int audioinjector_octo_startup(struct snd_pcm_substream *substream)
