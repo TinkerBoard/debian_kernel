@@ -201,3 +201,10 @@ config SND_SOC_SEEEDVOICEHAT_CARD
         tristate "Support for Seeed voice HAT sound card"
         help
            Say Y or M if you want to add support for Seeed voice sound card.
+
+config SND_AUDIOINJECTOR_OCTO_SOUNDCARD
+       tristate "Support for audioinjector.net Octo channel (Hat) soundcard"
+       depends on SND_SOC_ROCKCHIP
+       select SND_SOC_CS42XX8_I2C
+       help
+           Say Y or M if you want to add support for audioinjector.net octo sound card.
