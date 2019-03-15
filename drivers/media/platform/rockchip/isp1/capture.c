@@ -40,6 +40,7 @@
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-subdev.h>
 #include <media/videobuf2-dma-contig.h>
+#include <linux/dma-iommu.h>
 #include "dev.h"
 #include "regs.h"
 
@@ -759,7 +760,7 @@ static int mp_config_mi(struct rkisp1_stream *stream)
 	mi_set_cb_size(stream, stream->out_fmt.plane_fmt[1].sizeimage);
 	mi_set_cr_size(stream, stream->out_fmt.plane_fmt[2].sizeimage);
 
-	mp_frame_end_int_enable(base);
+	mi_frame_end_int_enable(stream);
 	if (stream->out_isp_fmt.uv_swap)
 		mp_set_uv_swap(base);
 
@@ -800,7 +801,7 @@ static int sp_config_mi(struct rkisp1_stream *stream)
 	sp_set_y_height(base, stream->out_fmt.height);
 	sp_set_y_line_length(base, stream->u.sp.y_stride);
 
-	sp_frame_end_int_enable(base);
+	mi_frame_end_int_enable(stream);
 	if (output_isp_fmt->uv_swap)
 		sp_set_uv_swap(base);
 
@@ -876,21 +877,17 @@ static void update_mi(struct rkisp1_stream *stream)
 
 static void mp_stop_mi(struct rkisp1_stream *stream)
 {
-	void __iomem *base = stream->ispdev->base_addr;
-
-	if (stream->state != RKISP1_STATE_STREAMING)
+	if (!stream->streaming)
 		return;
-	stream->ops->clr_frame_end_int(base);
+	mi_frame_end_int_clear(stream);
 	stream->ops->disable_mi(stream);
 }
 
 static void sp_stop_mi(struct rkisp1_stream *stream)
 {
-	void __iomem *base = stream->ispdev->base_addr;
-
-	if (stream->state != RKISP1_STATE_STREAMING)
+	if (!stream->streaming)
 		return;
-	stream->ops->clr_frame_end_int(base);
+	mi_frame_end_int_clear(stream);
 	stream->ops->disable_mi(stream);
 }
 
@@ -900,8 +897,6 @@ static struct streams_ops rkisp1_mp_streams_ops = {
 	.disable_mi = mp_disable_mi,
 	.stop_mi = mp_stop_mi,
 	.set_data_path = mp_set_data_path,
-	.clr_frame_end_int = mp_clr_frame_end_int,
-	.is_frame_end_int_masked = mp_is_frame_end_int_masked,
 	.is_stream_stopped = mp_is_stream_stopped,
 };
 
@@ -911,8 +906,6 @@ static struct streams_ops rkisp1_sp_streams_ops = {
 	.disable_mi = sp_disable_mi,
 	.stop_mi = sp_stop_mi,
 	.set_data_path = sp_set_data_path,
-	.clr_frame_end_int = sp_clr_frame_end_int,
-	.is_frame_end_int_masked = sp_is_frame_end_int_masked,
 	.is_stream_stopped = sp_is_stream_stopped,
 };
 
@@ -980,13 +973,13 @@ static void rkisp1_stream_stop(struct rkisp1_stream *stream)
 
 	stream->stopping = true;
 	ret = wait_event_timeout(stream->done,
-				 stream->state != RKISP1_STATE_STREAMING,
+				 !stream->streaming,
 				 msecs_to_jiffies(1000));
 	if (!ret) {
 		v4l2_warn(v4l2_dev, "waiting on event return error %d\n", ret);
 		stream->ops->stop_mi(stream);
 		stream->stopping = false;
-		stream->state = RKISP1_STATE_READY;
+		stream->streaming = false;
 	}
 	disable_dcrop(stream, true);
 	disable_rsz(stream, true);
@@ -1022,11 +1015,11 @@ static int rkisp1_start(struct rkisp1_stream *stream)
 	 * also required because the sencond FE maybe corrupt especially
 	 * when run at 120fps.
 	 */
-	if (other->state != RKISP1_STATE_STREAMING) {
+	if (!other->streaming) {
 		force_cfg_update(base);
 		mi_frame_end(stream);
 	}
-	stream->state = RKISP1_STATE_STREAMING;
+	stream->streaming = true;
 
 	return 0;
 }
@@ -1100,7 +1093,7 @@ static void rkisp1_buf_queue(struct vb2_buffer *vb)
 	spin_lock_irqsave(&stream->vbq_lock, lock_flags);
 
 	/* XXX: replace dummy to speed up  */
-	if (stream->state == RKISP1_STATE_STREAMING &&
+	if (stream->streaming &&
 	    stream->next_buf == NULL &&
 	    atomic_read(&stream->ispdev->isp_sdev.frm_sync_seq) == 0) {
 		stream->next_buf = ispbuf;
@@ -1193,7 +1186,7 @@ static int rkisp1_stream_start(struct rkisp1_stream *stream)
 	bool async = false;
 	int ret;
 
-	if (other->state == RKISP1_STATE_STREAMING)
+	if (other->streaming)
 		async = true;
 
 	ret = rkisp1_config_rsz(stream, async);
@@ -1224,7 +1217,7 @@ rkisp1_start_streaming(struct vb2_queue *queue, unsigned int count)
 	struct v4l2_device *v4l2_dev = &dev->v4l2_dev;
 	int ret;
 
-	if (WARN_ON(stream->state != RKISP1_STATE_READY))
+	if (WARN_ON(stream->streaming))
 		return -EBUSY;
 
 	ret = rkisp1_create_dummy_buf(stream);
@@ -1331,7 +1324,7 @@ static void rkisp1_set_fmt(struct rkisp1_stream *stream,
 	if (!pixm->quantization)
 		pixm->quantization = V4L2_QUANTIZATION_FULL_RANGE;
 	/* can not change quantization when stream-on */
-	if (other_stream->state == RKISP1_STATE_STREAMING)
+	if (other_stream->streaming)
 		pixm->quantization = other_stream->out_fmt.quantization;
 
 	/* calculate size */
@@ -1387,6 +1380,64 @@ static void rkisp1_set_fmt(struct rkisp1_stream *stream,
 	}
 }
 
+static int rkisp1_dma_attach_device(struct rkisp1_device *rkisp1_dev)
+{
+	struct iommu_domain *domain = rkisp1_dev->domain;
+	struct device *dev = rkisp1_dev->dev;
+	int ret;
+
+	ret = iommu_attach_device(domain, dev);
+	if (ret) {
+		dev_err(dev, "Failed to attach iommu device\n");
+		return ret;
+	}
+
+	if (!common_iommu_setup_dma_ops(dev, 0x10000000, SZ_2G, domain->ops)) {
+		dev_err(dev, "Failed to set dma_ops\n");
+		iommu_detach_device(domain, dev);
+		ret = -ENODEV;
+	}
+
+	return ret;
+}
+
+static void rkisp1_dma_detach_device(struct rkisp1_device *rkisp1_dev)
+{
+	struct iommu_domain *domain = rkisp1_dev->domain;
+	struct device *dev = rkisp1_dev->dev;
+
+	iommu_detach_device(domain, dev);
+}
+
+static int rkisp1_fh_open(struct file *filp)
+{
+	struct rkisp1_stream *stream = video_drvdata(filp);
+	struct rkisp1_device *dev = stream->ispdev;
+	int ret;
+
+	ret = v4l2_fh_open(filp);
+	if (!ret) {
+		if (atomic_inc_return(&dev->open_cnt) == 1)
+			rkisp1_dma_attach_device(dev);
+	}
+
+	return ret;
+}
+
+static int rkisp1_fop_release(struct file *file)
+{
+	struct rkisp1_stream *stream = video_drvdata(file);
+	struct rkisp1_device *dev = stream->ispdev;
+	int ret;
+
+	ret = vb2_fop_release(file);
+
+	if (atomic_dec_return(&dev->open_cnt) == 0)
+		rkisp1_dma_detach_device(dev);
+
+	return ret;
+}
+
 /************************* v4l2_file_operations***************************/
 void rkisp1_stream_init(struct rkisp1_device *dev, u32 id)
 {
@@ -1408,7 +1459,7 @@ void rkisp1_stream_init(struct rkisp1_device *dev, u32 id)
 		stream->config = &rkisp1_mp_stream_config;
 	}
 
-	stream->state = RKISP1_STATE_READY;
+	stream->streaming = false;
 
 	memset(&pixm, 0, sizeof(pixm));
 	pixm.pixelformat = V4L2_PIX_FMT_YUYV;
@@ -1423,8 +1474,8 @@ void rkisp1_stream_init(struct rkisp1_device *dev, u32 id)
 }
 
 static const struct v4l2_file_operations rkisp1_fops = {
-	.open = v4l2_fh_open,
-	.release = vb2_fop_release,
+	.open = rkisp1_fh_open,
+	.release = rkisp1_fop_release,
 	.unlocked_ioctl = video_ioctl2,
 	.poll = vb2_fop_poll,
 	.mmap = vb2_fop_mmap,
@@ -1705,33 +1756,36 @@ err:
 
 /****************  Interrupter Handler ****************/
 
-void rkisp1_mi_isr(struct rkisp1_stream *stream)
+void rkisp1_mi_isr(u32 mis_val, struct rkisp1_device *dev)
 {
-	struct rkisp1_device *dev = stream->ispdev;
-	void __iomem *base = stream->ispdev->base_addr;
-	u32 val;
+	int i;
 
-	stream->ops->clr_frame_end_int(base);
-	if (stream->ops->is_frame_end_int_masked(base)) {
-		val = mi_get_masked_int_status(base);
-		v4l2_err(&dev->v4l2_dev, "icr err: 0x%x\n", val);
-	}
+	for (i = 0; i < ARRAY_SIZE(dev->stream); ++i) {
+		struct rkisp1_stream *stream = &dev->stream[i];
 
-	if (stream->stopping) {
-		/* Make sure stream is actually stopped, whose state
-		 * can be read from the shadow register, before wake_up()
-		 * thread which would immediately free all frame buffers.
-		 * stop_mi() takes effect at the next frame end
-		 * that sync the configurations to shadow regs.
-		 */
-		if (stream->ops->is_stream_stopped(dev->base_addr)) {
-			stream->stopping = false;
-			stream->state = RKISP1_STATE_READY;
-			wake_up(&stream->done);
+		if (!(mis_val & CIF_MI_FRAME(stream)))
+			continue;
+
+		mi_frame_end_int_clear(stream);
+
+		if (stream->stopping) {
+			/*
+			 * Make sure stream is actually stopped, whose state
+			 * can be read from the shadow register, before
+			 * wake_up() thread which would immediately free all
+			 * frame buffers. stop_mi() takes effect at the next
+			 * frame end that sync the configurations to shadow
+			 * regs.
+			 */
+			if (stream->ops->is_stream_stopped(dev->base_addr)) {
+				stream->stopping = false;
+				stream->streaming = false;
+				wake_up(&stream->done);
+			} else {
+				stream->ops->stop_mi(stream);
+			}
 		} else {
-			stream->ops->stop_mi(stream);
+			mi_frame_end(stream);
 		}
-	} else {
-		mi_frame_end(stream);
 	}
 }
