@@ -1382,6 +1382,7 @@ static void rkisp1_set_fmt(struct rkisp1_stream *stream,
 
 static int rkisp1_dma_attach_device(struct rkisp1_device *rkisp1_dev)
 {
+#if 0 // workaround to avoid iommu unmap NULL
 	struct iommu_domain *domain = rkisp1_dev->domain;
 	struct device *dev = rkisp1_dev->dev;
 	int ret;
@@ -1399,14 +1400,19 @@ static int rkisp1_dma_attach_device(struct rkisp1_device *rkisp1_dev)
 	}
 
 	return ret;
+#else
+	return 0;
+#endif
 }
 
 static void rkisp1_dma_detach_device(struct rkisp1_device *rkisp1_dev)
 {
+#if 0 // workaround to avoid iommu unmap NULL
 	struct iommu_domain *domain = rkisp1_dev->domain;
 	struct device *dev = rkisp1_dev->dev;
 
 	iommu_detach_device(domain, dev);
+#endif
 }
 
 static int rkisp1_fh_open(struct file *filp)
