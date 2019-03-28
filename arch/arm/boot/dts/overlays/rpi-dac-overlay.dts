@@ -1,0 +1,41 @@
+// Definitions for RPi DAC
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3288";
+
+	fragment@0 {
+		target-path ="/sound-simple-card";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@1 {
+		target-path = "/";
+		__overlay__ {
+			pcm1794a-codec {
+				#sound-dai-cells = <0>;
+				compatible = "ti,pcm1794a";
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/sound-ext-card";
+		__overlay__ {
+			compatible = "rpi,rpi-dac";
+			i2s-controller = <&i2s>;
+			status = "okay";
+		};
+	};
+
+        fragment@3 {
+                target = <&hdmi>;
+                __overlay__ {
+                        hdmi-i2s-audio-disable;
+                };
+        };
+};

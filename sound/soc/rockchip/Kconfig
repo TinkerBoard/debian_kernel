@@ -191,6 +191,12 @@ config SND_SOC_JUSTBOOM_DIGI
 	help
 	  Say Y or M if you want to add support for JustBoom Digi.
 
+config SND_SOC_RPI_DAC
+        tristate "Support for rpi simple soundcard DAC"
+        select SND_SOC_PCM1794A
+        help
+          Say Y or M if you want to add support for rpi simple soundcard DAC.
+
 config SND_SOC_GOOGLEVOICEHAT_CARD
         tristate "Support for Google voice HAT sound card"
         select SND_SOC_VOICEHAT
