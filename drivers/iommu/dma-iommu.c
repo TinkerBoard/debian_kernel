@@ -168,12 +168,20 @@ static struct iova *__alloc_iova(struct iova_domain *iovad, size_t size,
 /* The IOVA allocator knows what we mapped, so just unmap whatever that was */
 static void __iommu_dma_unmap(struct iommu_domain *domain, dma_addr_t dma_addr)
 {
-	struct iova_domain *iovad = domain->iova_cookie;
-	unsigned long shift = iova_shift(iovad);
-	unsigned long pfn = dma_addr >> shift;
-	struct iova *iova = find_iova(iovad, pfn);
+	struct iova_domain *iovad;
+	unsigned long shift;
+	unsigned long pfn;
+	struct iova *iova;
 	size_t size;
 
+	/* workaround to kill process unmap NULL */
+	if (domain == NULL)
+		return;
+
+	iovad = domain->iova_cookie;
+	shift = iova_shift(iovad);
+	pfn  = dma_addr >> shift;
+	iova = find_iova(iovad, pfn);
 	if (WARN_ON(!iova))
 		return;
 
