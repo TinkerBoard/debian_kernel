@@ -28,7 +28,7 @@
 #include "../codecs/pcm512x.h"
 
 #ifdef ROCKCHIP_AUDIO
-#define ROCKCHIP_I2S_MCLK 512
+#define ROCKCHIP_I2S_MCLK 128
 #endif
 
 static bool digital_gain_0db_limit = true;

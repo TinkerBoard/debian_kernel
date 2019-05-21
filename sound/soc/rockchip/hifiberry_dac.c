@@ -24,7 +24,7 @@
 #include <sound/jack.h>
 
 #ifdef ROCKCHIP_AUDIO
-#define ROCKCHIP_I2S_MCLK 512
+#define ROCKCHIP_I2S_MCLK 128
 #endif
 
 static int snd_rpi_hifiberry_dac_init(struct snd_soc_pcm_runtime *rtd)

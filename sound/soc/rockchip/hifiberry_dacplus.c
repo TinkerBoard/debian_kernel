@@ -38,7 +38,7 @@
 #define HIFIBERRY_DACPRO_CLK48EN 2
 
 #ifdef ROCKCHIP_AUDIO
-#define ROCKCHIP_I2S_MCLK 512
+#define ROCKCHIP_I2S_MCLK 128
 #endif
 
 struct pcm512x_priv {
