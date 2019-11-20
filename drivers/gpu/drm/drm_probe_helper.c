@@ -56,6 +56,7 @@
  */
 
 static bool drm_kms_helper_poll = true;
+static bool drm_iex_monitor = false;
 module_param_named(poll, drm_kms_helper_poll, bool, 0600);
 
 static enum drm_mode_status
@@ -131,6 +132,7 @@ static int drm_helper_probe_single_connector_modes_merge_bits(struct drm_connect
 							      uint32_t maxX, uint32_t maxY, bool merge_type_bits)
 {
 	struct drm_device *dev = connector->dev;
+	struct edid *edid_manufacturer;
 	struct drm_display_mode *mode;
 	const struct drm_connector_helper_funcs *connector_funcs =
 		connector->helper_private;
@@ -259,6 +261,9 @@ prune:
 
 	DRM_DEBUG_KMS("[CONNECTOR:%d:%s] probed modes :\n", connector->base.id,
 			connector->name);
+
+	edid_manufacturer = (struct edid *) connector->edid_blob_ptr->data;
+	drm_iex_monitor = drm_dect_iex_edid(edid_manufacturer);
 	list_for_each_entry(mode, &connector->modes, head) {
 		drm_mode_set_crtcinfo(mode, CRTC_INTERLACE_HALVE_V);
 		drm_mode_debug_printmodeline(mode);
@@ -266,6 +271,12 @@ prune:
 
 	return count;
 }
+
+bool detect_iex_monitor(void)
+{
+	return drm_iex_monitor;
+}
+EXPORT_SYMBOL(detect_iex_monitor);
 
 /**
  * drm_helper_probe_single_connector_modes - get complete set of display modes
