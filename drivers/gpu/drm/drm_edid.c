@@ -1264,6 +1264,10 @@ static const u8 edid_header[] = {
 	0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00
 };
 
+static const u8 iex_edid[] = {
+	0x24, 0xb8, 0x85, 0x01
+};
+
 /**
  * drm_edid_header_is_valid - sanity check the header of the base EDID block
  * @raw_edid: pointer to raw base EDID block
@@ -1283,6 +1287,21 @@ int drm_edid_header_is_valid(const u8 *raw_edid)
 	return score;
 }
 EXPORT_SYMBOL(drm_edid_header_is_valid);
+
+bool drm_dect_iex_edid(struct edid *edid)
+{
+	int i, score = 0;
+	u8 *raw_edid = (u8 *)edid;
+	for (i = 0; i < sizeof(iex_edid); i++)
+		if (raw_edid[8+i] == iex_edid[i])
+			score++;
+
+	if (score == 4)
+		return true;
+	else
+		return false;
+}
+EXPORT_SYMBOL(drm_dect_iex_edid);
 
 static int edid_fixup __read_mostly = 6;
 module_param_named(edid_fixup, edid_fixup, int, 0400);

@@ -350,7 +350,6 @@ rockchip_rk3066_pll_clk_set_by_auto(struct rockchip_clk_pll *pll,
 			}
 		}
 	}
-
 	/* output the best PLL setting */
 	if ((nr_out <= PLL_NR_MAX) && (no_out > 0)) {
 		rate_table->nr = nr_out;
@@ -359,7 +358,6 @@ rockchip_rk3066_pll_clk_set_by_auto(struct rockchip_clk_pll *pll,
 	} else {
 		return NULL;
 	}
-
 	return rate_table;
 }
 
@@ -368,8 +366,17 @@ static const struct rockchip_pll_rate_table *rockchip_get_pll_settings(
 {
 	const struct rockchip_pll_rate_table  *rate_table = pll->rate_table;
 	int i;
+	bool iex_monitor = false;
+
+	iex_monitor = detect_iex_monitor();
 
 	for (i = 0; i < pll->rate_count; i++) {
+		if( (rate == 85750000) && !iex_monitor)
+			continue;
+		if( (rate == 85500000) && (rate_table[i].nr == 4) && iex_monitor)
+			continue;
+		if( (rate == 78750000) && !iex_monitor)
+			continue;
 		if (rate == rate_table[i].rate) {
 			if (i < pll->sel) {
 				pll->scaling = rate;
