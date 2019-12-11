@@ -262,8 +262,10 @@ prune:
 	DRM_DEBUG_KMS("[CONNECTOR:%d:%s] probed modes :\n", connector->base.id,
 			connector->name);
 
-	edid_manufacturer = (struct edid *) connector->edid_blob_ptr->data;
-	drm_iex_monitor = drm_dect_iex_edid(edid_manufacturer);
+	if (!strcmp(connector->name, "HDMI-A-1")) {
+		edid_manufacturer = (struct edid *) connector->edid_blob_ptr->data;
+		drm_iex_monitor = drm_dect_iex_edid(edid_manufacturer);
+	}
 	list_for_each_entry(mode, &connector->modes, head) {
 		drm_mode_set_crtcinfo(mode, CRTC_INTERLACE_HALVE_V);
 		drm_mode_debug_printmodeline(mode);
