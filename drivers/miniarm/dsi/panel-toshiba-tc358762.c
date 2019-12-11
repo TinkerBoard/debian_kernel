@@ -296,6 +296,7 @@ static int tc358762_prepare(struct drm_panel *panel)
 }
 
 extern void tinker_mcu_screen_power_up(void);
+extern void tinker_ft5406_start_polling(void);
 static int tc358762_enable(struct drm_panel *panel)
 {
 	struct tc358762 *p = to_tc358762(panel);
@@ -308,6 +309,8 @@ static int tc358762_enable(struct drm_panel *panel)
 	if(trigger_bridge) {
 		pr_info("tinker_mcu_screen_power_up");
 		tinker_mcu_screen_power_up();
+		msleep(100);
+		tinker_ft5406_start_polling();
 		trigger_bridge = 0;
 	}
 

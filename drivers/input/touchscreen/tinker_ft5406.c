@@ -26,6 +26,8 @@
 #include <linux/workqueue.h>
 #include "tinker_ft5406.h"
 
+struct tinker_ft5406_data *g_ts_data = NULL;
+
 static int fts_i2c_read(struct i2c_client *client, char *writebuf,
 			   int writelen, char *readbuf, int readlen)
 {
@@ -91,7 +93,7 @@ static int fts_check_fw_ver(struct i2c_client *client)
 	if (ret < 0)
 		goto error;
 
-	LOG_INFO("Firmware version = %d.%d.%d\n", fw_ver[0], fw_ver[1], fw_ver[2]);
+	LOG_ERR("Firmware version = %d.%d.%d\n", fw_ver[0], fw_ver[1], fw_ver[2]);
 	return 0;
 
 error:
@@ -185,15 +187,31 @@ static void fts_report_value(struct tinker_ft5406_data *ts_data)
 
 extern int tinker_mcu_is_connected(void);
 
+static void fts_retry_clear(struct tinker_ft5406_data *ts_data)
+{
+	if (ts_data->retry_count != 0)
+		ts_data->retry_count = 0;
+}
+
+static int fts_retry_wait(struct tinker_ft5406_data *ts_data)
+{
+	if (ts_data->retry_count < RETRY_COUNT) {
+		LOG_INFO("wait and retry, count = %d\n", ts_data->retry_count)
+		ts_data->retry_count++;
+		msleep(1000);
+		return 1;
+	}
+	LOG_ERR("attach retry count\n");
+	return 0;
+}
+
 static void tinker_ft5406_work(struct work_struct *work)
 {
-	struct tinker_ft5406_data *ts_data
-			= container_of(work, struct tinker_ft5406_data, ft5406_work);
-	struct ts_event *event = &ts_data->event;
-	int ret = 0, count = 8, td_status;
+	struct ts_event *event = &g_ts_data->event;
+	int ret = 0, count = 5, td_status;
 
 	while(count > 0) {
-		ret = fts_check_fw_ver(ts_data->client);
+		ret = fts_check_fw_ver(g_ts_data->client);
 		if (ret == 0)
 			break;
 		LOG_INFO("checking touch ic, countdown: %d\n", count);
@@ -202,40 +220,59 @@ static void tinker_ft5406_work(struct work_struct *work)
 	}
 	if (!count) {
 		LOG_ERR("checking touch ic timeout, %d\n", ret);
+		g_ts_data->is_polling = 0;
 		return;
 	}
 
 	//polling 60fps
 	while(1) {
-		td_status = fts_read_td_status(ts_data);
-		if (td_status < VALID_TD_STATUS_VAL+1 && (td_status > 0 || ts_data->known_ids != 0)) {
+		td_status = fts_read_td_status(g_ts_data);
+		if (td_status < 0) {
+			ret = fts_retry_wait(g_ts_data);
+			if (ret == 0) {
+				LOG_ERR("stop touch polling\n");
+				g_ts_data->is_polling = 0;
+				break;
+			}
+		} else if (td_status < VALID_TD_STATUS_VAL+1 && (td_status > 0 || g_ts_data->known_ids != 0)) {
+			fts_retry_clear(g_ts_data);
 			memset(event, -1, sizeof(struct ts_event));
 			event->touch_point = td_status;
-			ret = fts_read_touchdata(ts_data);
+			ret = fts_read_touchdata(g_ts_data);
 			if (ret == 0)
-				fts_report_value(ts_data);
+				fts_report_value(g_ts_data);
 		}
 		msleep_interruptible(17);
 	}
 }
 
+void tinker_ft5406_start_polling(void)
+{
+	if (g_ts_data != NULL && g_ts_data->is_polling != 1) {
+		g_ts_data->is_polling = 1;
+		schedule_work(&g_ts_data->ft5406_work);
+	} else {
+		LOG_ERR("touch is not ready or busy\n");
+	}
+}
+EXPORT_SYMBOL_GPL(tinker_ft5406_start_polling);
+
 static int tinker_ft5406_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
-	struct tinker_ft5406_data *ts_data;
 	struct input_dev *input_dev;
 	int ret = 0, timeout = 10;
 
 	LOG_INFO("address = 0x%x\n", client->addr);
 
-	ts_data = kzalloc(sizeof(struct tinker_ft5406_data), GFP_KERNEL);
-	if (ts_data == NULL) {
+	g_ts_data = kzalloc(sizeof(struct tinker_ft5406_data), GFP_KERNEL);
+	if (g_ts_data == NULL) {
 		LOG_ERR("no memory for device\n");
 		return -ENOMEM;
 	}
 
-	ts_data->client = client;
-	i2c_set_clientdata(client, ts_data);
+	g_ts_data->client = client;
+	i2c_set_clientdata(client, g_ts_data);
 
 	while(!tinker_mcu_is_connected() && timeout > 0) {
 		msleep(50);
@@ -255,10 +292,10 @@ static int tinker_ft5406_probe(struct i2c_client *client,
 	}
 	input_dev->name = "fts_ts";
 	input_dev->id.bustype = BUS_I2C;
-	input_dev->dev.parent = &ts_data->client->dev;
+	input_dev->dev.parent = &g_ts_data->client->dev;
 
-	ts_data->input_dev = input_dev;
-	input_set_drvdata(input_dev, ts_data);
+	g_ts_data->input_dev = input_dev;
+	input_set_drvdata(input_dev, g_ts_data);
 
 	__set_bit(EV_SYN, input_dev->evbit);
 	__set_bit(EV_KEY, input_dev->evbit);
@@ -277,8 +314,7 @@ static int tinker_ft5406_probe(struct i2c_client *client,
 		goto input_register_failed;
 	}
 
-	INIT_WORK(&ts_data->ft5406_work, tinker_ft5406_work);
-	schedule_work(&ts_data->ft5406_work);
+	INIT_WORK(&g_ts_data->ft5406_work, tinker_ft5406_work);
 
 	return 0;
 
@@ -286,20 +322,20 @@ input_register_failed:
 	input_free_device(input_dev);
 input_allocate_failed:
 timeout_failed:
-	kfree(ts_data);
+	kfree(g_ts_data);
+	g_ts_data = NULL;
 	return ret;
 }
 
 static int tinker_ft5406_remove(struct i2c_client *client)
 {
-	struct tinker_ft5406_data *ts_data = i2c_get_clientdata(client);
-
-	cancel_work_sync(&ts_data->ft5406_work);
-	if (ts_data->input_dev) {
-		input_unregister_device(ts_data->input_dev);
-		input_free_device(ts_data->input_dev);
+	cancel_work_sync(&g_ts_data->ft5406_work);
+	if (g_ts_data->input_dev) {
+		input_unregister_device(g_ts_data->input_dev);
+		input_free_device(g_ts_data->input_dev);
 	}
-	kfree(ts_data);
+	kfree(g_ts_data);
+	g_ts_data = NULL;
 	return 0;
 }
 
