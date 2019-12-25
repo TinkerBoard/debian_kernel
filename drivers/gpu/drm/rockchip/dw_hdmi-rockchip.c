@@ -1092,6 +1092,25 @@ dw_hdmi_rockchip_set_property(struct drm_connector *connector,
 	} else if (property == hdmi->colordepth_capacity) {
 		return -EINVAL;
 	} else {
+
+		if (property != config->prop_crtc_id &&
+			property != config->tv_select_subconnector_property &&
+			property != config->tv_left_margin_property &&
+			property != config->tv_right_margin_property &&
+			property != config->tv_top_margin_property &&
+			property != config->tv_bottom_margin_property &&
+			property != config->tv_mode_property &&
+			property != config->tv_brightness_property &&
+			property != config->tv_contrast_property &&
+			property != config->tv_flicker_reduction_property &&
+			property != config->tv_overscan_property &&
+			property != config->tv_saturation_property &&
+			property != config->tv_hue_property &&
+			property != config->hdr_source_metadata_property) {
+			DRM_ERROR("failed to set rockchip hdmi connector property\n");
+			return -EINVAL;
+		}
+
 		if (!state)
 			return drm_atomic_helper_connector_set_property(connector,
 									property, val);
