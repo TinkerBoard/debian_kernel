@@ -529,21 +529,22 @@ static const struct of_device_id dsi_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, dsi_of_match);
 
-static int tc358762_dsi_probe(struct mipi_dsi_device *dsi)
+int tc358762_dsi_probe(struct mipi_dsi_device *dsi)
 {
 	const struct bridge_desc *desc;
-	const struct of_device_id *id;
+	//const struct of_device_id *id;
 	const struct panel_desc *pdesc;
 	u32 val;
 	int err;
 
-	id = of_match_node(dsi_of_match, dsi->dev.of_node);
-	if (!id)
-		return -ENODEV;
+	//id = of_match_node(dsi_of_match, dsi->dev.of_node);
+	//if (!id)
+	//	return -ENODEV;
 
-	desc = id->data;
+	//desc = id->data;
+	desc = (struct bridge_desc*) dsi_of_match[0].data;
 
-	printk("find panel: %s\n", id->compatible);
+	printk("find panel: %s\n", dsi_of_match[0].compatible);
 
 	if (desc) {
 		dsi->mode_flags = desc->flags;
@@ -553,7 +554,6 @@ static int tc358762_dsi_probe(struct mipi_dsi_device *dsi)
 	} else {
 		pdesc = NULL;
 	}
-
 	err = tc358762_mipi_probe(dsi, pdesc);
 
 	if (err < 0)
@@ -567,11 +567,10 @@ static int tc358762_dsi_probe(struct mipi_dsi_device *dsi)
 
 	if (!of_property_read_u32(dsi->dev.of_node, "dsi,lanes", &val))
 		dsi->lanes = val;
-
 	return mipi_dsi_attach(dsi);
 }
 
-static int tc358762_dsi_remove(struct mipi_dsi_device *dsi)
+int tc358762_dsi_remove(struct mipi_dsi_device *dsi)
 {
 	int err;
 
@@ -582,7 +581,7 @@ static int tc358762_dsi_remove(struct mipi_dsi_device *dsi)
 	return tc358762_remove(&dsi->dev);
 }
 
-static void tc358762_dsi_shutdown(struct mipi_dsi_device *dsi)
+void tc358762_dsi_shutdown(struct mipi_dsi_device *dsi)
 {
 	tc358762_shutdown(&dsi->dev);
 }

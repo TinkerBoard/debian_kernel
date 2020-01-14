@@ -1150,6 +1150,8 @@ static const struct of_device_id dw_mipi_dsi_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, dw_mipi_dsi_dt_ids);
 
 extern int tinker_mcu_is_connected(void);
+extern int tinker_mcu_ili9881c_is_connected(void);
+
 static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 			     void *data)
 {
@@ -1200,8 +1202,8 @@ static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 		return ret;
 	}
 
-	if(!tinker_mcu_is_connected()) {
-		pr_info("panel doesn't be connected\n");
+	if(!tinker_mcu_is_connected() && !tinker_mcu_ili9881c_is_connected()) {
+		printk("panel doesn't be connected \n");
 		goto err_pllref;
 	}
 

@@ -51,4 +51,12 @@ config DRM_PANEL_SHARP_LQ101R1SX01
 	  To compile this driver as a module, choose M here: the module
 	  will be called panel-sharp-lq101r1sx01.
 
+config DRM_PANEL_ASUS_ILI9881C
+        tristate "ASUS ILI9881c panel"
+        depends on OF
+        depends on DRM_MIPI_DSI
+        depends on BACKLIGHT_CLASS_DEVICE
+        help
+          ASUS ili9881c 720x1280
+
 endmenu

@@ -208,13 +208,22 @@ static ssize_t brightness_store(struct device *dev,
 	return rc ? rc : count;
 }
 #else
+extern int tinker_mcu_is_connected(void);
 extern int tinker_mcu_set_bright(int bright);
 extern int tinker_mcu_get_brightness(void);
+extern int tinker_mcu_ili9881c_is_connected(void);
+extern int tinker_mcu_ili9881c_set_bright(int bright);
+extern int tinker_mcu_ili9881c_get_brightness(void);
+
 static ssize_t brightness_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int level;
 
-	level = tinker_mcu_get_brightness();
+    if(tinker_mcu_is_connected()){
+        level = tinker_mcu_get_brightness();
+    } else if(tinker_mcu_ili9881c_is_connected()){
+        level = tinker_mcu_ili9881c_get_brightness();
+    }
 
     return sprintf(buf, "%d\n", level);
 }
@@ -227,9 +236,13 @@ static ssize_t brightness_store(struct device *dev, struct device_attribute *att
 
 	if((value < 0) || (value > 255)) {
 		pr_err("Invalid value for backlight setting, value = %d\n", value);
-	} else
-		tinker_mcu_set_bright(value);
-
+	} else {
+		if(tinker_mcu_is_connected()){
+			tinker_mcu_set_bright(value);
+		} else if(tinker_mcu_ili9881c_is_connected()){
+			tinker_mcu_ili9881c_set_bright(value);
+		}
+	}
 	return strnlen(buf, count);
 }
 #endif

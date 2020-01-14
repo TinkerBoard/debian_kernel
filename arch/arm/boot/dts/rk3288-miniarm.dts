@@ -280,7 +280,7 @@
 &dsi0 {
 	status = "okay";
 	mipi_panel: mipi-panel {
-		compatible ="asus,tc358762";
+		compatible ="asus-dsi-panel";
 		reg = <0>;
 		status = "okay";
 	};
@@ -550,6 +550,11 @@
 	tinker_mcu: tinker_mcu@45 {
 		compatible = "tinker_mcu";
 		reg = <0x45>;
+	};
+
+	tinker_mcu_ili9881c: tinker_mcu_ili9881c@36 {
+		compatible = "tinker_mcu_ili9881c";
+		reg = <0x36>;
 	};
 
 	tinker_ft5406: tinker_ft5406@38 {

@@ -247,7 +247,7 @@ static int tinker_mcu_probe(struct i2c_client *client,
 	props.type = BACKLIGHT_RAW;
 	props.max_brightness = 255;
 
-	bl = backlight_device_register("rpi_backlight", NULL, NULL,
+	bl = backlight_device_register("panel_backlight", NULL, NULL,
 					   &tinker_mcu_bl_ops, &props);
 	if (IS_ERR(bl)) {
 		pr_err("unable to register backlight device\n");
