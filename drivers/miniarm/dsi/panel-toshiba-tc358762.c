@@ -194,11 +194,12 @@ static int tc358762_disable(struct drm_panel *panel)
 
 	printk("panel disable\n");
 
-	tinker_mcu_set_bright(0x00);
-
 	if (p->backlight) {
 		p->backlight->props.power = FB_BLANK_POWERDOWN;
 		backlight_update_status(p->backlight);
+	} else {
+		printk("panel disable: no backlight device\n");
+		tinker_mcu_set_bright(0x00);
 	}
 
 	if (p->desc && p->desc->delay.disable)
@@ -295,6 +296,7 @@ static int tc358762_prepare(struct drm_panel *panel)
 	return 0;
 }
 
+extern struct backlight_device * tinker_mcu_get_backlightdev(void);
 extern void tinker_mcu_screen_power_up(void);
 extern void tinker_ft5406_start_polling(void);
 static int tc358762_enable(struct drm_panel *panel)
@@ -322,9 +324,10 @@ static int tc358762_enable(struct drm_panel *panel)
 	if (p->backlight) {
 		p->backlight->props.power = FB_BLANK_UNBLANK;
 		backlight_update_status(p->backlight);
+	} else {
+		printk("panel enable: no backlight device\n");
+		tinker_mcu_set_bright(0xFF);
 	}
-
-	tinker_mcu_set_bright(0xFF);
 
 	p->enabled = true;
 
@@ -420,6 +423,15 @@ static int tc358762_mipi_probe(struct mipi_dsi_device *dsi, const struct panel_d
 
 		if (!panel->backlight)
 			return -EPROBE_DEFER;
+	} else {
+		panel->backlight =  tinker_mcu_get_backlightdev();
+		if (!panel->backlight) {
+			printk("tc358762_mipi_probe get backlight fail\n");
+			//return -ENODEV;
+		} else {
+			panel->backlight->props.brightness = 255;
+			printk("tc358762_mipi_probe get backligh device successful\n");
+		}
 	}
 
 	ddc = of_parse_phandle(dev->of_node, "ddc-i2c-bus", 0);
@@ -567,6 +579,7 @@ int tc358762_dsi_probe(struct mipi_dsi_device *dsi)
 
 	if (!of_property_read_u32(dsi->dev.of_node, "dsi,lanes", &val))
 		dsi->lanes = val;
+
 	return mipi_dsi_attach(dsi);
 }
 

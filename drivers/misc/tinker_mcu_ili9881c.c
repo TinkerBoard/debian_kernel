@@ -31,7 +31,7 @@ static struct tinker_mcu_data *g_mcu_ili9881c_data;
 static int connected = 0;
 static int lcd_bright_level = 0;
 int lcd_size_flag = 0;
-struct backlight_device *bl = NULL;;
+static struct backlight_device *bl = NULL;
 
 #define MAX_MCU_ILI9881C_PWM_WORKAROUND 	(9)
 #define MAX_MCU_ILI9881C_PWM 	(31)
@@ -203,8 +203,8 @@ static int tinker_mcu_ili9881c_bl_get_brightness(struct backlight_device *bd)
 
 	if (brightness > MAX_BRIGHENESS)
 		brightness = MAX_BRIGHENESS;
-	if (brightness < 0)
-		brightness = 0;
+	if (brightness <= 0)
+		brightness = 1;
 
 	if ( brightness > 0) {
 		brightness *= 12;

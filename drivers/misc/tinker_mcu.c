@@ -24,11 +24,15 @@
 #include <linux/workqueue.h>
 #include <linux/backlight.h>
 #include "tinker_mcu.h"
+#include <linux/fb.h>
 
 #define BL_DEBUG 0
 static struct tinker_mcu_data *g_mcu_data;
 static int connected = 0;
 static int lcd_bright_level = 0;
+static struct backlight_device *bl = NULL;
+
+#define MAX_BRIGHENESS 		(255)
 
 static int is_hex(char num)
 {
@@ -178,10 +182,40 @@ static int tinker_mcu_bl_get_brightness(struct backlight_device *bd)
 	return lcd_bright_level;
 }
 
+ int tinker_mcu_bl_update_status(struct backlight_device * bd)
+ {
+	int brightness = bd->props.brightness;
+
+	if (brightness > MAX_BRIGHENESS)
+		brightness = MAX_BRIGHENESS;
+
+	if (brightness <= 0)
+		brightness = 1;
+
+	if (bd->props.power != FB_BLANK_UNBLANK)
+		brightness = 0;
+
+	if (bd->props.state & BL_CORE_SUSPENDED)
+		brightness = 0;
+
+	LOG_INFO("tinker_mcu_bl_update_status  brightness=%d power=%d fb_blank=%d state =%d  bd->props.brightness=%d\n", brightness, bd->props.power, bd->props.fb_blank, bd->props.state , bd->props.brightness);
+	return tinker_mcu_set_bright(brightness);
+}
+
 static const struct backlight_ops tinker_mcu_bl_ops = {
-	.get_brightness	= tinker_mcu_bl_get_brightness,
+	.get_brightness	= tinker_mcu_bl_get_brightness,//actual_brightness_show
+	.update_status	= tinker_mcu_bl_update_status,
+	.options 			= BL_CORE_SUSPENDRESUME,
 };
 
+struct backlight_device * tinker_mcu_get_backlightdev(void)
+{
+	if (!connected) {
+		printk("tinker_mcu_get_backlightdev is not ready\n");
+		return NULL;
+	}
+	return bl;
+}
 
 static ssize_t tinker_mcu_bl_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -196,7 +230,7 @@ static ssize_t tinker_mcu_bl_store(struct device *dev, struct device_attribute *
 
 	value = simple_strtoul(buf, NULL, 0);
 
-	if((value < 0) || (value > 255)) {
+	if((value < 0) || (value > MAX_BRIGHENESS)) {
 		LOG_ERR("Invalid value for backlight setting, value = %d\n", value);
 	} else
 		tinker_mcu_set_bright(value);
@@ -217,7 +251,6 @@ static int tinker_mcu_probe(struct i2c_client *client,
 	struct tinker_mcu_data *mcu_data;
 	int ret;
 	struct backlight_properties props;
-	struct backlight_device *bl;
 
 	LOG_INFO("address = 0x%x\n", client->addr);
 
@@ -245,7 +278,7 @@ static int tinker_mcu_probe(struct i2c_client *client,
 
 	memset(&props, 0, sizeof(props));
 	props.type = BACKLIGHT_RAW;
-	props.max_brightness = 255;
+	props.max_brightness = MAX_BRIGHENESS;
 
 	bl = backlight_device_register("panel_backlight", NULL, NULL,
 					   &tinker_mcu_bl_ops, &props);

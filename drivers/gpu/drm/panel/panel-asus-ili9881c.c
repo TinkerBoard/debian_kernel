@@ -597,26 +597,25 @@ static int ili9881c_enable(struct drm_panel *panel)
 	msleep(120);
 
 	//backlight_enable(ctx->backlight);
-
-#if 0
-	if (!powering_on) {
-		tinker_mcu_ili9881c_set_bright(0x9f);
-		msleep(10);
-		powering_on = 1;
-	}
-
-	tinker_mcu_ili9881c_set_bright(0x9f);
-#else
-	ctx->backlight->props.power = FB_BLANK_UNBLANK;
-	if (!powering_on) {
-		ctx->backlight->props.brightness = 50;
+	if (ctx->backlight) {
+		ctx->backlight->props.power = FB_BLANK_UNBLANK;
+		if (!powering_on) {
+			ctx->backlight->props.brightness = 50;
+			backlight_update_status(ctx->backlight);
+			msleep(10);
+			powering_on = 1;
+			ctx->backlight->props.brightness = 255;
+		}
 		backlight_update_status(ctx->backlight);
-		msleep(10);
-		powering_on = 1;
-		ctx->backlight->props.brightness = 255;
+	} else {
+		if (!powering_on) {
+			tinker_mcu_ili9881c_set_bright(0x1A);
+			msleep(10);
+			powering_on = 1;
+		}
+		tinker_mcu_ili9881c_set_bright(0x1F);
 	}
-	backlight_update_status(ctx->backlight);
-#endif
+
 
 	enable = 1;
 
@@ -630,9 +629,13 @@ static int ili9881c_disable(struct drm_panel *panel)
 	enable = 0;
 	pr_info("%s\n", __func__);
 	//backlight_disable(ctx->backlight);
-	//tinker_mcu_ili9881c_set_bright(0x00);
-	ctx->backlight->props.power = FB_BLANK_POWERDOWN;
-	backlight_update_status(ctx->backlight);
+
+	if (ctx->backlight) {
+		ctx->backlight->props.power = FB_BLANK_POWERDOWN;
+		backlight_update_status(ctx->backlight);
+	} else {
+		tinker_mcu_ili9881c_set_bright(0x00);
+	}
 
 	return 0;
 }
@@ -747,9 +750,16 @@ int ili9881c_dsi_probe(struct mipi_dsi_device *dsi)
 	ctx->backlight = tinker_mcu_ili9881c_get_backlightdev();
 	if (!ctx->backlight) {
 		printk("ili9881c_dsi_probe get backlight fail\n");
-		return -ENODEV;
+		//return -ENODEV;
+		/* avoid  if there is no mipi-panel case, dw_mipi_dsi_bind() will return EPROBE_DEFER
+		                            to trigger deferred_probe_work_func() continue init panel driver
+		                            untile panel init  successful.
+		                            SO, we CAN NOT return  error.
+		*/
+	} else {
+		printk("t ili9881c_dsi_probe get backligh device successful\n");
+		ctx->backlight->props.brightness = 255;
 	}
-	ctx->backlight->props.brightness = 255;
 
 	ctx->dsi = dsi;
 	drm_panel_init(&ctx->panel);
