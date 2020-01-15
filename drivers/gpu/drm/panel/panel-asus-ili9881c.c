@@ -469,6 +469,7 @@ static const struct ili9881c_instr ili9881c_init_1[] = {//10-inch
 		ILI9881C_COMMAND_INSTR(0xD3, 0x39),
 };
 
+extern struct backlight_device * tinker_mcu_ili9881c_get_backlightdev(void);
 extern int tinker_mcu_ili9881c_set_bright(int bright);
 extern void tinker_mcu_ili9881c_screen_power_up(void);
 
@@ -596,7 +597,8 @@ static int ili9881c_enable(struct drm_panel *panel)
 	msleep(120);
 
 	//backlight_enable(ctx->backlight);
-#if 1
+
+#if 0
 	if (!powering_on) {
 		tinker_mcu_ili9881c_set_bright(0x9f);
 		msleep(10);
@@ -604,6 +606,16 @@ static int ili9881c_enable(struct drm_panel *panel)
 	}
 
 	tinker_mcu_ili9881c_set_bright(0x9f);
+#else
+	ctx->backlight->props.power = FB_BLANK_UNBLANK;
+	if (!powering_on) {
+		ctx->backlight->props.brightness = 50;
+		backlight_update_status(ctx->backlight);
+		msleep(10);
+		powering_on = 1;
+		ctx->backlight->props.brightness = 255;
+	}
+	backlight_update_status(ctx->backlight);
 #endif
 
 	enable = 1;
@@ -613,10 +625,14 @@ static int ili9881c_enable(struct drm_panel *panel)
 
 static int ili9881c_disable(struct drm_panel *panel)
 {
+	struct ili9881c *ctx = panel_to_ili9881c(panel);
+
 	enable = 0;
 	pr_info("%s\n", __func__);
 	//backlight_disable(ctx->backlight);
-	tinker_mcu_ili9881c_set_bright(0x00);
+	//tinker_mcu_ili9881c_set_bright(0x00);
+	ctx->backlight->props.power = FB_BLANK_POWERDOWN;
+	backlight_update_status(ctx->backlight);
 
 	return 0;
 }
@@ -728,8 +744,14 @@ int ili9881c_dsi_probe(struct mipi_dsi_device *dsi)
 	if (!ctx)
 		return -ENOMEM;
 	mipi_dsi_set_drvdata(dsi, ctx);
-	ctx->dsi = dsi;
+	ctx->backlight = tinker_mcu_ili9881c_get_backlightdev();
+	if (!ctx->backlight) {
+		printk("ili9881c_dsi_probe get backlight fail\n");
+		return -ENODEV;
+	}
+	ctx->backlight->props.brightness = 255;
 
+	ctx->dsi = dsi;
 	drm_panel_init(&ctx->panel);
 	ctx->panel.dev = &dsi->dev;
 	ctx->panel.funcs = &ili9881c_funcs;

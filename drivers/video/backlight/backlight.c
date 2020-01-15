@@ -159,7 +159,8 @@ static ssize_t bl_power_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(bl_power);
 
-#ifndef CONFIG_TINKER_MCU
+//#ifndef CONFIG_TINKER_MCU
+#if 1
 static ssize_t brightness_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
