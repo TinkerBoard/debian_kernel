@@ -127,7 +127,7 @@ static int ch934x_get_portnum(int index) {
 /*
  * Functions for CH934X control messages.
  */
-
+/*
 static int ch934x_control_out(struct ch934x *ch934x, u8 request,
                 u16 value, u16 index)
 {	
@@ -143,7 +143,7 @@ static int ch934x_control_out(struct ch934x *ch934x, u8 request,
 
 	return retval < 0 ? retval : 0;
 }
-
+*/
 static int ch934x_control_in(struct ch934x *ch934x, 
                 u8 request, u16 value, u16 index,
                 char *buf, unsigned bufsize)
@@ -193,7 +193,7 @@ static int ch934x_cmd_out(struct ch934x *ch934x, u8 *buf,
 
 	return actual_len;
 }
-
+/*
 static int ch934x_cmd_in(struct ch934x *ch934x,
             u8 *buf, int count)
 {	
@@ -223,7 +223,7 @@ static int ch934x_cmd_in(struct ch934x *ch934x,
 	
 	return actual_len;
 }
-
+*/
 static inline int ch934x_enum_portnum(struct ch934x *ch934x)
 {
 	char *buffer;
@@ -1413,7 +1413,7 @@ static void ch934x_disconnect(struct usb_interface *intf)
 }
 
 #ifdef CONFIG_PM
-static int ch934x_suspend(struct usb_interface *intf, pm_message_t message)
+/*static int ch934x_suspend(struct usb_interface *intf, pm_message_t message)
 {
 	struct ch934x *ch934x = usb_get_intfdata(intf);
 	int cnt;
@@ -1457,12 +1457,12 @@ static int ch934x_resume(struct usb_interface *intf)
 
 			ch934x_start_wb(ch934x, urb->context);
 		}
-
+*/
 		/*
 		 * delayed error checking because we must
 		 * do the write path at all cost
 		 */
-		if (rv < 0)
+/*		if (rv < 0)
 			goto out;
 
 		rv = ch934x_submit_read_urbs(ch934x, GFP_ATOMIC);
@@ -1482,7 +1482,7 @@ static int ch934x_reset_resume(struct usb_interface *intf)
 
 	return ch934x_resume(intf);
 }
-
+*/
 #endif /* CONFIG_PM */
 
 /*
