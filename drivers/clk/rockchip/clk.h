@@ -238,6 +238,7 @@ struct clk;
 #define RK3399_PMU_GATEDIS_CON(x)	((x) * 0x4 + 0x130)
 
 extern bool detect_iex_monitor(void);
+extern bool detect_acer_kg221q_monitor(void);
 
 enum rockchip_pll_type {
 	pll_rk3036,
