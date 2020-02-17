@@ -57,6 +57,7 @@
 
 static bool drm_kms_helper_poll = true;
 static bool drm_iex_monitor = false;
+static bool drm_acer_kg221q_monitor = false;
 module_param_named(poll, drm_kms_helper_poll, bool, 0600);
 
 static enum drm_mode_status
@@ -265,6 +266,7 @@ prune:
 	if (!strcmp(connector->name, "HDMI-A-1")) {
 		edid_manufacturer = (struct edid *) connector->edid_blob_ptr->data;
 		drm_iex_monitor = drm_dect_iex_edid(edid_manufacturer);
+		drm_acer_kg221q_monitor = drm_dect_acer_kg221q_edid(edid_manufacturer);
 	}
 	list_for_each_entry(mode, &connector->modes, head) {
 		drm_mode_set_crtcinfo(mode, CRTC_INTERLACE_HALVE_V);
@@ -279,6 +281,12 @@ bool detect_iex_monitor(void)
 	return drm_iex_monitor;
 }
 EXPORT_SYMBOL(detect_iex_monitor);
+
+bool detect_acer_kg221q_monitor(void)
+{
+	return drm_acer_kg221q_monitor;
+}
+EXPORT_SYMBOL(detect_acer_kg221q_monitor);
 
 /**
  * drm_helper_probe_single_connector_modes - get complete set of display modes

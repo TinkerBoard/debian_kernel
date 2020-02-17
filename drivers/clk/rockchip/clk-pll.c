@@ -367,8 +367,10 @@ static const struct rockchip_pll_rate_table *rockchip_get_pll_settings(
 	const struct rockchip_pll_rate_table  *rate_table = pll->rate_table;
 	int i;
 	bool iex_monitor = false;
+	bool acer_kg221q_monitor = false;
 
 	iex_monitor = detect_iex_monitor();
+	acer_kg221q_monitor = detect_acer_kg221q_monitor();
 
 	for (i = 0; i < pll->rate_count; i++) {
 		if( (rate == 85750000) && !iex_monitor)
@@ -376,6 +378,8 @@ static const struct rockchip_pll_rate_table *rockchip_get_pll_settings(
 		if( (rate == 85500000) && (rate_table[i].nr == 4) && iex_monitor)
 			continue;
 		if( (rate == 78750000) && !iex_monitor)
+			continue;
+		if( (rate == 170000000) && !acer_kg221q_monitor)
 			continue;
 		if (rate == rate_table[i].rate) {
 			if (i < pll->sel) {

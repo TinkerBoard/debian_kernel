@@ -1268,6 +1268,9 @@ static const u8 iex_edid[] = {
 	0x24, 0xb8, 0x85, 0x01
 };
 
+static const u8 acer_kg221q_edid[] = {
+	0x04, 0x72, 0x8e, 0x05
+};
 /**
  * drm_edid_header_is_valid - sanity check the header of the base EDID block
  * @raw_edid: pointer to raw base EDID block
@@ -1302,6 +1305,21 @@ bool drm_dect_iex_edid(struct edid *edid)
 		return false;
 }
 EXPORT_SYMBOL(drm_dect_iex_edid);
+
+bool drm_dect_acer_kg221q_edid(struct edid *edid)
+{
+	int i, score = 0;
+	u8 *raw_edid = (u8 *)edid;
+	for (i = 0; i < sizeof(acer_kg221q_edid); i++)
+		if (raw_edid[8+i] == acer_kg221q_edid[i])
+			score++;
+
+	if (score == 4)
+		return true;
+	else
+		return false;
+}
+EXPORT_SYMBOL(drm_dect_acer_kg221q_edid);
 
 static int edid_fixup __read_mostly = 6;
 module_param_named(edid_fixup, edid_fixup, int, 0400);
