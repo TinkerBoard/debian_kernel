@@ -27,6 +27,7 @@
 #include "tinker_ft5406.h"
 
 struct tinker_ft5406_data *g_ts_data = NULL;
+int g_mcu_ready = 0;
 
 static int fts_i2c_read(struct i2c_client *client, char *writebuf,
 			   int writelen, char *readbuf, int readlen)
@@ -93,7 +94,7 @@ static int fts_check_fw_ver(struct i2c_client *client)
 	if (ret < 0)
 		goto error;
 
-	LOG_ERR("Firmware version = %d.%d.%d\n", fw_ver[0], fw_ver[1], fw_ver[2]);
+	LOG_INFO("Firmware version = %d.%d.%d\n", fw_ver[0], fw_ver[1], fw_ver[2]);
 	return 0;
 
 error:
@@ -135,10 +136,10 @@ static int fts_read_touchdata(struct tinker_ft5406_data *ts_data)
 		event->au16_y[i] = (s16) (buf[FT_TOUCH_Y_H] & 0x0F) << 8 | (s16) buf[FT_TOUCH_Y_L];
 		event->au8_touch_event[i] = buf[FT_TOUCH_EVENT] >> 6;
 
-#if XY_REVERSE
-		event->au16_x[i] = SCREEN_WIDTH - event->au16_x[i] - 1;
-		event->au16_y[i] = SCREEN_HEIGHT - event->au16_y[i] - 1;
-#endif
+		if (ts_data->xy_reverse) {
+			event->au16_x[i] = ts_data->screen_width - event->au16_x[i] - 1;
+			event->au16_y[i] = ts_data->screen_height - event->au16_y[i] - 1;
+		}
 	}
 	event->pressure = FT_PRESS;
 
@@ -186,6 +187,7 @@ static void fts_report_value(struct tinker_ft5406_data *ts_data)
 }
 
 extern int tinker_mcu_is_connected(void);
+extern int tinker_mcu_ili9881c_is_connected(void);
 
 static void fts_retry_clear(struct tinker_ft5406_data *ts_data)
 {
@@ -248,12 +250,15 @@ static void tinker_ft5406_work(struct work_struct *work)
 
 void tinker_ft5406_start_polling(void)
 {
-	if (g_ts_data != NULL && g_ts_data->is_polling != 1) {
+	if (g_ts_data == NULL) {
+		LOG_ERR("touch is not ready\n");
+	} else if (g_ts_data->is_polling == 1) {
+		LOG_ERR("touch is busy\n");
+	} else {
 		g_ts_data->is_polling = 1;
 		schedule_work(&g_ts_data->ft5406_work);
-	} else {
-		LOG_ERR("touch is not ready or busy\n");
 	}
+	g_mcu_ready = 1;
 }
 EXPORT_SYMBOL_GPL(tinker_ft5406_start_polling);
 
@@ -274,7 +279,7 @@ static int tinker_ft5406_probe(struct i2c_client *client,
 	g_ts_data->client = client;
 	i2c_set_clientdata(client, g_ts_data);
 
-	while(!tinker_mcu_is_connected() && timeout > 0) {
+	while(!tinker_mcu_is_connected() && !tinker_mcu_ili9881c_is_connected() && timeout > 0) {
 		msleep(50);
 		timeout--;
 	}
@@ -284,6 +289,18 @@ static int tinker_ft5406_probe(struct i2c_client *client,
 		ret = -ENODEV;
 		goto timeout_failed;
 	}
+
+	if (tinker_mcu_ili9881c_is_connected()) {
+		g_ts_data->screen_width = 720;
+		g_ts_data->screen_height = 1280;
+		g_ts_data->xy_reverse = 0;
+	} else {
+		g_ts_data->screen_width = 800;
+		g_ts_data->screen_height = 480;
+		g_ts_data->xy_reverse = 1;
+	}
+	LOG_INFO("width = %d, height = %d, reverse = %d\n",
+			g_ts_data->screen_width, g_ts_data->screen_height, g_ts_data->xy_reverse);
 
 	input_dev = input_allocate_device();
 	if (!input_dev) {
@@ -303,10 +320,8 @@ static int tinker_ft5406_probe(struct i2c_client *client,
 	__set_bit(BTN_TOUCH, input_dev->keybit);
 
 	input_mt_init_slots(input_dev, MAX_TOUCH_POINTS, 0);
-	input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0,
-			     SCREEN_WIDTH, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0,
-			     SCREEN_HEIGHT, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0, g_ts_data->screen_width, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0, g_ts_data->screen_height, 0, 0);
 
 	ret = input_register_device(input_dev);
 	if (ret) {
@@ -315,6 +330,8 @@ static int tinker_ft5406_probe(struct i2c_client *client,
 	}
 
 	INIT_WORK(&g_ts_data->ft5406_work, tinker_ft5406_work);
+	if (g_mcu_ready == 1)
+		schedule_work(&g_ts_data->ft5406_work);
 
 	return 0;
 
@@ -336,6 +353,7 @@ static int tinker_ft5406_remove(struct i2c_client *client)
 	}
 	kfree(g_ts_data);
 	g_ts_data = NULL;
+	g_mcu_ready = 0;
 	return 0;
 }
 
