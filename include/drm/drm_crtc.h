@@ -2031,6 +2031,7 @@ extern void drm_set_preferred_mode(struct drm_connector *connector,
 extern int drm_edid_header_is_valid(const u8 *raw_edid);
 extern bool drm_dect_iex_edid(struct edid *edid);
 extern bool drm_dect_acer_kg221q_edid(struct edid *edid);
+extern bool drm_dect_asus_vz229h_edid(struct edid *edid);
 extern bool drm_edid_block_valid(u8 *raw_edid, int block, bool print_bad_edid,
 				 bool *edid_corrupt);
 extern bool drm_edid_is_valid(struct edid *edid);
