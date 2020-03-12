@@ -187,6 +187,7 @@ struct clk;
 
 extern bool detect_iex_monitor(void);
 extern bool detect_acer_kg221q_monitor(void);
+extern bool detect_asus_vz229h_monitor(void);
 
 enum rockchip_pll_type {
 	pll_rk3036,
