@@ -196,8 +196,8 @@ static struct regval_list ov5647_1296x972[] = {
 	{0x3618, 0x00},		/* analog control */
 	{0x380c, 0x07},		/* HTS = 1896 */
 	{0x380d, 0x68},		/* HTS */
-	{0x380e, 0x05},		/* VTS = 1420 */
-	{0x380f, 0x8c},		/* VTS */
+	{0x380e, 0x06},		/* VTS = 1757 */
+	{0x380f, 0xdd},		/* VTS */
 	{0x3814, 0x31},		/* X INC */
 	{0x3815, 0x31},		/* X INC */
 	{0x3708, 0x64},		/* analog control */
@@ -236,8 +236,8 @@ static struct regval_list ov5647_2592x1944[] = {
 	{0x3618, 0x04},
 	{0x380c, 0x0a},
 	{0x380d, 0x8c},
-	{0x380e, 0x07},
-	{0x380f, 0xb6},
+	{0x380e, 0x09},
+	{0x380f, 0xA4},
 	{0x3814, 0x11},
 	{0x3815, 0x11},
 	{0x3708, 0x64},
@@ -270,9 +270,9 @@ static const struct ov5647_mode supported_modes[] = {
 	{
 	 .width = 1296,
 	 .height = 972,
-	 .max_fps = 25,
+	 .max_fps = 30,
 	 .hts_def = 0x0768,
-	 .vts_def = 0x058c,
+	 .vts_def = 0x06dd,
 	 .reg_list = ov5647_1296x972,
 	 },
 	{
@@ -280,7 +280,7 @@ static const struct ov5647_mode supported_modes[] = {
 	 .height = 1944,
 	 .max_fps = 15,
 	 .hts_def = 0x0a8c,
-	 .vts_def = 0x07b6,
+	 .vts_def = 0x09a4,
 	 .reg_list = ov5647_2592x1944,
 	 },
 };
