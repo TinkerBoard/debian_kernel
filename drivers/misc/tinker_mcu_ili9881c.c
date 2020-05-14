@@ -71,7 +71,7 @@ static int string_to_byte(const char *source, unsigned char *destination, int si
 
 static int send_cmds(struct i2c_client *client, const char *buf)
 {
-	int ret, size = strlen(buf);
+	int ret, size = strlen(buf), retry = 5;
 	unsigned char byte_cmd[size/2];
 
 	if ((size%2) != 0) {
@@ -83,11 +83,19 @@ static int send_cmds(struct i2c_client *client, const char *buf)
 
 	string_to_byte(buf, byte_cmd, size);
 
+	while(retry-- > 0) {
 	ret = i2c_master_send(client, byte_cmd, size/2);
 	if (ret <= 0) {
-		LOG_ERR("send command failed, ret = %d\n", ret);
+			LOG_ERR("send command failed, ret = %d, retry again!\n", ret);
+		} else
+			break;
+	}
+
+	if(ret <= 0) {
+		LOG_ERR("send command failed\n");
 		return ret!=0 ? ret : -ECOMM;
 	}
+
 	msleep(20);
 	return 0;
 }
@@ -121,12 +129,14 @@ static int init_cmd_check(struct tinker_mcu_data *mcu_data)
 	LOG_INFO("recv_cmds: 0x%X\n", recv_buf[0]);
 	printk("****lcd size value is: 0x%X\n", recv_buf[0]);
 
-	if(recv_buf[0]==0x85)
+	if(recv_buf[0] == 0x86) //7-inch rev_b
 		lcd_size_flag = 0;
-	else if(recv_buf[0]==0x89)
+	else if(recv_buf[0] == 0x89) //5-inch
 		lcd_size_flag = 1;
-	else if(recv_buf[0]==0x8d)
+	else if(recv_buf[0] == 0x8d) //10-inch
 		lcd_size_flag = 2;
+	else if((recv_buf[0] & 0xF0) == 0x80) //assign to 7-inch rev_a
+		lcd_size_flag = 3;
 
 	return 0;
 
