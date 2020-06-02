@@ -184,7 +184,12 @@ static int tc358762_of_get_native_mode(struct tc358762 *panel)
 	return 1;
 }
 
+extern struct backlight_device * tinker_mcu_get_backlightdev(void);
 extern int tinker_mcu_set_bright(int bright);
+extern int tinker_mcu_screen_power_up(void);
+extern int tinker_mcu_screen_power_off(void);
+extern void tinker_ft5406_start_polling(void);
+
 static int tc358762_disable(struct drm_panel *panel)
 {
 	struct tc358762 *p = to_tc358762(panel);
@@ -204,6 +209,8 @@ static int tc358762_disable(struct drm_panel *panel)
 
 	if (p->desc && p->desc->delay.disable)
 		msleep(p->desc->delay.disable);
+
+	tinker_mcu_screen_power_off();
 
 	p->enabled = false;
 
@@ -296,9 +303,6 @@ static int tc358762_prepare(struct drm_panel *panel)
 	return 0;
 }
 
-extern struct backlight_device * tinker_mcu_get_backlightdev(void);
-extern void tinker_mcu_screen_power_up(void);
-extern void tinker_ft5406_start_polling(void);
 static int tc358762_enable(struct drm_panel *panel)
 {
 	struct tc358762 *p = to_tc358762(panel);
@@ -311,9 +315,13 @@ static int tc358762_enable(struct drm_panel *panel)
 	if(trigger_bridge) {
 		pr_info("tinker_mcu_screen_power_up");
 		tinker_mcu_screen_power_up();
+
+                /*Some particulare rpi panel need powering on/off during sususpned/resume to avoid
+		 the flicker about 7 seconds */
+                //trigger_bridge = 0;
+
 		msleep(100);
 		tinker_ft5406_start_polling();
-		trigger_bridge = 0;
 	}
 
 	tc358762_dsi_init(p);

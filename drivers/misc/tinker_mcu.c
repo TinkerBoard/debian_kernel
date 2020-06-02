@@ -136,14 +136,27 @@ error:
 	return ret;
 }
 
-int tinker_mcu_screen_power_up(void)
+int tinker_mcu_screen_power_off(void)
 {
 	if (!connected)
 		return -ENODEV;
 
 	LOG_INFO("\n");
 	send_cmds(g_mcu_data->client, "8500");
-	msleep(800);
+	msleep(10);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tinker_mcu_screen_power_off);
+
+int tinker_mcu_screen_power_up(void)
+{
+	if (!connected)
+		return -ENODEV;
+
+	LOG_INFO("\n");
+	//send_cmds(g_mcu_data->client, "8500");
+	//msleep(800);
 	send_cmds(g_mcu_data->client, "8501");
 	send_cmds(g_mcu_data->client, "8104");
 
@@ -299,6 +312,8 @@ static int tinker_mcu_probe(struct i2c_client *client,
 		dev_err(&client->dev, "Failed to create tinker_mcu_bl sysfs files %d\n", ret);
 		return ret;
 	}
+
+	tinker_mcu_screen_power_off();
 
 	return 0;
 
