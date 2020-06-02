@@ -68,7 +68,7 @@ static int string_to_byte(const char *source, unsigned char *destination, int si
 
 static int send_cmds(struct i2c_client *client, const char *buf)
 {
-	int ret, size = strlen(buf);
+	int ret, size = strlen(buf), retry = 5;
 	unsigned char byte_cmd[size/2];
 
 	if ((size%2) != 0) {
@@ -80,11 +80,19 @@ static int send_cmds(struct i2c_client *client, const char *buf)
 
 	string_to_byte(buf, byte_cmd, size);
 
+	while(retry-- > 0) {
 	ret = i2c_master_send(client, byte_cmd, size/2);
 	if (ret <= 0) {
-		LOG_ERR("send command failed, ret = %d\n", ret);
+			LOG_ERR("send command failed, ret = %d, retry again!\n", ret);
+		} else
+			break;
+	}
+
+	if(ret <= 0) {
+		LOG_ERR("send command failed\n");
 		return ret!=0 ? ret : -ECOMM;
 	}
+
 	msleep(20);
 	return 0;
 }
