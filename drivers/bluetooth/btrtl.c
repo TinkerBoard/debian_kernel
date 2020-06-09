@@ -28,11 +28,13 @@
 #define VERSION "0.1"
 
 #define RTL_EPATCH_SIGNATURE	"Realtech"
+#define RTL_ROM_LMP_NONE	0x0000
 #define RTL_ROM_LMP_3499	0x3499
 #define RTL_ROM_LMP_8723A	0x1200
 #define RTL_ROM_LMP_8723B	0x8723
 #define RTL_ROM_LMP_8821A	0x8821
 #define RTL_ROM_LMP_8761A	0x8761
+#define RTL_ROM_LMP_8822B	0X8822
 
 static int rtl_read_rom_version(struct hci_dev *hdev, u8 *version)
 {
@@ -82,7 +84,18 @@ static int rtl8723b_parse_firmware(struct hci_dev *hdev, u16 lmp_subver,
 		RTL_ROM_LMP_8723A,
 		RTL_ROM_LMP_8723B,
 		RTL_ROM_LMP_8821A,
-		RTL_ROM_LMP_8761A
+		RTL_ROM_LMP_8761A,
+		RTL_ROM_LMP_NONE,
+		RTL_ROM_LMP_NONE,
+		RTL_ROM_LMP_NONE,
+		RTL_ROM_LMP_NONE,
+		RTL_ROM_LMP_8822B,
+		RTL_ROM_LMP_8723B, /* RTL8723DU */
+		RTL_ROM_LMP_8821A, /* RTL8821CU */
+		RTL_ROM_LMP_NONE,
+		RTL_ROM_LMP_NONE,
+		RTL_ROM_LMP_8822B, /* RTL8822CU */
+		RTL_ROM_LMP_8761A, /* index 14 for 8761BU */
 	};
 
 	ret = rtl_read_rom_version(hdev, &rom_version);
