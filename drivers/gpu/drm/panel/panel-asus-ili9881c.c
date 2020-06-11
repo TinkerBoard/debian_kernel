@@ -672,7 +672,8 @@ static const struct ili9881c_instr ili9881c_init_1[] = {//5-inch
 
 extern struct backlight_device * tinker_mcu_ili9881c_get_backlightdev(void);
 extern int tinker_mcu_ili9881c_set_bright(int bright);
-extern void tinker_mcu_ili9881c_screen_power_up(void);
+extern int tinker_mcu_ili9881c_screen_power_up(void);
+extern int tinker_mcu_ili9881c_screen_power_off(void);
 extern void tinker_ft5406_start_polling(void);
 
 static inline struct ili9881c *panel_to_ili9881c(struct drm_panel *panel)
@@ -1013,6 +1014,15 @@ int ili9881c_dsi_probe(struct mipi_dsi_device *dsi)
 	return 0;
 }
 
+void ili9881c_dsi_shutdown(struct mipi_dsi_device *dsi)
+{
+	struct ili9881c *ctx = mipi_dsi_get_drvdata(dsi);
+	pr_info("%s\n", __func__);
+
+	ili9881c_disable(&ctx->panel);
+	tinker_mcu_ili9881c_screen_power_off();
+}
+
 static const struct of_device_id ili9881c_of_match[] = {
 	{ .compatible = "asus,ili9881c" },
 	{ }
@@ -1022,6 +1032,7 @@ MODULE_DEVICE_TABLE(of, ili9881c_of_match);
 static struct mipi_dsi_driver ili9881c_dsi_driver = {
 	.probe		= ili9881c_dsi_probe,
 	.remove		= ili9881c_dsi_remove,
+	.shutdown	= ili9881c_dsi_shutdown,
 	.driver = {
 		.name		= "ili9881c-dsi",
 		.of_match_table	= ili9881c_of_match,

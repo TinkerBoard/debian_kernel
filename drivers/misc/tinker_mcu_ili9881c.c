@@ -144,6 +144,18 @@ error:
 	return ret;
 }
 
+int tinker_mcu_ili9881c_screen_power_off(void)
+{
+	if (!connected)
+		return -ENODEV;
+
+	send_cmds(g_mcu_ili9881c_data->client, "0500");
+	msleep(20);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tinker_mcu_ili9881c_screen_power_off);
+
 int tinker_mcu_ili9881c_screen_power_up(void)
 {
 	if (!connected)
