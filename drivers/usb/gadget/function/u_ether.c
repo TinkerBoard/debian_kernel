@@ -23,7 +23,7 @@
 #include <linux/if_vlan.h>
 
 #include "u_ether.h"
-
+#include "../../../net/ethernet/stmicro/stmmac/eth_mac_tinker.h"
 
 /*
  * This component encapsulates the Ethernet link glue needed to provide
@@ -1002,7 +1002,8 @@ struct net_device *gether_setup_name_default(const char *netname)
 
 	eth_random_addr(dev->dev_mac);
 	pr_warn("using random %s ethernet address\n", "self");
-	eth_random_addr(dev->host_mac);
+	eth_mac_eeprom(dev->host_mac);
+	dev->host_mac[0] = (dev->host_mac[0] == 0x02) ? 0x04 : 0x02;
 	pr_warn("using random %s ethernet address\n", "host");
 
 	net->netdev_ops = &eth_netdev_ops;
