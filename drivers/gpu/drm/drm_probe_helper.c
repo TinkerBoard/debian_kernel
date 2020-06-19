@@ -265,10 +265,12 @@ prune:
 			connector->name);
 
 	if (!strcmp(connector->name, "HDMI-A-1")) {
-		edid_manufacturer = (struct edid *) connector->edid_blob_ptr->data;
-		drm_iex_monitor = drm_dect_iex_edid(edid_manufacturer);
-		drm_acer_kg221q_monitor = drm_dect_acer_kg221q_edid(edid_manufacturer);
-		drm_asus_vz229h_monitor = drm_dect_asus_vz229h_edid(edid_manufacturer);
+		if( (*connector_funcs->check_edid)(connector) ) {
+			edid_manufacturer = (struct edid *) connector->edid_blob_ptr->data;
+			drm_iex_monitor = drm_dect_iex_edid(edid_manufacturer);
+			drm_acer_kg221q_monitor = drm_dect_acer_kg221q_edid(edid_manufacturer);
+			drm_asus_vz229h_monitor = drm_dect_asus_vz229h_edid(edid_manufacturer);
+		}
 	}
 	list_for_each_entry(mode, &connector->modes, head) {
 		drm_mode_set_crtcinfo(mode, CRTC_INTERLACE_HALVE_V);
