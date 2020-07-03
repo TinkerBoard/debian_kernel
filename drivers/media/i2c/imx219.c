@@ -14,6 +14,7 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of_graph.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/slab.h>
 #include <linux/videodev2.h>
 #include <media/v4l2-ctrls.h>
@@ -39,6 +40,9 @@
 #define IMX219_DIGITAL_EXPOSURE_DEFAULT	1575
 
 #define IMX219_EXP_LINES_MARGIN	4
+
+#define OF_CAMERA_PINCTRL_STATE_DEFAULT	"rockchip,camera_default"
+#define IMX219_XVCLK_FREQ				24000000
 
 static const s64 link_freq_menu_items[] = {
 	456000000,
@@ -281,6 +285,9 @@ struct imx219 {
 	struct v4l2_ctrl *pixel_rate;
 	const struct imx219_mode *cur_mode;
 	u16 cur_vts;
+
+	struct pinctrl          *pinctrl;
+	struct pinctrl_state    *pins_default;
 };
 
 static const struct imx219_mode supported_modes[] = {
@@ -967,6 +974,7 @@ static int imx219_probe(struct i2c_client *client,
 	struct imx219 *priv;
 	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
 	int ret;
+	u32 clk_freq;
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_BYTE_DATA)) {
 		dev_warn(&adapter->dev,
@@ -977,11 +985,35 @@ static int imx219_probe(struct i2c_client *client,
 	if (!priv)
 		return -ENOMEM;
 
+	priv->pinctrl = devm_pinctrl_get(&client->dev);
+	if (!IS_ERR(priv->pinctrl)) {
+		priv->pins_default = pinctrl_lookup_state(priv->pinctrl,
+				OF_CAMERA_PINCTRL_STATE_DEFAULT);
+	if (IS_ERR(priv->pins_default))
+		dev_err(&client->dev, "could not get default pinstate\n");
+	}
+
+	if (!IS_ERR_OR_NULL(priv->pins_default)) {
+		ret = pinctrl_select_state(priv->pinctrl, priv->pins_default);
+		if (ret < 0)
+			dev_err(&client->dev, "could not set pins\n");
+	}
+
 	priv->clk = devm_clk_get(&client->dev, NULL);
 	if (IS_ERR(priv->clk)) {
 		dev_info(&client->dev, "Error %ld getting clock\n",
 			 PTR_ERR(priv->clk));
 		return -EPROBE_DEFER;
+	}
+	ret = clk_set_rate(priv->clk, IMX219_XVCLK_FREQ);
+	if (ret < 0) {
+		dev_err(&client->dev, "Failed to set xvclk rate (24MHz)\n");
+		return ret;
+	}
+	clk_freq = clk_get_rate(priv->clk);
+	if (clk_freq != IMX219_XVCLK_FREQ) {
+		dev_err(&client->dev, "Unsupported clock frequency: %u\n", clk_freq);
+		return -EINVAL;
 	}
 
 	/* 1920 * 1080 by default */

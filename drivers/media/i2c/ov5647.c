@@ -26,6 +26,7 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of_graph.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/slab.h>
 #include <linux/videodev2.h>
 #include <media/v4l2-ctrls.h>
@@ -58,6 +59,8 @@
 #define OV5647_ANALOG_GAIN_STEP	0x01
 #define OV5647_ANALOG_GAIN_DEFAULT 0x100
 
+#define OF_CAMERA_PINCTRL_STATE_DEFAULT	"rockchip,camera_default"
+#define OV5647_XVCLK_FREQ		24000000
 #define OV5647_LINK_FREQ_150MHZ		150000000
 static const s64 link_freq_menu_items[] = {
 	OV5647_LINK_FREQ_150MHZ
@@ -87,6 +90,9 @@ struct ov5647_state {
 	struct v4l2_ctrl *anal_gain;
 
 	const struct ov5647_mode *cur_mode;
+
+	struct pinctrl		*pinctrl;
+	struct pinctrl_state	*pins_default;
 };
 
 struct ov5647_mode {
@@ -851,15 +857,34 @@ static int ov5647_probe(struct i2c_client *client,
 		}
 	}
 
+	sensor->pinctrl = devm_pinctrl_get(dev);
+	if (!IS_ERR(sensor->pinctrl)) {
+		sensor->pins_default =
+			pinctrl_lookup_state(sensor->pinctrl,
+					     OF_CAMERA_PINCTRL_STATE_DEFAULT);
+		if (IS_ERR(sensor->pins_default))
+			dev_err(dev, "could not get default pinstate\n");
+	}
+	if (!IS_ERR_OR_NULL(sensor->pins_default)) {
+		ret = pinctrl_select_state(sensor->pinctrl,
+					   sensor->pins_default);
+		if (ret < 0)
+			dev_err(dev, "could not set pins\n");
+	}
+
 	/* get system clock (xclk) */
 	sensor->xclk = devm_clk_get(dev, NULL);
 	if (IS_ERR(sensor->xclk)) {
 		dev_err(dev, "could not get xclk");
 		return PTR_ERR(sensor->xclk);
 	}
-
+	ret = clk_set_rate(sensor->xclk, OV5647_XVCLK_FREQ);
+	if (ret < 0) {
+		dev_err(dev, "Failed to set xvclk rate (24MHz)\n");
+		return ret;
+	}
 	xclk_freq = clk_get_rate(sensor->xclk);
-	if (xclk_freq != 25000000) {
+	if (xclk_freq != OV5647_XVCLK_FREQ) {
 		dev_err(dev, "Unsupported clock frequency: %u\n", xclk_freq);
 		return -EINVAL;
 	}

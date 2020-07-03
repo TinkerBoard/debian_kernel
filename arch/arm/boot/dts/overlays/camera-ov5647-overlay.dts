@@ -12,7 +12,9 @@
 			camera0: ov5647@36 {
 				compatible = "ovti,ov5647";
 				reg = <0x36>;
-				clocks = <&ext_cam_clk>;
+				clocks = <&cru 127>;
+				pinctrl-names = "rockchip,camera_default";
+				pinctrl-0 = <&isp_mipi>;
 				status = "okay";
 
 				port {
@@ -26,7 +28,9 @@
 			camera1: imx219@10 {
 				compatible = "sony,imx219";
 				reg = <0x10>;
-				clocks = <&ext_cam_clk>;
+				clocks = <&cru 127>;
+				pinctrl-names = "rockchip,camera_default";
+				pinctrl-0 = <&isp_mipi>;
 				status = "disabled";
 				port {
 					imx219_out: endpoint {
