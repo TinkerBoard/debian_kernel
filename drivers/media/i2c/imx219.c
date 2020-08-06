@@ -77,7 +77,7 @@ static const struct imx219_reg imx219_init_tab_3280_2464_21fps[] = {
 	{0x012A, 0x18},		/* EXCK_FREQ[15:8] */
 	{0x012B, 0x00},		/* EXCK_FREQ[7:0] */
 	{0x0160, 0x09},		/* FRM_LENGTH_A[15:8] */
-	{0x0161, 0xC4},		/* FRM_LENGTH_A[7:0] */
+	{0x0161, 0xD7},		/* FRM_LENGTH_A[7:0] */
 	{0x0162, 0x0D},		/* LINE_LENGTH_A[15:8] */
 	{0x0163, 0x78},		/* LINE_LENGTH_A[7:0] */
 	{0x0260, 0x09},		/* FRM_LENGTH_B[15:8] */
@@ -306,7 +306,7 @@ static const struct imx219_mode supported_modes[] = {
 		.height = 2464,
 		.max_fps = 21,
 		.hts_def = 0x0d78 - IMX219_EXP_LINES_MARGIN,
-		.vts_def = 0x09c4,
+		.vts_def = 0x09d7,
 		.reg_list = imx219_init_tab_3280_2464_21fps,
 		.binning_h = 0,
 		.binning_v = 0,
