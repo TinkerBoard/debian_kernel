@@ -726,6 +726,23 @@ void setLedConfiguration(struct phy_device *phydev) {
   phy_write(phydev, 31, 0);
 }
 
+void adjust_rgmii_driving(struct phy_device *phydev)
+{
+	// set to extension page
+	phy_write(phydev, 31, 0x0007);
+
+	// switch extension page 164
+	phy_write(phydev, 30, 0x00a4);
+
+	// set to enhance RGMII signal driving
+	printk("%s: #### before setting phy driving, Reg28 = 0x%x\n", __func__, phy_read(phydev, 28));
+	phy_write(phydev, 28, 0x0857f);
+	printk("%s: #### after setting phy driving, Reg28 = 0x%x\n", __func__, phy_read(phydev, 28));
+
+	//switch to PHY`s Page0
+	phy_write(phydev, 31, 0);
+}
+
 /**
  * stmmac_adjust_link - adjusts the link parameters
  * @dev: net device structure
@@ -769,6 +786,7 @@ static void stmmac_adjust_link(struct net_device *dev)
 		if (phydev->speed != priv->speed) {
 			new_state = 1;
 			setLedConfiguration(phydev);
+			adjust_rgmii_driving(phydev);
 			switch (phydev->speed) {
 			case 1000:
 				if (likely(priv->plat->has_gmac))
