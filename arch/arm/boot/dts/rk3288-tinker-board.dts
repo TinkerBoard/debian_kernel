@@ -265,7 +265,7 @@
 };
 
 &edp {
-	status = "okay";
+	status = "disabled";
 };
 
 &edp_panel {
