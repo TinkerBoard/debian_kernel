@@ -306,6 +306,31 @@
 	mali-supply = <&vdd_gpu>;
 };
 
+&dsi0 {
+	status = "okay";
+	mipi_panel: mipi-panel {
+		compatible ="asus-dsi-panel";
+		reg = <0>;
+		status = "okay";
+	};
+};
+
+&dsi0_in_vopb {
+	status = "disabled";
+};
+
+&dsi0_in_vopl {
+	status = "okay";
+};
+
+&edp_in_vopb {
+	status = "disabled";
+};
+
+&edp_in_vopl {
+	status = "disabled";
+};
+
 &hdmi {
 	pinctrl-0 = <&hdmi_ddc>, <&hdmi_cec>;
 };
@@ -640,6 +665,16 @@
 				data-lanes = <1 2>;
 			};
 		};
+	};
+
+	tinker_mcu: tinker_mcu@45 {
+		compatible = "tinker_mcu";
+		reg = <0x45>;
+	};
+
+	tinker_mcu_ili9881c: tinker_mcu_ili9881c@36 {
+		compatible = "tinker_mcu_ili9881c";
+		reg = <0x36>;
 	};
 };
 

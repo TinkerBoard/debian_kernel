@@ -564,6 +564,20 @@ config GPIO_DET
 	help
 	  Enable this driver will support gpio detection.
 
+config TINKER_MCU
+	tristate "tinker mcu"
+	default y
+	depends on I2C
+	help
+		Control the power of toshiba tc358762 panel on tinker board.
+
+config TINKER_MCU_ILI9881C
+	tristate "tinker mcu ili9881c"
+	default y
+	depends on I2C
+	help
+		Control the power of ASUS ili9881c panel on tinker board.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

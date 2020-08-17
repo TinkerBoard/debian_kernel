@@ -61,3 +61,5 @@ obj-$(CONFIG_CXL_BASE)		+= cxl/
 obj-$(CONFIG_UID_SYS_STATS) += uid_sys_stats.o
 obj-$(CONFIG_MEMORY_STATE_TIME) += memory_state_time.o
 obj-$(CONFIG_USB_CAM_GPIO)	+= usb_cam_gpio.o
+obj-$(CONFIG_TINKER_MCU)		+= tinker_mcu.o
+obj-$(CONFIG_TINKER_MCU_ILI9881C)	+= tinker_mcu_ili9881c.o

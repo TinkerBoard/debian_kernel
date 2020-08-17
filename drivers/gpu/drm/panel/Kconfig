@@ -51,4 +51,22 @@ config DRM_PANEL_SHARP_LQ101R1SX01
 	  To compile this driver as a module, choose M here: the module
 	  will be called panel-sharp-lq101r1sx01.
 
+config DRM_PANEL_TOSHIBA_TC358762
+	tristate "support for toshiba tc358762 panel"
+	depends on OF && I2C
+	depends on DRM_MIPI_DSI
+	select TINKER_MCU
+	select VIDEOMODE_HELPERS
+	help
+	  Say Y here if you want to enable support for toshiba tc358762 panel.
+	  To compile this driver as a module, choose M here.
+
+config DRM_PANEL_ASUS_ILI9881C
+        tristate "ASUS ILI9881c panel"
+        depends on OF
+        depends on DRM_MIPI_DSI
+        depends on BACKLIGHT_CLASS_DEVICE
+        help
+          ASUS ili9881c 720x1280
+
 endmenu

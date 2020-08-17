@@ -731,7 +731,7 @@ static unsigned long dw_mipi_dsi_get_lane_rate(struct dw_mipi_dsi *dsi)
 		lane_rate = max_lane_rate;
 	else
 		lane_rate = tmp;
-
+	printk("dw_mipi_dsi_get_lane_rate mode->clock=%d lane_rate=%lu\n", mode->clock, lane_rate );
 	return lane_rate;
 }
 
@@ -829,6 +829,8 @@ static int dw_mipi_dsi_host_attach(struct mipi_dsi_host *host,
 	dsi->format = device->format;
 	dsi->mode_flags = device->mode_flags;
 
+	printk("dw_mipi_dsi_host_attach mode_flags=%lx lanes=%u\n", dsi->mode_flags, dsi->lanes);
+
 	return 0;
 }
 
@@ -897,7 +899,7 @@ static int dw_mipi_dsi_read_from_fifo(struct dw_mipi_dsi *dsi,
 
 static void dw_mipi_dsi_video_mode_config(struct dw_mipi_dsi *dsi)
 {
-	u32 val = LP_VACT_EN | LP_VFP_EN | LP_VBP_EN | LP_VSA_EN |
+	u32 val = LP_VACT_EN | LP_VFP_EN | LP_VBP_EN | LP_VSA_EN | LP_CMD_EN |
 		  LP_HFP_EN | LP_HBP_EN;
 
 	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_HFP)
@@ -1262,6 +1264,9 @@ static void dw_mipi_dsi_vop_routing(struct dw_mipi_dsi *dsi)
 	pipe = drm_of_encoder_active_endpoint_id(dsi->dev->of_node,
 						 &dsi->encoder);
 	grf_field_write(dsi, VOPSEL, pipe);
+
+	printk("vop %s output to dsi0\n", (pipe) ? "LIT" : "BIG");
+
 	if (dsi->slave)
 		grf_field_write(dsi->slave, VOPSEL, pipe);
 }
@@ -1439,8 +1444,10 @@ static ssize_t dw_mipi_dsi_transfer(struct dw_mipi_dsi *dsi,
 	if (msg->flags & MIPI_DSI_MSG_USE_LPM) {
 		regmap_update_bits(dsi->regmap, DSI_VID_MODE_CFG,
 				   LP_CMD_EN, LP_CMD_EN);
+         regmap_update_bits(dsi->regmap, DSI_LPCLK_CTRL,
+				   PHY_TXREQUESTCLKHS, 0);
 	} else {
-		regmap_update_bits(dsi->regmap, DSI_VID_MODE_CFG, LP_CMD_EN, 0);
+		//regmap_update_bits(dsi->regmap, DSI_VID_MODE_CFG, LP_CMD_EN, 0);
 		regmap_update_bits(dsi->regmap, DSI_LPCLK_CTRL,
 				   PHY_TXREQUESTCLKHS, PHY_TXREQUESTCLKHS);
 	}
@@ -1715,12 +1722,26 @@ static void dw_mipi_dsi_rpm_disable(struct dw_mipi_dsi *dsi)
 		pm_runtime_enable(dsi->master->dev);
 }
 
+#if defined(CONFIG_TINKER_MCU)
+extern int tinker_mcu_is_connected(int dsi_id);
+extern int tinker_mcu_ili9881c_is_connected(int dsi_id);
+#endif
+
 static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 			     void *data)
 {
 	struct drm_device *drm = data;
 	struct dw_mipi_dsi *dsi = dev_get_drvdata(dev);
 	int ret;
+
+#if defined(CONFIG_TINKER_MCU)
+	if(!tinker_mcu_is_connected(dsi->id) && !tinker_mcu_ili9881c_is_connected(dsi->id)) {
+		pr_info("dsi-%d panel isn't connected\n", dsi->id);
+		return 0;
+	} else {
+		pr_info("dsi-%d panel is connected\n", dsi->id);
+	}
+#endif
 
 	dsi->panel = of_drm_find_panel(dsi->client);
 	if (!dsi->panel) {
