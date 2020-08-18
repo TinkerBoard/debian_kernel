@@ -764,3 +764,8 @@
 &usb_otg {
 	vbus-supply = <&vcc_otg_vbus>;
 };
+
+&fiq_debugger {
+	rockchip,serial-id = <3>;
+	pinctrl-0 = <&uart3_xfer>;
+};
