@@ -39,7 +39,7 @@
  */
 
 /dts-v1/;
-#include "rk3288-evb.dtsi"
+#include "rk3288-tinker-board.dtsi"
 #include "rk3288-linux.dtsi"
 
 / {
