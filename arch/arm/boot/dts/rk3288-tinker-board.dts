@@ -306,6 +306,15 @@
 	mali-supply = <&vdd_gpu>;
 };
 
+&gpu_opp_table{
+	/delete-node/ opp-500000000;
+	opp-600000000 {
+		opp-hz = /bits/ 64 <600000000>;
+		opp-microvolt = <1250000>;
+	};
+};
+
+
 &dsi0 {
 	status = "okay";
 	mipi_panel: mipi-panel {
