@@ -173,14 +173,14 @@
 	};
 
 	/* This switch DIO3222 HOST_DP_HOST to host2 (dwc2) */
-	vcc_3g: vcc-3g-regulator {
-		compatible = "regulator-fixed";
-		enable-active-high;
-		gpio = <&gpio7 8 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&pwr_3g>;
-		regulator-name = "vcc_3g";
-	};
+	//vcc_3g: vcc-3g-regulator {
+	//	compatible = "regulator-fixed";
+	//	enable-active-high;
+	//	gpio = <&gpio7 8 GPIO_ACTIVE_HIGH>;
+	//	pinctrl-names = "default";
+	//	pinctrl-0 = <&pwr_3g>;
+	//	regulator-name = "vcc_3g";
+	//};
 
 	/*
 	 * NOTE: vcc_sd isn't hooked up on v1.0 boards where power comes from
@@ -519,9 +519,9 @@
 			rockchip,pins = <0 14 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
-		pwr_3g: pwr-3g {
-			rockchip,pins = <7 8 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
+		//pwr_3g: pwr-3g {
+		//	rockchip,pins = <7 8 RK_FUNC_GPIO &pcfg_pull_none>;
+		//};
 	};
 
 	eth_phy {
