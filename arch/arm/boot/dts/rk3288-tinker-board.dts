@@ -182,17 +182,6 @@
 		vin-supply = <&vcc_io>;
 	};
 
-	vcc_otg_vbus: otg-vbus-regulator {
-		compatible = "regulator-fixed";
-		gpio = <&gpio0 12 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&otg_vbus_drv>;
-		regulator-name = "vcc_otg_vbus";
-		regulator-min-microvolt = <5000000>;
-		regulator-max-microvolt = <5000000>;
-		enable-active-high;
-	};
-
 	vdd_log: vdd-logic {
 		compatible = "pwm-regulator";
 		rockchip,pwm_id = <1>;
@@ -368,6 +357,7 @@
 		vcc3-supply = <&vcc_sys>;
 		vcc4-supply = <&vcc_sys>;
 		vcc6-supply = <&vcc_sys>;
+		vcc7-supply = <&vcc_sys>;
 		vcc8-supply = <&vcc_io>;
 		vcc9-supply = <&vcc_io>;
 		vcc12-supply = <&vcc_io>;
@@ -802,16 +792,6 @@
 			rockchip,pins = <8 0 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
-
-	usb {
-		otg_vbus_drv: otg-vbus-drv {
-			rockchip,pins = <0 12 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
-};
-
-&usb_otg {
-	vbus-supply = <&vcc_otg_vbus>;
 };
 
 &fiq_debugger {
