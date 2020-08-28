@@ -10,6 +10,7 @@
  */
 #include <linux/clk.h>
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/init.h>
 #include <linux/io.h>
@@ -19,6 +20,7 @@
 #include <linux/videodev2.h>
 #include <linux/version.h>
 #include <linux/rk-camera-module.h>
+#include <linux/pinctrl/consumer.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
@@ -43,9 +45,13 @@
 #define IMX219_DIGITAL_EXPOSURE_MAX	4095
 #define IMX219_DIGITAL_EXPOSURE_DEFAULT	1575
 
+#define IMX219_XVCLK_FREQ		24000000
+
 #define IMX219_EXP_LINES_MARGIN	4
 
 #define IMX219_NAME			"imx219"
+
+#define OF_CAMERA_PINCTRL_STATE_DEFAULT	"rockchip,camera_default"
 
 static const s64 link_freq_menu_items[] = {
 	456000000,
@@ -80,7 +86,7 @@ static const struct imx219_reg imx219_init_tab_3280_2464_21fps[] = {
 	{0x015A, 0x01},		/* INTEG TIME[15:8] */
 	{0x015B, 0xF4},		/* INTEG TIME[7:0] */
 	{0x0160, 0x09},		/* FRM_LENGTH_A[15:8] */
-	{0x0161, 0xC4},		/* FRM_LENGTH_A[7:0] */
+	{0x0161, 0xD7},		/* FRM_LENGTH_A[7:0] */
 	{0x0162, 0x0D},		/* LINE_LENGTH_A[15:8] */
 	{0x0163, 0x78},		/* LINE_LENGTH_A[7:0] */
 	{0x0260, 0x09},		/* FRM_LENGTH_B[15:8] */
@@ -243,6 +249,9 @@ struct imx219 {
 	const char *module_facing;
 	const char *module_name;
 	const char *len_name;
+	struct gpio_desc *enable_gpio;
+	struct pinctrl		*pinctrl;
+	struct pinctrl_state	*pins_default;
 };
 
 static const struct imx219_mode supported_modes[] = {
@@ -265,7 +274,7 @@ static const struct imx219_mode supported_modes[] = {
 			.denominator = 210000,
 		},
 		.hts_def = 0x0d78 - IMX219_EXP_LINES_MARGIN,
-		.vts_def = 0x09c4,
+		.vts_def = 0x09d7,
 		.reg_list = imx219_init_tab_3280_2464_21fps,
 	},
 };
@@ -1027,6 +1036,15 @@ static int imx219_probe(struct i2c_client *client,
 	if (!priv)
 		return -ENOMEM;
 
+	priv->pinctrl = devm_pinctrl_get(dev);
+	if (!IS_ERR(priv->pinctrl)) {
+		priv->pins_default =
+			pinctrl_lookup_state(priv->pinctrl,
+					     OF_CAMERA_PINCTRL_STATE_DEFAULT);
+		if (IS_ERR(priv->pins_default))
+			dev_err(dev, "could not get default pinstate\n");
+	}
+
 	ret = of_property_read_u32(node, RKMODULE_CAMERA_MODULE_INDEX,
 				   &priv->module_index);
 	ret |= of_property_read_string(node, RKMODULE_CAMERA_MODULE_FACING,
@@ -1040,12 +1058,28 @@ static int imx219_probe(struct i2c_client *client,
 		return -EINVAL;
 	}
 
-	priv->clk = devm_clk_get(&client->dev, NULL);
+	priv->clk = devm_clk_get(&client->dev, "xvclk");
 	if (IS_ERR(priv->clk)) {
 		dev_info(&client->dev, "Error %ld getting clock\n",
 			 PTR_ERR(priv->clk));
 		return -EPROBE_DEFER;
 	}
+
+	if (!IS_ERR_OR_NULL(priv->pins_default)) {
+		ret = pinctrl_select_state(priv->pinctrl,
+					   priv->pins_default);
+		if (ret < 0)
+			dev_err(dev, "could not set pins\n");
+	}
+	ret = clk_set_rate(priv->clk, IMX219_XVCLK_FREQ);
+	if (ret < 0)
+		dev_warn(dev, "Failed to set xvclk rate (24MHz)\n");
+	if (clk_get_rate(priv->clk) != IMX219_XVCLK_FREQ)
+		dev_warn(dev, "xvclk mismatched, modes are based on 24MHz\n");
+
+	priv->enable_gpio = devm_gpiod_get(dev, "enable", GPIOD_OUT_HIGH);
+	if (IS_ERR(priv->enable_gpio))
+		dev_warn(dev, "Failed to get enable_gpios\n");
 
 	/* 1920 * 1080 by default */
 	priv->cur_mode = &supported_modes[0];

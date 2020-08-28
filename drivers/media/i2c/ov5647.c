@@ -21,11 +21,14 @@
 
 #include <linux/clk.h>
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of_graph.h>
+#include <linux/pinctrl/consumer.h>
+#include <linux/rk-camera-module.h>
 #include <linux/slab.h>
 #include <linux/videodev2.h>
 #include <media/v4l2-ctrls.h>
@@ -63,6 +66,10 @@ static const s64 link_freq_menu_items[] = {
 	OV5647_LINK_FREQ_150MHZ
 };
 
+#define OF_CAMERA_PINCTRL_STATE_DEFAULT	"rockchip,camera_default"
+
+#define OV5647_XVCLK_FREQ		24000000
+
 struct regval_list {
 	u16 addr;
 	u8 data;
@@ -78,6 +85,11 @@ struct ov5647_state {
 	int power_count;
 	struct clk *xclk;
 
+	struct gpio_desc	*enable_gpio;
+
+	struct pinctrl		*pinctrl;
+	struct pinctrl_state	*pins_default;
+
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct v4l2_ctrl *link_freq;
 	struct v4l2_ctrl *hblank;
@@ -87,6 +99,11 @@ struct ov5647_state {
 	struct v4l2_ctrl *anal_gain;
 
 	const struct ov5647_mode *cur_mode;
+
+	u32 module_index;
+	const char *module_facing;
+	const char *module_name;
+	const char *len_name;
 };
 
 struct ov5647_mode {
@@ -158,6 +175,7 @@ static struct regval_list ov5647_common_regs[] = {
 	{0x3a1f, 0x28},
 	{0x4001, 0x02},
 	{0x4000, 0x09},
+#if 1 //0: use auto AE/AWB control from sensor
 	{0x3503, 0x03},		/* manual,0xAE */
 	{0x3500, 0x00},
 	{0x3501, 0x6f},
@@ -173,6 +191,7 @@ static struct regval_list ov5647_common_regs[] = {
 	{0x518a, 0x04},
 	{0x518b, 0x00},
 	{0x5000, 0x00},		/* lenc WBC on */
+#endif
 	{0x3011, 0x62},
 	/* mipi */
 	{0x3016, 0x08},
@@ -194,8 +213,8 @@ static struct regval_list ov5647_1296x972[] = {
 	{0x3618, 0x00},		/* analog control */
 	{0x380c, 0x07},		/* HTS = 1896 */
 	{0x380d, 0x68},		/* HTS */
-	{0x380e, 0x05},		/* VTS = 1420 */
-	{0x380f, 0x8c},		/* VTS */
+	{0x380e, 0x06},		/* VTS = 1757 */
+	{0x380f, 0xdd},		/* VTS */
 	{0x3814, 0x31},		/* X INC */
 	{0x3815, 0x31},		/* X INC */
 	{0x3708, 0x64},		/* analog control */
@@ -234,8 +253,8 @@ static struct regval_list ov5647_2592x1944[] = {
 	{0x3618, 0x04},
 	{0x380c, 0x0a},
 	{0x380d, 0x8c},
-	{0x380e, 0x07},
-	{0x380f, 0xb6},
+	{0x380e, 0x09},
+	{0x380f, 0xa4},
 	{0x3814, 0x11},
 	{0x3815, 0x11},
 	{0x3708, 0x64},
@@ -270,7 +289,7 @@ static const struct ov5647_mode supported_modes[] = {
 	 .height = 972,
 	 .max_fps = 25,
 	 .hts_def = 0x0768,
-	 .vts_def = 0x058c,
+	 .vts_def = 0x06dd,
 	 .reg_list = ov5647_1296x972,
 	 },
 	{
@@ -278,7 +297,7 @@ static const struct ov5647_mode supported_modes[] = {
 	 .height = 1944,
 	 .max_fps = 15,
 	 .hts_def = 0x0a8c,
-	 .vts_def = 0x07b6,
+	 .vts_def = 0x09a4,
 	 .reg_list = ov5647_2592x1944,
 	 },
 };
@@ -546,6 +565,33 @@ static int ov5647_sensor_set_register(struct v4l2_subdev *sd,
 }
 #endif
 
+static void ov5647_get_module_inf(struct ov5647_state *ov5647,
+				  struct rkmodule_inf *inf)
+{
+	memset(inf, 0, sizeof(*inf));
+	strlcpy(inf->base.sensor, SENSOR_NAME, sizeof(inf->base.sensor));
+	strlcpy(inf->base.module, ov5647->module_name,
+		sizeof(inf->base.module));
+	strlcpy(inf->base.lens, ov5647->len_name, sizeof(inf->base.lens));
+}
+
+static long ov5647_sensor_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
+{
+	struct ov5647_state *ov5647 = to_state(sd);
+	long ret = 0;
+
+	switch (cmd) {
+	case RKMODULE_GET_MODULE_INFO:
+		ov5647_get_module_inf(ov5647, (struct rkmodule_inf *)arg);
+		break;
+	default:
+		ret = -ENOIOCTLCMD;
+		break;
+	}
+
+	return ret;
+}
+
 /**
  * @short Subdev core operations registration
  */
@@ -555,6 +601,7 @@ static const struct v4l2_subdev_core_ops ov5647_subdev_core_ops = {
 	.g_register = ov5647_sensor_get_register,
 	.s_register = ov5647_sensor_set_register,
 #endif
+	.ioctl = ov5647_sensor_ioctl,
 };
 
 static int ov5647_s_stream(struct v4l2_subdev *sd, int enable)
@@ -761,17 +808,19 @@ static int ov5647_detect(struct v4l2_subdev *sd)
 	u8 read;
 	int ret;
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
+/*
 
 	ret = ov5647_write(sd, OV5647_SW_RESET, 0x01);
 	if (ret < 0)
 		return ret;
+*/
 
 	ret = ov5647_read(sd, OV5647_REG_CHIPID_H, &read);
 	if (ret < 0)
 		return ret;
 
+	dev_info(&client->dev, "ID High expected 0x56 got %x", read);
 	if (read != 0x56) {
-		dev_err(&client->dev, "ID High expected 0x56 got %x", read);
 		return -ENODEV;
 	}
 
@@ -779,8 +828,8 @@ static int ov5647_detect(struct v4l2_subdev *sd)
 	if (ret < 0)
 		return ret;
 
+	dev_info(&client->dev, "ID Low expected 0x47 got %x", read);
 	if (read != 0x47) {
-		dev_err(&client->dev, "ID Low expected 0x47 got %x", read);
 		return -ENODEV;
 	}
 
@@ -835,7 +884,7 @@ static int ov5647_probe(struct i2c_client *client,
 	int ret;
 	struct v4l2_subdev *sd;
 	struct device_node *np = client->dev.of_node;
-	u32 xclk_freq;
+	char facing[2];
 
 	sensor = devm_kzalloc(dev, sizeof(*sensor), GFP_KERNEL);
 	if (!sensor)
@@ -849,18 +898,51 @@ static int ov5647_probe(struct i2c_client *client,
 		}
 	}
 
+	sensor->pinctrl = devm_pinctrl_get(dev);
+	if (!IS_ERR(sensor->pinctrl)) {
+		sensor->pins_default =
+			pinctrl_lookup_state(sensor->pinctrl,
+					     OF_CAMERA_PINCTRL_STATE_DEFAULT);
+		if (IS_ERR(sensor->pins_default))
+			dev_err(dev, "could not get default pinstate\n");
+	}
+	if (!IS_ERR_OR_NULL(sensor->pins_default)) {
+		ret = pinctrl_select_state(sensor->pinctrl,
+					   sensor->pins_default);
+		if (ret < 0)
+			dev_err(dev, "could not set pins\n");
+	}
+
+	ret = of_property_read_u32(np, RKMODULE_CAMERA_MODULE_INDEX,
+					&sensor->module_index);
+	ret |= of_property_read_string(np, RKMODULE_CAMERA_MODULE_FACING,
+					&sensor->module_facing);
+	ret |= of_property_read_string(np, RKMODULE_CAMERA_MODULE_NAME,
+					&sensor->module_name);
+	ret |= of_property_read_string(np, RKMODULE_CAMERA_LENS_NAME,
+					&sensor->len_name);
+	if (ret) {
+		dev_err(dev, "could not get module information!\n");
+		return -EINVAL;
+	}
+
 	/* get system clock (xclk) */
-	sensor->xclk = devm_clk_get(dev, NULL);
+	sensor->xclk = devm_clk_get(dev, "xvclk");
 	if (IS_ERR(sensor->xclk)) {
 		dev_err(dev, "could not get xclk");
 		return PTR_ERR(sensor->xclk);
 	}
-
-	xclk_freq = clk_get_rate(sensor->xclk);
-	if (xclk_freq != 25000000) {
-		dev_err(dev, "Unsupported clock frequency: %u\n", xclk_freq);
-		return -EINVAL;
+	ret = clk_set_rate(sensor->xclk, OV5647_XVCLK_FREQ);
+	if (ret < 0) {
+		dev_err(dev, "Failed to set xvclk rate (24MHz)\n");
+		return ret;
 	}
+	if (clk_get_rate(sensor->xclk) != OV5647_XVCLK_FREQ)
+		dev_warn(dev, "xvclk mismatched, modes are based on 24MHz\n");
+
+	sensor->enable_gpio = devm_gpiod_get(dev, "enable", GPIOD_OUT_HIGH);
+	if (IS_ERR(sensor->enable_gpio))
+		dev_warn(dev, "Failed to get enable_gpios\n");
 
 	mutex_init(&sensor->lock);
 
@@ -884,7 +966,17 @@ static int ov5647_probe(struct i2c_client *client,
 
 	ret = ov5647_detect(sd);
 	if (ret < 0)
-		goto error;
+		dev_warn(dev, "Failed to detect device\n");
+
+	memset(facing, 0, sizeof(facing));
+	if (strcmp(sensor->module_facing, "back") == 0)
+		facing[0] = 'b';
+	else
+		facing[0] = 'f';
+
+	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
+		 sensor->module_index, facing,
+		 SENSOR_NAME, dev_name(sd->dev));
 
 	ret = v4l2_async_register_subdev(sd);
 	if (ret < 0)

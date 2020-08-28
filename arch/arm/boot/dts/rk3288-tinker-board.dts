@@ -592,84 +592,59 @@
 	wifi-supply = <&vcc_wl>;
 };
 
+&i2c2 {
+	status = "okay";
+	imx219: imx219@10 {
+	        compatible = "sony,imx219";
+	        status = "okay";
+	        reg = <0x10>;
+	        clocks = <&cru SCLK_VIP_OUT>;
+	        clock-names = "xvclk";
+
+	        pinctrl-names = "rockchip,camera_default";
+	        pinctrl-0 = <&isp_mipi>;
+
+	        enable-gpios = <&gpio2 RK_PA0 GPIO_ACTIVE_HIGH>;
+
+	        rockchip,camera-module-index = <0>;
+	        rockchip,camera-module-facing = "back";
+	        rockchip,camera-module-name = "RPi_v21";
+	        rockchip,camera-module-lens-name = "default";
+
+	        port {
+	                imx219_out: endpoint {
+	                        remote-endpoint = <&mipi_in_cam>;
+	                        data-lanes = <1 2>;
+	                };
+	        };
+	};
+
+	ov5647: ov5647@36 {
+	        compatible = "ovti,ov5647";
+	        status = "disabled";
+	        reg = <0x36>;
+	        clocks = <&cru SCLK_VIP_OUT>;
+	        clock-names = "xvclk";
+
+	        pinctrl-names = "rockchip,camera_default";
+	        pinctrl-0 = <&isp_mipi>;
+
+	        enable-gpios = <&gpio2 RK_PA0 GPIO_ACTIVE_HIGH>;
+
+	        rockchip,camera-module-index = <0>;
+	        rockchip,camera-module-facing = "back";
+	        rockchip,camera-module-name = "RPi_v13";
+	        rockchip,camera-module-lens-name = "default";
+
+	        port {
+	                ov5647_out: endpoint {
+	                };
+	        };
+	};
+};
+
 &i2c3 {
 	status = "okay";
-
-	vm149c: vm149c@0c {
-		compatible = "silicon touch,vm149c";
-		status = "okay";
-		reg = <0x0c>;
-		rockchip,camera-module-index = <0>;
-		rockchip,camera-module-facing = "back";
-	};
-
-	gc2145: gc2145@3c {
-		status = "disabled";
-		compatible = "galaxycore,gc2145";
-		reg = <0x3c>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&cif_dvp_d2d9>;
-
-		/* reset-gpios = <&gpio7 5 GPIO_ACTIVE_LOW>; */
-
-		/* pwdn gpio:
-		 * for cam_para_out1: <&gpio2 14 GPIO_ACTIVE_HIGHT>
-		 * for cam_mipi_out1(txrx1): <&gpio7 4 GPIO_ACTIVE_HIGH>
-		 */
-		pwdn-gpios = <&gpio7 4 GPIO_ACTIVE_HIGH>;
-		rockchip,camera-module-index = <1>;
-		rockchip,camera-module-facing = "back";
-		rockchip,camera-module-name = "CMK-OT1055-FG1";
-		rockchip,camera-module-lens-name = "NC";
-
-		clocks = <&cru SCLK_VIP_OUT>;
-		clock-names = "xvclk";
-
-		port {
-			/* Parallel bus endpoint */
-			/* cam_para_out1: endpoint {
-			 *	remote-endpoint = <&cif_para_in>;
-			 *	bus-width = <8>;
-			 *	hsync-active = <1>;
-			 *	vsync-active = <0>;
-			 * };
-			 */
-
-			/* MIPI CSI-2 endpoint */
-			cam_mipi_out1: endpoint {
-				remote-endpoint = <&mipi_sensor_input>;
-				data-lanes = <1>;
-				clock-lanes = <0>;
-				clock-noncontinuous;
-			};
-		};
-	};
-
-	ov13850: ov13850@10 {
-		compatible = "ovti,ov13850";
-		status = "okay";
-		reg = <0x10>;
-		clocks = <&cru SCLK_VIP_OUT>;
-		clock-names = "xvclk";
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&isp_mipi>;
-
-		reset-gpios = <&gpio7 21 GPIO_ACTIVE_HIGH>;
-		pwdn-gpios = <&gpio2 15 GPIO_ACTIVE_HIGH>;
-		rockchip,camera-module-index = <0>;
-		rockchip,camera-module-facing = "back";
-		rockchip,camera-module-name = "CMK-CT0116";
-		rockchip,camera-module-lens-name = "Largan-50013A1";
-		lens-focus = <&vm149c>;
-
-		port {
-			cam_out: endpoint {
-				remote-endpoint = <&mipi_in_cam>;
-				data-lanes = <1 2>;
-			};
-		};
-	};
 
 	tinker_mcu: tinker_mcu@45 {
 		compatible = "tinker_mcu";
@@ -697,7 +672,7 @@
 			reg = <0>;
 
 			mipi_in_cam: endpoint {
-				remote-endpoint = <&cam_out>;
+				remote-endpoint = <&imx219_out>;
 				data-lanes = <1 2>;
 			};
 		};
@@ -722,8 +697,6 @@
 		port@0 {
 			reg = <0>;
 			mipi_sensor_input: endpoint {
-				remote-endpoint = <&cam_mipi_out1>;
-				data-lanes = <1>;
 			};
 		};
 
