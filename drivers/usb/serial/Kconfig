@@ -670,6 +670,16 @@ config USB_SERIAL_XSENS_MT
 	  To compile this driver as a module, choose M here: the
 	  module will be called xsens_mt.
 
+config USB_SERIAL_CH934X
+	tristate "USB Driver for USB to Serial Chip CH934X"
+	help
+	  Say Y here if you want to use CH934X driver.
+
+	  This driver supports USB to serial chip CH934X.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ch934x.
+
 config USB_SERIAL_WISHBONE
 	tristate "USB-Wishbone adapter interface driver"
 	help
