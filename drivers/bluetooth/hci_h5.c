@@ -30,6 +30,10 @@
 
 #include "hci_uart.h"
 
+#ifdef BTCOEX
+#include "rtk_coex.h"
+#endif
+
 #define HCI_3WIRE_ACK_PKT	0
 #define HCI_3WIRE_LINK_PKT	15
 
@@ -192,7 +196,7 @@ static void h5_peer_reset(struct hci_uart *hu)
 static int h5_open(struct hci_uart *hu)
 {
 	struct h5 *h5;
-	const unsigned char sync[] = { 0x01, 0x7e };
+	/* const unsigned char sync[] = { 0x01, 0x7e }; */
 
 	BT_DBG("hu %p", hu);
 
@@ -214,11 +218,16 @@ static int h5_open(struct hci_uart *hu)
 
 	h5->tx_win = H5_TX_WIN_MAX;
 
-	set_bit(HCI_UART_INIT_PENDING, &hu->hdev_flags);
+	/* set_bit(HCI_UART_INIT_PENDING, &hu->hdev_flags); */
+
+	/* Firmware was already download by userspace app rtk_hciattach */
+	h5->state = H5_ACTIVE;
+	hci_uart_init_ready(hu);
 
 	/* Send initial sync request */
-	h5_link_control(hu, sync, sizeof(sync));
-	mod_timer(&h5->timer, jiffies + H5_SYNC_TIMEOUT);
+	/* h5_link_control(hu, sync, sizeof(sync));
+	 * mod_timer(&h5->timer, jiffies + H5_SYNC_TIMEOUT);
+	 */
 
 	return 0;
 }
@@ -365,6 +374,16 @@ static void h5_complete_rx_pkt(struct hci_uart *hu)
 		/* Remove Three-wire header */
 		skb_pull(h5->rx_skb, 4);
 
+#ifdef BTCOEX
+		if (bt_cb(h5->rx_skb)->pkt_type == HCI_EVENT_PKT)
+			rtk_btcoex_parse_event(h5->rx_skb->data,
+					       h5->rx_skb->len);
+
+		if (bt_cb(h5->rx_skb)->pkt_type == HCI_ACLDATA_PKT)
+			rtk_btcoex_parse_l2cap_data_rx(h5->rx_skb->data,
+						       h5->rx_skb->len);
+#endif
+
 		hci_recv_frame(hu->hdev, h5->rx_skb);
 		h5->rx_skb = NULL;
 
@@ -380,6 +399,11 @@ static void h5_complete_rx_pkt(struct hci_uart *hu)
 
 static int h5_rx_crc(struct hci_uart *hu, unsigned char c)
 {
+	struct h5 *h5 = hu->priv;
+
+	/* TODO: crc check */
+	skb_trim(h5->rx_skb, h5->rx_skb->len - 2);
+
 	h5_complete_rx_pkt(hu);
 
 	return 0;

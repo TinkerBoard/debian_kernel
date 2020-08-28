@@ -27,6 +27,8 @@
 #define N_HCI	15
 #endif
 
+#define BTCOEX
+
 /* Ioctls */
 #define HCIUARTSETPROTO		_IOW('U', 200, int)
 #define HCIUARTGETPROTO		_IOR('U', 201, int)
