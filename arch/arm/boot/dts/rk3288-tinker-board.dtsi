@@ -421,6 +421,14 @@
 		pmic_int: pmic-int {
 			rockchip,pins = <RK_GPIO0 4 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
+
+		dvs_1: dvs-1 {
+			rockchip,pins = <RK_GPIO0 11 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+
+		dvs_2: dvs-2 {
+			rockchip,pins = <RK_GPIO0 12 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
 	};
 
 	sdio-pwrseq {
