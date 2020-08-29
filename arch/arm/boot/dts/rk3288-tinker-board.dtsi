@@ -155,6 +155,14 @@
 		vin-supply = <&vcc_io>;
 	};
 
+	vcc_flash: flash-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_flash";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc_io>;
+	};
+
 	wireless-bluetooth {
 		compatible = "bluetooth-platdata";
 		uart_rts_gpios = <&gpio4 19 GPIO_ACTIVE_LOW>;
@@ -194,7 +202,7 @@
 };
 
 &gmac {
-	phy-supply = <&vcc_phy>;
+	phy-supply = <&vcc33_lan>;
 	phy-mode = "rgmii";
 	clock_in_out = "input";
 	snps,reset-gpio = <&gpio4 7 0>;
@@ -217,7 +225,7 @@
 };
 
 &saradc {
-	vref-supply = <&vccadc_ref>;
+	vref-supply = <&vcc18_ldo1>;
 	status = "okay";
 };
 
@@ -236,7 +244,7 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdmmc_clk &sdmmc_cmd &sdmmc_cd &sdmmc_bus4>;
 	status = "okay";
-	vmmc-supply = <&vcc_sd>;
+	vmmc-supply = <&vcc33_sd>;
 	vqmmc-supply = <&vccio_sd>;
 	supports-sd;
 };
