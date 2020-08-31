@@ -65,45 +65,22 @@
 		};
 	};
 
-	sound: sound {
-		status = "disabled";
+	sound-simple-card {
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
-		simple-audio-card,name = "rockchip,rt5640-codec";
+		simple-audio-card,name = "rockchip,miniarm-codec";
 		simple-audio-card,mclk-fs = <512>;
-		simple-audio-card,widgets =
-			"Microphone", "Microphone Jack",
-			"Headphone", "Headphone Jack";
-		simple-audio-card,routing =
-			"MIC1", "Microphone Jack",
-			"MIC2", "Microphone Jack",
-			"Microphone Jack", "micbias1",
-			"Headphone Jack", "HPOL",
-			"Headphone Jack", "HPOR";
 
-		simple-audio-card,dai-link@0 {
-			format = "i2s";
-			cpu {
-				sound-dai = <&i2s>;
-			};
-
-			codec {
-				sound-dai = <&rt5640>;
-			};
+		simple-audio-card,cpu {
+			sound-dai = <&i2s>;
 		};
 
-		simple-audio-card,dai-link@1 {
-			format = "i2s";
-			cpu {
-				sound-dai = <&i2s>;
-			};
-
-			codec {
-				sound-dai = <&hdmi>;
-			};
+		simple-audio-card,codec {
+			sound-dai = <&hdmi>;
 		};
 	};
 
+/*
 	hdmi_analog_sound: hdmi-analog-sound {
 		compatible = "rockchip,rk3288-hdmi-analog",
 			     "rockchip,rk3368-hdmi-analog";
@@ -121,6 +98,7 @@
 			"Headphone Jack", "HPOR";
 		status = "disabled";
 	};
+*/
 
 	ext_gmac: external-gmac-clock {
 		compatible = "fixed-clock";
@@ -286,22 +264,6 @@
 
 &i2c0 {
 	status = "okay";
-};
-
-&i2c2 {
-	status = "okay";
-
-	rt5640: rt5640@1c {
-		#sound-dai-cells = <0>;
-		compatible = "realtek,rt5640";
-		reg = <0x1c>;
-		clocks = <&cru SCLK_I2S0_OUT>;
-		clock-names = "mclk";
-		interrupt-parent = <&gpio6>;
-		interrupts = <7 IRQ_TYPE_EDGE_FALLING>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&i2s0_mclk>;
-	};
 };
 
 &i2c3 {

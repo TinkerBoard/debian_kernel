@@ -739,10 +739,6 @@
 	status = "okay";
 };
 
-&sound {
-	status = "okay";
-};
-
 &pwm1 {
 	status = "okay";
 };
