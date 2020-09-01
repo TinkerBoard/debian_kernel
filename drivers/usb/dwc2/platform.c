@@ -745,8 +745,8 @@ static int __maybe_unused dwc2_suspend(struct device *dev)
 	if (dwc2_is_device_mode(dwc2))
 		dwc2_hsotg_suspend(dwc2);
 
-	if (dwc2->ll_hw_enabled)
-		ret = __dwc2_lowlevel_hw_disable(dwc2);
+	//if (dwc2->ll_hw_enabled)
+	//	ret = __dwc2_lowlevel_hw_disable(dwc2);
 
 	return ret;
 }
@@ -757,11 +757,11 @@ static int __maybe_unused dwc2_resume(struct device *dev)
 	unsigned long flags;
 	int ret = 0;
 
-	if (dwc2->ll_hw_enabled) {
-		ret = __dwc2_lowlevel_hw_enable(dwc2);
-		if (ret)
-			return ret;
-	}
+	//if (dwc2->ll_hw_enabled) {
+	//	ret = __dwc2_lowlevel_hw_enable(dwc2);
+	//	if (ret)
+	//		return ret;
+	//}
 
 	/* Stop hcd if dr_mode is host and PD is power off when suspend */
 	if (dwc2->op_state == OTG_STATE_A_HOST && dwc2_is_device_mode(dwc2)) {
