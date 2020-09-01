@@ -1,0 +1,10 @@
+#
+# boardinfo drivers
+#
+# When adding new entries keep the list in alphabetical order
+
+config BOARDINFO
+	tristate "tinker boardinfo"
+	default y
+	help
+	  Driver to set board information.

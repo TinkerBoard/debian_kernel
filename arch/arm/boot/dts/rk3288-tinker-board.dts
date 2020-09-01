@@ -219,6 +219,22 @@
 			linux,default-trigger="default-off";
 		};
 	};
+
+	board_info: board-info {
+		compatible = "board-info";
+
+		hw-id0 = <&gpio2 RK_PB0 GPIO_ACTIVE_HIGH>;
+		hw-id1 = <&gpio2 RK_PB1 GPIO_ACTIVE_HIGH>;
+		hw-id2 = <&gpio2 RK_PB2 GPIO_ACTIVE_HIGH>;
+
+		pid-id0 = <&gpio2 RK_PA1 GPIO_ACTIVE_HIGH>;
+		pid-id1 = <&gpio2 RK_PA2 GPIO_ACTIVE_HIGH>;
+		pid-id2 = <&gpio2 RK_PA3 GPIO_ACTIVE_HIGH>;
+
+		ddr-id0 = <&gpio2 RK_PB4 GPIO_ACTIVE_HIGH>;
+		ddr-id1 = <&gpio2 RK_PB5 GPIO_ACTIVE_HIGH>;
+		ddr-id2 = <&gpio2 RK_PB6 GPIO_ACTIVE_HIGH>;
+	};
 };
 
 &cif {
