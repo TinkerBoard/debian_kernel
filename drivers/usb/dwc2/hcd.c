@@ -4356,11 +4356,13 @@ void dwc2_host_complete(struct dwc2_hsotg *hsotg, struct dwc2_qtd *qtd,
 
 
 	if (usb_pipetype(urb->pipe) == PIPE_ISOCHRONOUS) {
+		urb->actual_length = 0;
 		urb->error_count = dwc2_hcd_urb_get_error_count(qtd->urb);
 		for (i = 0; i < urb->number_of_packets; ++i) {
 			urb->iso_frame_desc[i].actual_length =
 				dwc2_hcd_urb_get_iso_desc_actual_length(
 						qtd->urb, i);
+			urb->actual_length += urb->iso_frame_desc[i].actual_length;
 			urb->iso_frame_desc[i].status =
 				dwc2_hcd_urb_get_iso_desc_status(qtd->urb, i);
 		}
