@@ -678,7 +678,7 @@ extern struct backlight_device * tinker_mcu_ili9881c_get_backlightdev(int dsi_id
 extern int tinker_mcu_ili9881c_set_bright(int bright, int dsi_id);
 extern int tinker_mcu_ili9881c_screen_power_up(int dsi_id);
 extern int tinker_mcu_ili9881c_screen_power_off(int dsi_id);
-//extern void tinker_ft5406_start_polling(int dsi_id);
+extern void tinker_ft5406_start_polling(int dsi_id);
 
 static inline struct ili9881c *panel_to_ili9881c(struct drm_panel *panel)
 {
@@ -837,7 +837,7 @@ static int ili9881c_prepare(struct drm_panel *panel)
 	msleep(10);
 	pr_info("%s-\n", __func__);
 
-	//tinker_ft5406_start_polling(ctx->dsi_id);
+	tinker_ft5406_start_polling(ctx->dsi_id);
 
 	ctx->enable = true;
 	return 0;

@@ -660,6 +660,11 @@
 		compatible = "tinker_mcu_ili9881c";
 		reg = <0x36>;
 	};
+
+	tinker_ft5406: tinker_ft5406@38 {
+		compatible = "tinker_ft5406";
+		reg = <0x38>;
+	};
 };
 
 &isp_mmu {
