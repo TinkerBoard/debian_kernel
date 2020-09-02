@@ -200,6 +200,25 @@
 		clock-output-names = "xin32k";
 		#clock-cells = <0>;
 	};
+
+	gpio-leds {
+		compatible = "gpio-leds";
+
+		pwr-led {
+			gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "default-on";
+		};
+
+		act-led {
+			gpios=<&gpio1 24 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger="mmc0";
+		};
+
+		rsv-led {
+			gpios=<&gpio1 25 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger="default-off";
+		};
+	};
 };
 
 &cif {
