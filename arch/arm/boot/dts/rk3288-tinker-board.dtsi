@@ -101,6 +101,10 @@
 	};
 */
 
+	sound-ext-card {
+		status = "disabled";
+	};
+
 	ext_gmac: external-gmac-clock {
 		compatible = "fixed-clock";
 		clock-frequency = <125000000>;
