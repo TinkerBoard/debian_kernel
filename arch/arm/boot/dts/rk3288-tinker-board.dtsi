@@ -280,7 +280,7 @@
 };
 
 &i2c4 {
-	status = "okay";
+	status = "disabled";
 	clock-frequency = <400000>;
 
 	gsl3673@40 {
@@ -296,7 +296,7 @@
 
 &i2s {
 	#sound-dai-cells = <0>;
-	status = "okay";
+	status = "disabled";
 };
 
 &io_domains {
@@ -350,8 +350,24 @@
 	status = "okay";
 };
 
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_xfer>, <&uart1_cts>, <&uart1_rts>;
+	status = "disabled";
+};
+
 &uart2 {
 	status = "disabled";
+};
+
+&uart3 {
+        status = "disabled";
+};
+
+&uart4 {
+        pinctrl-names = "default";
+        pinctrl-0 = <&uart4_xfer>, <&uart4_cts>, <&uart4_rts>;
+        status = "disabled";
 };
 
 &vpu_service {

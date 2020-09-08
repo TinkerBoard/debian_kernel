@@ -183,7 +183,6 @@
 		regulator-name = "vcc18_dvp";
 		regulator-min-microvolt = <1800000>;
 		regulator-max-microvolt = <1800000>;
-		gpio = <&gpio0 RK_PC1 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 		regulator-always-on;
 		vin-supply = <&vcc_io>;
@@ -589,7 +588,7 @@
 };
 
 &i2c1 {
-	status = "okay";
+	status = "disabled";
 	clock-frequency = <400000>;
 
 	mpu6050@68 {
@@ -712,6 +711,45 @@
 	};
 };
 
+&spi0 {
+        status = "disabled";
+        max-freq = <50000000>;
+
+        spidev@0 {
+                compatible = "rockchip,spi_tinker";
+                reg = <0>;
+                spi-max-frequency = <50000000>;
+                spi-cpha = <1>;
+        };
+
+        spidev@1 {
+                compatible = "rockchip,spi_tinker";
+                reg = <1>;
+                spi-max-frequency = <50000000>;
+                spi-cpha = <1>;
+        };
+};
+
+&spi2 {
+        status = "disabled";
+        max-freq = <50000000>;
+
+        spidev@0 {
+                compatible = "rockchip,spi_tinker";
+                reg = <0>;
+                spi-max-frequency = <50000000>;
+                spi-cpha = <1>;
+        };
+
+        spidev@1 {
+                compatible = "rockchip,spi_tinker";
+                reg = <1>;
+                spi-max-frequency = <50000000>;
+                spi-cpha = <1>;
+        };
+};
+
+
 &isp_mmu {
 	status = "okay";
 };
@@ -799,6 +837,17 @@
 };
 
 &pinctrl {
+        pinctrl-names = "default";
+        pinctrl-0 = <&gpio_init>;
+
+	gpio_init_config {
+		gpio_init: gpio-init {
+                        rockchip,pins = 
+				<7 22 RK_FUNC_GPIO &pcfg_pull_none>,
+				<7 23 RK_FUNC_GPIO &pcfg_pull_none>;
+		};	
+	};
+
 	backlight {
 		bl_en: bl-en {
 			rockchip,pins = <7 2 RK_FUNC_GPIO &pcfg_pull_none>;
@@ -821,4 +870,5 @@
 &fiq_debugger {
 	rockchip,serial-id = <3>;
 	pinctrl-0 = <&uart3_xfer>;
+	status = "disabled";
 };
