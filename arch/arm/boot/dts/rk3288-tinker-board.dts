@@ -160,7 +160,7 @@
 		clocks = <&rk808 1>;
 		clock-names = "ext_clock";
 		pinctrl-names = "default";
-		pinctrl-0 = <&wifi_enable_h>;
+		pinctrl-0 = <&chip_enable_h>, <&wifi_enable_h>;
 
 		/*
 		 * On the module itself this is one of these (depending
@@ -168,7 +168,7 @@
 		 * - SDIO_RESET_L_WL_REG_ON
 		 * - PDN (power down when low)
 		 */
-		reset-gpios = <&gpio4 28 GPIO_ACTIVE_LOW>;
+		reset-gpios = <&gpio4 28 GPIO_ACTIVE_LOW>, <&gpio4 27 GPIO_ACTIVE_LOW>;
 	};
 
 	wireless-bluetooth {

@@ -450,6 +450,9 @@
 		wifi_enable_h: wifi-enable-h {
 			rockchip,pins = <4 28 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
+		chip_enable_h: chip-enable-h {
+			rockchip,pins = <4 27 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
 	};
 
 	sdmmc {
