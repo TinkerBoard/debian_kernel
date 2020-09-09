@@ -98,6 +98,8 @@ static unsigned write_timeout = 25;
 module_param(write_timeout, uint, 0);
 MODULE_PARM_DESC(write_timeout, "Time (in ms) to try writes (default 25)");
 
+static struct kobject *eeprom_kobj;
+
 #define AT24_SIZE_BYTELEN 5
 #define AT24_SIZE_FLAGS 8
 
@@ -296,6 +298,13 @@ static ssize_t at24_bin_read(struct file *filp, struct kobject *kobj,
 	return at24_read(at24, buf, off, count);
 }
 
+void at24_read_eeprom(char *buf, loff_t off, size_t count)
+{
+	struct at24_data *at24;
+
+	at24 = dev_get_drvdata(container_of(eeprom_kobj, struct device, kobj));
+	at24_read(at24, buf, off, count);
+}
 
 /*
  * Note that if the hardware write-protect pin is pulled high, the whole
@@ -637,6 +646,7 @@ static int at24_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	if (err)
 		goto err_clients;
 
+	eeprom_kobj = &client->dev.kobj;
 	i2c_set_clientdata(client, at24);
 
 	dev_info(&client->dev, "%zu byte %s EEPROM, %s, %u bytes/write\n",
