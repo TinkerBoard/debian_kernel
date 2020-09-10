@@ -27,9 +27,10 @@ struct mmc_pwrseq_emmc {
 
 static void __mmc_pwrseq_emmc_reset(struct mmc_pwrseq_emmc *pwrseq)
 {
-	gpiod_set_value(pwrseq->reset_gpio, 1);
-	udelay(1);
+	printk("%s: Enter\n", __func__);
 	gpiod_set_value(pwrseq->reset_gpio, 0);
+	udelay(1);
+	gpiod_set_value(pwrseq->reset_gpio, 1);
 	udelay(200);
 }
 

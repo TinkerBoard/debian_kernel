@@ -148,6 +148,13 @@
 		};
 	};
 
+	sdmmc_pwrseq: sdmmc-pwrseq {
+		compatible = "mmc-pwrseq-emmc";
+		pinctrl-0 = <&sdmmc_reset>;
+		pinctrl-names = "default";
+		reset-gpios = <&gpio6 RK_PA7 GPIO_ACTIVE_HIGH>;
+	};
+
 	sdio_pwrseq: sdio-pwrseq {
 		compatible = "mmc-pwrseq-simple";
 		clocks = <&rk808 1>;
