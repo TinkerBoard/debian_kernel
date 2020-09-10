@@ -13,7 +13,6 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/dw_mmc.h>
 #include <linux/of_address.h>
-#include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 
 #include "dw_mmc.h"
@@ -290,15 +289,6 @@ static int dw_mci_rockchip_probe(struct platform_device *pdev)
 	return dw_mci_pltfm_register(pdev, drv_data);
 }
 
-static void dw_mci_rockchip_platfm_shutdown(struct platform_device *pdev)
-{
-	struct dw_mci *host = platform_get_drvdata(pdev);
-	struct mmc_host *mmc = host->cur_slot->mmc;
-
-	if (!IS_ERR(mmc->supply.vqmmc))
-		regulator_set_voltage(mmc->supply.vqmmc, 3000000, 3300000);
-}
-
 #ifdef CONFIG_PM_SLEEP
 static int dw_mci_rockchip_suspend(struct device *dev)
 {
@@ -322,7 +312,6 @@ static SIMPLE_DEV_PM_OPS(dw_mci_rockchip_pmops,
 static struct platform_driver dw_mci_rockchip_pltfm_driver = {
 	.probe		= dw_mci_rockchip_probe,
 	.remove		= dw_mci_pltfm_remove,
-	.shutdown	= dw_mci_rockchip_platfm_shutdown,
 	.driver		= {
 		.name		= "dwmmc_rockchip",
 		.of_match_table	= dw_mci_rockchip_match,
