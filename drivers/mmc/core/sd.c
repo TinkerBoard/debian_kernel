@@ -15,6 +15,7 @@
 #include <linux/slab.h>
 #include <linux/stat.h>
 #include <linux/pm_runtime.h>
+#include <linux/regulator/consumer.h>
 
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
@@ -1198,6 +1199,10 @@ static int _mmc_sd_shutdown(struct mmc_host *host)
 	 * running system image.
 	 */
 	if (host->restrict_caps & RESTRICT_CARD_TYPE_EMMC) {
+		if (!IS_ERR(host->supply.vmmc)){
+			err = regulator_enable(host->supply.vmmc);
+			pr_info("Enable SD card vmmc, err=%d\n", err);
+		}
 		host->ios.signal_voltage = MMC_SIGNAL_VOLTAGE_330;
 		host->ios.vdd = fls(host->ocr_avail) - 1;
 		mmc_regulator_set_vqmmc(host, &host->ios);
