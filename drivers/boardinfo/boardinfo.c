@@ -54,6 +54,8 @@ static int info_show(struct seq_file *m, void *v)
 
 	if (pid == 0)
 		boardinfo = "Tinker Board S";
+	else if (pid == 1)
+		boardinfo = "Tinker Board S/HV";
 	else if (pid == 4)
 		boardinfo = "Tinker R/BR";
 	else if (pid == 7)
