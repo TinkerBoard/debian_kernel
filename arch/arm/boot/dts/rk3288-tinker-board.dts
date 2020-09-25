@@ -46,7 +46,7 @@
 	compatible = "rockchip,rk3288-evb-rk808-linux", "rockchip,rk3288";
 
 	chosen {
-		bootargs = "console=tty0  earlyprintk console=ttyFIQ0 rw rootfstype=ext4 rootwait";
+		bootargs = "console=ttyFIQ0 rw rootfstype=ext4 rootwait";
 	};
 
 	backlight: backlight {
