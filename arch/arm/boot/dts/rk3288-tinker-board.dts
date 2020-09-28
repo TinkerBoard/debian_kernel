@@ -829,7 +829,7 @@
 };
 
 &route_hdmi {
-	status = "okay";
+	status = "disabled";
 };
 
 &pwm1 {
