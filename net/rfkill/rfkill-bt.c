@@ -675,7 +675,7 @@ static int rfkill_rk_probe(struct platform_device *pdev)
     }
     if (gpio_is_valid(pdata->reset_gpio.io))
     {
-        gpio_direction_output(pdata->reset_gpio.io, !pdata->reset_gpio.enable);
+        gpio_direction_output(pdata->reset_gpio.io, pdata->reset_gpio.enable);
     }
 
 	platform_set_drvdata(pdev, rfkill);
