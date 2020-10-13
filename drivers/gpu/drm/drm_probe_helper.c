@@ -59,6 +59,7 @@ static bool drm_kms_helper_poll = true;
 static bool drm_iex_monitor = false;
 static bool drm_acer_kg221q_monitor = false;
 static bool drm_asus_vz229h_monitor = false;
+static bool drm_eve_vgg804838_panel = false;
 module_param_named(poll, drm_kms_helper_poll, bool, 0600);
 
 static enum drm_mode_status
@@ -232,6 +233,13 @@ static int drm_helper_probe_single_connector_modes_merge_bits(struct drm_connect
 	if (connector->stereo_allowed)
 		mode_flags |= DRM_MODE_FLAG_3D_MASK;
 
+	if (!strcmp(connector->name, "HDMI-A-1")) {
+		if( (*connector_funcs->check_edid)(connector) ) {
+			edid_manufacturer = (struct edid *) connector->edid_blob_ptr->data;
+			drm_eve_vgg804838_panel = drm_dect_eve_vgg804838_edid(edid_manufacturer);
+		}
+	}
+
 	list_for_each_entry(mode, &connector->modes, head) {
 		if (mode->status == MODE_OK)
 			mode->status = drm_mode_validate_basic(mode);
@@ -297,6 +305,12 @@ bool detect_asus_vz229h_monitor(void)
 	return drm_asus_vz229h_monitor;
 }
 EXPORT_SYMBOL(detect_asus_vz229h_monitor);
+
+bool detect_eve_vgg804838_panel (void)
+{
+	return drm_eve_vgg804838_panel;
+}
+EXPORT_SYMBOL(detect_eve_vgg804838_panel);
 
 /**
  * drm_helper_probe_single_connector_modes - get complete set of display modes

@@ -1275,6 +1275,10 @@ static const u8 acer_kg221q_edid[] = {
 static const u8 asus_vz229h_edid[] = {
 	0x06, 0xB3, 0xCC, 0x22
 };
+
+static const u8 eve_vgg804838_edid[] = {
+	0x16, 0xC5, 0x01, 0x10
+};
 /**
  * drm_edid_header_is_valid - sanity check the header of the base EDID block
  * @raw_edid: pointer to raw base EDID block
@@ -1340,6 +1344,20 @@ bool drm_dect_asus_vz229h_edid(struct edid *edid)
 }
 EXPORT_SYMBOL(drm_dect_asus_vz229h_edid);
 
+bool drm_dect_eve_vgg804838_edid(struct edid *edid)
+{
+	int i, score = 0;
+	u8 *raw_edid = (u8 *)edid;
+	for (i = 0; i < sizeof(eve_vgg804838_edid); i++) {
+		if (raw_edid[8+i] == eve_vgg804838_edid[i])
+			score++;
+	}
+	if (score == 4)
+		return true;
+	else
+		return false;
+}
+EXPORT_SYMBOL(drm_dect_eve_vgg804838_edid);
 
 static int edid_fixup __read_mostly = 6;
 module_param_named(edid_fixup, edid_fixup, int, 0400);
