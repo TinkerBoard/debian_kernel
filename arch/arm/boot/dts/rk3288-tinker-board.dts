@@ -200,6 +200,12 @@
 		regulator-boot-on;
 	};
 
+        rk3288_gpiomem: rk3288-gpiomem {
+                compatible = "rockchip,rk3288-gpiomem";
+                reg = <0x0 0xff750000 0x0 0x1000>;
+                status = "okay";
+        };
+
 	xin32k: xin32k {
 		compatible = "fixed-clock";
 		clock-frequency = <32768>;
