@@ -2305,8 +2305,10 @@ vop_crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode,
 	int request_clock = mode->clock;
 	int clock;
 	bool eve_vgg804838_panel = false;
+	bool dwe2100_panel = false;
 
 	eve_vgg804838_panel = detect_eve_vgg804838_panel();
+	dwe2100_panel = detect_dwe2100_panel();
 
 	if (mode->clock >= 300000)
 		return MODE_CLOCK_RANGE;
@@ -2329,7 +2331,7 @@ vop_crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode,
 	if (output_type == DRM_MODE_CONNECTOR_HDMIA ||
 	    output_type == DRM_MODE_CONNECTOR_DisplayPort)
 		if (clock != request_clock) {
-			if(request_clock == 33260 && eve_vgg804838_panel) {
+			if((request_clock == 33260 && eve_vgg804838_panel) || (request_clock == 33900 && dwe2100_panel)) {
 				pr_err("%s: don't block pixel clock %d KHz", __func__, request_clock);
 				return MODE_OK;
 			}

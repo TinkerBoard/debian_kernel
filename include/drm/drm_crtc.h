@@ -2034,6 +2034,8 @@ extern bool drm_dect_acer_kg221q_edid(struct edid *edid);
 extern bool drm_dect_asus_vz229h_edid(struct edid *edid);
 extern bool drm_dect_eve_vgg804838_edid(struct edid *edid);
 extern bool detect_eve_vgg804838_panel(void);
+extern bool drm_dect_dwe2100_edid(struct edid *edid);
+extern bool detect_dwe2100_panel(void);
 extern bool drm_edid_block_valid(u8 *raw_edid, int block, bool print_bad_edid,
 				 bool *edid_corrupt);
 extern bool drm_edid_is_valid(struct edid *edid);

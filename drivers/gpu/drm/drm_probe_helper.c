@@ -60,6 +60,7 @@ static bool drm_iex_monitor = false;
 static bool drm_acer_kg221q_monitor = false;
 static bool drm_asus_vz229h_monitor = false;
 static bool drm_eve_vgg804838_panel = false;
+static bool drm_dwe2100_panel = false;
 module_param_named(poll, drm_kms_helper_poll, bool, 0600);
 
 static enum drm_mode_status
@@ -237,6 +238,7 @@ static int drm_helper_probe_single_connector_modes_merge_bits(struct drm_connect
 		if( (*connector_funcs->check_edid)(connector) ) {
 			edid_manufacturer = (struct edid *) connector->edid_blob_ptr->data;
 			drm_eve_vgg804838_panel = drm_dect_eve_vgg804838_edid(edid_manufacturer);
+			drm_dwe2100_panel = drm_dect_dwe2100_edid(edid_manufacturer);
 		}
 	}
 
@@ -311,6 +313,12 @@ bool detect_eve_vgg804838_panel (void)
 	return drm_eve_vgg804838_panel;
 }
 EXPORT_SYMBOL(detect_eve_vgg804838_panel);
+
+bool detect_dwe2100_panel (void)
+{
+	return drm_dwe2100_panel;
+}
+EXPORT_SYMBOL(detect_dwe2100_panel);
 
 /**
  * drm_helper_probe_single_connector_modes - get complete set of display modes
