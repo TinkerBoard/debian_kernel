@@ -58,6 +58,9 @@
 #define RK_HDMI_COLORIMETRY_BT2020	(HDMI_COLORIMETRY_EXTENDED + \
 					 HDMI_EXTENDED_COLORIMETRY_BT2020)
 
+bool hdmi_i2s_audio_disable = false;
+EXPORT_SYMBOL(hdmi_i2s_audio_disable);
+
 /* HDMI output pixel format */
 enum drm_hdmi_output_type {
 	DRM_HDMI_OUTPUT_DEFAULT_RGB, /* default RGB */
@@ -385,6 +388,9 @@ static int rockchip_hdmi_parse_dt(struct rockchip_hdmi *hdmi)
 	struct device_node *np = hdmi->dev->of_node;
 	int ret, val, phy_table_size;
 	u32 *phy_config;
+
+	hdmi_i2s_audio_disable = of_property_read_bool(np, "hdmi-i2s-audio-disable");
+	dev_info(hdmi->dev, "hdmi_i2s_audio_disable=%s\n", (hdmi_i2s_audio_disable ? "true" : "false"));
 
 	hdmi->regmap = syscon_regmap_lookup_by_phandle(np, "rockchip,grf");
 	if (IS_ERR(hdmi->regmap)) {
