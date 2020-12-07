@@ -343,15 +343,6 @@
 	};
 };
 
-&dfi {
-	status = "okay";
-};
-
-&dmc {
-	center-supply = <&vdd_log>;
-	status = "okay";
-};
-
 &edp {
 	status = "disabled";
 };
