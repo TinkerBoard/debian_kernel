@@ -31,6 +31,8 @@
 #include "rockchip_drm_drv.h"
 #include "rockchip_drm_vop.h"
 
+struct drm_bridge *sn65dsi_bridge;
+
 #define DRIVER_NAME    "dw-mipi-dsi"
 
 #define IS_DSI0(dsi)	((dsi)->id == 0)
@@ -828,7 +830,8 @@ static int dw_mipi_dsi_host_attach(struct mipi_dsi_host *host,
 	dsi->channel = device->channel;
 	dsi->format = device->format;
 	dsi->mode_flags = device->mode_flags;
-
+	if (dsi->client)
+		printk("dw_mipi_dsi_host_attach  dsi->client=%p name=%s full_name=%s\n", dsi->client, dsi->client->name, dsi->client->full_name);
 	printk("dw_mipi_dsi_host_attach mode_flags=%lx lanes=%u\n", dsi->mode_flags, dsi->lanes);
 
 	return 0;
@@ -917,6 +920,7 @@ static void dw_mipi_dsi_video_mode_config(struct dw_mipi_dsi *dsi)
 
 	regmap_write(dsi->regmap, DSI_VID_MODE_CFG, val);
 
+	printk("dw_mipi_dsi_video_mode_config dsi->mode_flags =0x%lx\n", dsi->mode_flags );
 	if (dsi->mode_flags & MIPI_DSI_CLOCK_NON_CONTINUOUS)
 		regmap_update_bits(dsi->regmap, DSI_LPCLK_CTRL,
 				   AUTO_CLKLANE_CTRL, AUTO_CLKLANE_CTRL);
@@ -990,6 +994,7 @@ static void dw_mipi_dsi_dpi_config(struct dw_mipi_dsi *dsi,
 		break;
 	}
 
+	printk("dw_mipi_dsi_dpi_config  mode->flags=0x%x dsi->format=0x%x\n", mode->flags, dsi->format);
 	if (mode->flags & DRM_MODE_FLAG_NVSYNC)
 		val |= VSYNC_ACTIVE_LOW;
 	if (mode->flags & DRM_MODE_FLAG_NHSYNC)
@@ -1032,6 +1037,7 @@ static u32 dw_mipi_dsi_get_hcomponent_lbcc(struct dw_mipi_dsi *dsi,
 {
 	u32 lbcc;
 
+	printk("dw_mipi_dsi_get_hcomponent_lbcc  dsi->lane_mbps=%u\n", dsi->lane_mbps);
 	lbcc = hcomponent * dsi->lane_mbps * MSEC_PER_SEC / 8;
 
 	if (dsi->mode.clock == 0)
@@ -1048,6 +1054,7 @@ static void dw_mipi_dsi_line_timer_config(struct dw_mipi_dsi *dsi)
 	htotal = mode->htotal;
 	hsa = mode->hsync_end - mode->hsync_start;
 	hbp = mode->htotal - mode->hsync_end;
+	printk("dw_mipi_dsi_line_timer_config htotal=%d hdisplay=%d hsync_start=%d hsync_end=%d\n", mode->htotal, mode->hdisplay, mode->hsync_start, mode->hsync_end);
 
 	lbcc = dw_mipi_dsi_get_hcomponent_lbcc(dsi, htotal);
 	regmap_write(dsi->regmap, DSI_VID_HLINE_TIME, lbcc);
@@ -1068,6 +1075,7 @@ static void dw_mipi_dsi_vertical_timing_config(struct dw_mipi_dsi *dsi)
 	vsa = mode->vsync_end - mode->vsync_start;
 	vfp = mode->vsync_start - mode->vdisplay;
 	vbp = mode->vtotal - mode->vsync_end;
+	printk("dw_mipi_dsi_line_timer_config vtotal=%d vdisplay=%d vsync_start=%d vsync_end=%d\n", mode->vtotal, mode->vdisplay, mode->vsync_start, mode->vsync_end);
 
 	regmap_write(dsi->regmap, DSI_VID_VACTIVE_LINES, vactive);
 	regmap_write(dsi->regmap, DSI_VID_VSA_LINES, vsa);
@@ -1077,6 +1085,7 @@ static void dw_mipi_dsi_vertical_timing_config(struct dw_mipi_dsi *dsi)
 
 static void dw_mipi_dsi_dphy_timing_config(struct dw_mipi_dsi *dsi)
 {
+	printk("dw_mipi_dsi_dphy_interface_config dsi->lanes=%u\n", dsi->lanes);
 	regmap_write(dsi->regmap, DSI_PHY_TMR_CFG, PHY_HS2LP_TIME(0x14) |
 		     PHY_LP2HS_TIME(0x10) | MAX_RD_TIME(10000));
 	regmap_write(dsi->regmap, DSI_PHY_TMR_LPCLK_CFG,
@@ -1220,6 +1229,9 @@ static void dw_mipi_dsi_pre_enable(struct dw_mipi_dsi *dsi)
 		dw_mipi_dsi_pre_enable(dsi->slave);
 }
 
+extern void sn65dsi84_bridge_enable(struct drm_bridge *bridge);
+extern  bool sn65dsi84_is_connected(void);
+
 static void dw_mipi_dsi_enable(struct dw_mipi_dsi *dsi)
 {
 	const struct drm_display_mode *mode = &dsi->mode;
@@ -1231,6 +1243,9 @@ static void dw_mipi_dsi_enable(struct dw_mipi_dsi *dsi)
 	 */
 	regmap_update_bits(dsi->regmap, DSI_LPCLK_CTRL,
 			   PHY_TXREQUESTCLKHS, PHY_TXREQUESTCLKHS);
+
+	if (sn65dsi84_is_connected() && sn65dsi_bridge)
+		sn65dsi84_bridge_enable(sn65dsi_bridge);
 
 	regmap_write(dsi->regmap, DSI_PWR_UP, RESET);
 
@@ -1276,6 +1291,7 @@ static void dw_mipi_dsi_encoder_enable(struct drm_encoder *encoder)
 	struct dw_mipi_dsi *dsi = encoder_to_dsi(encoder);
 	unsigned long lane_rate = dw_mipi_dsi_get_lane_rate(dsi);
 
+	printk("dw_mipi_dsi_encoder_enable\n");
 	if (dsi->dphy.phy)
 		dw_mipi_dsi_set_hs_clk(dsi, lane_rate);
 	else
@@ -1733,21 +1749,35 @@ static int dw_mipi_dsi_bind(struct device *dev, struct device *master,
 	struct drm_device *drm = data;
 	struct dw_mipi_dsi *dsi = dev_get_drvdata(dev);
 	int ret;
+	static int bind_retry = 0;
 
 #if defined(CONFIG_TINKER_MCU)
-	if(!tinker_mcu_is_connected(dsi->id) && !tinker_mcu_ili9881c_is_connected(dsi->id)) {
-		pr_info("dsi-%d panel isn't connected\n", dsi->id);
+	if(!tinker_mcu_is_connected(dsi->id) &&
+		!tinker_mcu_ili9881c_is_connected(dsi->id) &&
+		!sn65dsi84_is_connected()) {
+		pr_info("dsi-%d panel or sn65dsi8x isn't connected\n", dsi->id);
 		return 0;
 	} else {
-		pr_info("dsi-%d panel is connected\n", dsi->id);
+		pr_info("dsi-%d panel or sn65dsi8x is connected\n", dsi->id);
 	}
 #endif
-
+	if (dsi->client) {
+		printk("dw_mipi_dsi_bind  dsi->client=%p  name=%s full_name=%s\n", dsi->client, dsi->client->name, dsi->client->full_name);
+	}
+	printk("dw_mipi_dsi_bind  dsi->id=%d dsi->lanes =%d\n", dsi->id, dsi->lanes );
 	dsi->panel = of_drm_find_panel(dsi->client);
 	if (!dsi->panel) {
 		dsi->bridge = of_drm_find_bridge(dsi->client);
-		if (!dsi->bridge)
-			return -EPROBE_DEFER;
+		if (!dsi->bridge) {
+			if (bind_retry++ < 20) {
+				printk("dw_mipi_dsi_bind can not find bridge, return -EPROBE_DEFER\n");
+				return -EPROBE_DEFER;
+			} else {
+				printk("dw_mipi_dsi_bind can not find bridge, stop retry\n");
+				return 0;
+			}
+		}
+		sn65dsi_bridge = dsi->bridge;
 	}
 
 	if (dsi->id) {
@@ -1934,18 +1964,23 @@ static int dw_mipi_dsi_parse_dt(struct dw_mipi_dsi *dsi)
 	struct device_node *np = dev->of_node;
 	struct device_node *endpoint, *remote = NULL;
 
+
+	printk("dw_mipi_dsi_parse_dt+\n");
 	endpoint = of_graph_get_endpoint_by_regs(np, 1, -1);
 	if (endpoint) {
+		printk("dw_mipi_dsi_parse_dt  of_graph_get_endpoint_by_regs name=%s full_name=%s\n", endpoint->name, endpoint->full_name);
 		remote = of_graph_get_remote_port_parent(endpoint);
 		of_node_put(endpoint);
 		if (!remote) {
 			dev_err(dev, "no panel/bridge connected\n");
 			return -ENODEV;
 		}
+		printk("dw_mipi_dsi_parse_dt   of_graph_get_remote_port_parent name=%s full_name=%s\n", remote->name, remote->full_name);
 		of_node_put(remote);
 	}
 
 	dsi->client = remote;
+	printk("dw_mipi_dsi_parse_dt dsi->client=%p -\n", dsi->client);
 
 	return 0;
 }

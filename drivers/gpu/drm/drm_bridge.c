@@ -320,7 +320,8 @@ struct drm_bridge *of_drm_find_bridge(struct device_node *np)
 	mutex_lock(&bridge_lock);
 
 	list_for_each_entry(bridge, &bridge_list, list) {
-		if (bridge->of_node == np) {
+		printk("of_drm_find_bridge name=%s full_name=%s\n", bridge->of_node ->name, bridge->of_node ->full_name);
+		if ((bridge->of_node == np) /*|| (np==NULL)*/) {
 			mutex_unlock(&bridge_lock);
 			return bridge;
 		}

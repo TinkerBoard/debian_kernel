@@ -62,4 +62,6 @@ source "drivers/gpu/drm/bridge/analogix/Kconfig"
 
 source "drivers/gpu/drm/bridge/synopsys/Kconfig"
 
+source "drivers/gpu/drm/bridge/sn65dsi8x/Kconfig"
+
 endmenu
