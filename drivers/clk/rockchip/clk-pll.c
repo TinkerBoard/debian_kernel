@@ -28,6 +28,7 @@
 #include <linux/gcd.h>
 #include <linux/mfd/syscon.h>
 #include "clk.h"
+#include "../../../include/drm/drm_crtc.h"
 
 #define PLL_MODE_MASK		0x3
 #define PLL_MODE_SLOW		0x0
@@ -343,10 +344,12 @@ static const struct rockchip_pll_rate_table *rockchip_get_pll_settings(
 	bool iex_monitor = false;
 	bool acer_kg221q_monitor = false;
 	bool asus_vz229h_monitor = false;
+	bool dwe2100_panel = false;
 
 	iex_monitor = detect_iex_monitor();
 	acer_kg221q_monitor = detect_acer_kg221q_monitor();
 	asus_vz229h_monitor = detect_asus_vz229h_monitor();
+	dwe2100_panel = detect_dwe2100_panel();
 
 	for (i = 0; i < pll->rate_count; i++) {
 		if( (rate == 85750000) && !iex_monitor)
@@ -360,6 +363,8 @@ static const struct rockchip_pll_rate_table *rockchip_get_pll_settings(
 		if( (rate == 28320000) && asus_vz229h_monitor)
 			continue;
 		if( (rate == 31500000) && (rate_table[i].nr == 1) && !asus_vz229h_monitor)
+			continue;
+		if((rate == 33900000) && !dwe2100_panel)
 			continue;
 		if (rate == rate_table[i].rate) {
 			if (i < pll->sel) {
