@@ -2329,8 +2329,10 @@ vop_crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode,
 	if (mode->clock >= 300000)
 		return MODE_CLOCK_RANGE;
 
-	if (mode->hdisplay > vop_data->max_output.width)
-		return MODE_BAD_HVALUE;
+	if((output_type != DRM_MODE_CONNECTOR_HDMIA) || (mode->hdisplay > 3840) ) {
+		if (mode->hdisplay > vop_data->max_output.width)
+			return MODE_BAD_HVALUE;
+	}
 
 	if ((mode->flags & DRM_MODE_FLAG_INTERLACE) &&
 	    VOP_MAJOR(vop->version) == 3 &&
@@ -2347,7 +2349,7 @@ vop_crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode,
 	if (output_type == DRM_MODE_CONNECTOR_HDMIA ||
 	    output_type == DRM_MODE_CONNECTOR_DisplayPort)
 		if (clock != request_clock) {
-			if((request_clock == 33260 && eve_vgg804838_panel) || (request_clock == 33900 && dwe2100_panel)) {
+			if((request_clock == 33260 && eve_vgg804838_panel) || (request_clock == 33900 && dwe2100_panel) || (request_clock == 241500)) {
 				pr_err("%s: don't block pixel clock %d KHz", __func__, request_clock);
 				return MODE_OK;
 			}
