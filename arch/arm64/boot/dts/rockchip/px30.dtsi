@@ -1282,6 +1282,7 @@
 		clock-names = "clk_sfc", "hclk_sfc";
 		assigned-clocks = <&cru SCLK_SFC>;
 		assigned-clock-rates = <100000000>;
+		power-domains = <&power PX30_PD_MMC_NAND>;
 		status = "disabled";
 	};
 
@@ -1585,7 +1586,6 @@
 		clocks = <&cru ACLK_RGA>, <&cru HCLK_RGA>, <&cru SCLK_RGA_CORE>;
 		clock-names = "aclk_rga", "hclk_rga", "clk_rga";
 		power-domains = <&power PX30_PD_VO>;
-		dma-coherent;
 		status = "disabled";
 	};
 

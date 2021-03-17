@@ -390,8 +390,8 @@ static int analogix_dp_process_clock_recovery(struct analogix_dp_device *dp)
 	int lane, lane_count, retval;
 	u8 voltage_swing, pre_emphasis, training_lane;
 	u8 link_status[2], adjust_request[2];
-	u8 dpcd;
-	bool tps3_supported;
+	u8 dpcd, training_pattern = TRAINING_PTN2;
+	bool source_tps3_supported, sink_tps3_supported;
 
 	usleep_range(100, 101);
 
@@ -411,20 +411,20 @@ static int analogix_dp_process_clock_recovery(struct analogix_dp_device *dp)
 		if (retval < 0)
 			return retval;
 
-		tps3_supported = !!(dpcd & DP_TPS3_SUPPORTED);
+		source_tps3_supported =
+			dp->video_info.max_link_rate == DP_LINK_BW_5_4;
+		sink_tps3_supported = !!(dpcd & DP_TPS3_SUPPORTED);
 
-		dev_dbg(dp->dev, "Training pattern sequence 3 is%s supported\n",
-			tps3_supported ? "" : " not");
+		if (source_tps3_supported && sink_tps3_supported)
+			training_pattern = TRAINING_PTN3;
 
 		/* set training pattern for EQ */
-		analogix_dp_set_training_pattern(dp, tps3_supported ?
-						 TRAINING_PTN3 : TRAINING_PTN2);
+		analogix_dp_set_training_pattern(dp, training_pattern);
 
 		retval = drm_dp_dpcd_writeb(&dp->aux, DP_TRAINING_PATTERN_SET,
 					    DP_LINK_SCRAMBLING_DISABLE |
-					    (tps3_supported ?
-					     DP_TRAINING_PATTERN_3 :
-					     DP_TRAINING_PATTERN_2));
+					    (training_pattern == TRAINING_PTN3 ?
+					     DP_TRAINING_PATTERN_3 : DP_TRAINING_PATTERN_2));
 		if (retval < 0)
 			return retval;
 
@@ -455,18 +455,19 @@ static int analogix_dp_process_clock_recovery(struct analogix_dp_device *dp)
 				return -EIO;
 			}
 		}
+
+		analogix_dp_get_adjust_training_lane(dp, adjust_request);
+
+		for (lane = 0; lane < lane_count; lane++)
+			analogix_dp_set_lane_link_training(dp,
+				dp->link_train.training_lane[lane], lane);
+
+		retval = drm_dp_dpcd_write(&dp->aux, DP_TRAINING_LANE0_SET,
+					   dp->link_train.training_lane,
+					   lane_count);
+		if (retval < 0)
+			return retval;
 	}
-
-	analogix_dp_get_adjust_training_lane(dp, adjust_request);
-
-	for (lane = 0; lane < lane_count; lane++)
-		analogix_dp_set_lane_link_training(dp,
-			dp->link_train.training_lane[lane], lane);
-
-	retval = drm_dp_dpcd_write(&dp->aux, DP_TRAINING_LANE0_SET,
-				   dp->link_train.training_lane, lane_count);
-	if (retval < 0)
-		return retval;
 
 	return 0;
 }
@@ -873,10 +874,10 @@ static int analogix_dp_loader_protect(struct drm_connector *connector, bool on)
 
 	if (dp->plat_data->panel)
 		drm_panel_loader_protect(dp->plat_data->panel, on);
-	if (on)
+	if (on) {
 		pm_runtime_get_sync(dp->dev);
-	else
-		pm_runtime_put(dp->dev);
+		dp->dpms_mode = DRM_MODE_DPMS_ON;
+	}
 
 	return 0;
 }

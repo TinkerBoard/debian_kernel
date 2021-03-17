@@ -42,7 +42,6 @@
 #include <linux/wakelock.h>
 #include <linux/scatterlist.h>
 #include <linux/version.h>
-#include <linux/rockchip_ion.h>
 #include <linux/debugfs.h>
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
@@ -54,6 +53,10 @@
 #include "rga2_reg_info.h"
 #include "rga2_mmu_info.h"
 #include "RGA2_API.h"
+
+#if IS_ENABLED(CONFIG_ION_ROCKCHIP) && (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
+#include <linux/rockchip_ion.h>
+#endif
 
 #if ((defined(CONFIG_RK_IOMMU) || defined(CONFIG_ROCKCHIP_IOMMU)) && defined(CONFIG_ION_ROCKCHIP))
 #define CONFIG_RGA_IOMMU
@@ -87,25 +90,6 @@ int RGA2_INT_FLAG;
 
 rga2_session rga2_session_global;
 long (*rga2_ioctl_kernel_p)(struct rga_req *);
-
-struct rga2_drvdata_t {
-	struct miscdevice miscdev;
-	struct device *dev;
-	void *rga_base;
-	int irq;
-
-	struct delayed_work power_off_work;
-	struct wake_lock wake_lock;
-	void (*rga_irq_callback)(int rga_retval);
-
-	struct clk *aclk_rga2;
-	struct clk *hclk_rga2;
-	struct clk *pd_rga2;
-	struct clk *clk_rga2;
-
-	struct ion_client * ion_client;
-	char version[16];
-};
 
 struct rga2_drvdata_t *rga2_drvdata;
 struct rga2_service_info rga2_service;
@@ -315,6 +299,18 @@ static const char *rga2_get_format_name(uint32_t format)
 		return "YCbCr422SP10B";
 	case RGA2_FORMAT_YCrCb_422_SP_10B:
 		return "YCrCb422SP10B";
+	case RGA2_FORMAT_BPP_1:
+		return "BPP1";
+	case RGA2_FORMAT_BPP_2:
+		return "BPP2";
+	case RGA2_FORMAT_BPP_4:
+		return "BPP4";
+	case RGA2_FORMAT_BPP_8:
+		return "BPP8";
+	case RGA2_FORMAT_YCbCr_400:
+		return "YCbCr400";
+	case RGA2_FORMAT_Y4:
+		return "y4";
 	default:
 		return "UNF";
 	}
@@ -330,6 +326,15 @@ static void print_debug_info(struct rga2_req *req)
 	     req->src.act_w, req->src.act_h, req->src.vir_w, req->src.vir_h,
 	     req->src.x_offset, req->src.y_offset,
 	     rga2_get_format_name(req->src.format));
+	if (req->src1.yrgb_addr != 0 ||
+	    req->src1.uv_addr != 0 ||
+	    req->src1.v_addr != 0) {
+		INFO("src1 : y=%lx uv=%lx v=%lx aw=%d ah=%d vw=%d vh=%d xoff=%d yoff=%d format=%s\n",
+		     req->src1.yrgb_addr, req->src1.uv_addr, req->src1.v_addr,
+		     req->src1.act_w, req->src1.act_h, req->src1.vir_w, req->src1.vir_h,
+		     req->src1.x_offset, req->src1.y_offset,
+		     rga2_get_format_name(req->src1.format));
+	}
 	INFO("dst : y=%lx uv=%lx v=%lx aw=%d ah=%d vw=%d vh=%d xoff=%d yoff=%d format=%s\n",
 	     req->dst.yrgb_addr, req->dst.uv_addr, req->dst.v_addr,
 	     req->dst.act_w, req->dst.act_h, req->dst.vir_w, req->dst.vir_h,
@@ -934,19 +939,14 @@ static void rga2_try_set_reg(void)
 			rga2_copy_reg(reg, 0);
 			rga2_reg_from_wait_to_run(reg);
 
-#ifdef CONFIG_ARM
-			dmac_flush_range(&rga2_service.cmd_buff[0], &rga2_service.cmd_buff[32]);
-			outer_flush_range(virt_to_phys(&rga2_service.cmd_buff[0]),virt_to_phys(&rga2_service.cmd_buff[32]));
-#elif defined(CONFIG_ARM64)
-			__dma_flush_range(&rga2_service.cmd_buff[0], &rga2_service.cmd_buff[32]);
-#endif
+			rga2_dma_flush_range(&reg->cmd_reg[0], &reg->cmd_reg[32]);
 
 			//rga2_soft_reset();
 
 			rga2_write(0x0, RGA2_SYS_CTRL);
 
 			/* CMD buff */
-			rga2_write(virt_to_phys(rga2_service.cmd_buff), RGA2_CMD_BASE);
+			rga2_write(virt_to_phys(reg->cmd_reg), RGA2_CMD_BASE);
 
 #if RGA2_DEBUGFS
 			if (RGA2_TEST_REG) {
@@ -1200,6 +1200,7 @@ static int rga2_get_dma_buf(struct rga2_req *req)
 	req->attach_src0 = NULL;
 	req->attach_dst = NULL;
 	req->attach_src1 = NULL;
+	req->attach_els = NULL;
 	mmu_flag = req->mmu_info.src0_mmu_flag;
 	ret = rga2_get_img_info(&req->src, mmu_flag, &req->sg_src0,
 				&req->attach_src0);
@@ -1224,8 +1225,24 @@ static int rga2_get_dma_buf(struct rga2_req *req)
 		goto err_src1;
 	}
 
+	mmu_flag = req->mmu_info.els_mmu_flag;
+	ret = rga2_get_img_info(&req->pat, mmu_flag, &req->sg_els,
+							&req->attach_els);
+	if (ret) {
+		pr_err("els:rga2_get_img_info fail\n");
+		goto err_els;
+	}
+
 	return ret;
 
+err_els:
+	if (req->sg_src1 && req->attach_src1) {
+		dma_buf_unmap_attachment(req->attach_src1,
+			req->sg_src1, DMA_BIDIRECTIONAL);
+		dma_buf = req->attach_src1->dmabuf;
+		dma_buf_detach(dma_buf, req->attach_src1);
+		dma_buf_put(dma_buf);
+	}
 err_src1:
 	if (req->sg_dst && req->attach_dst) {
 		dma_buf_unmap_attachment(req->attach_dst,
@@ -1417,6 +1434,7 @@ static int rga2_blit_flush_cache(rga2_session *session, struct rga2_req *req)
 #endif
 	if ((req->mmu_info.src0_mmu_flag & 1) || (req->mmu_info.src1_mmu_flag & 1) ||
 	    (req->mmu_info.dst_mmu_flag & 1) || (req->mmu_info.els_mmu_flag & 1)) {
+		reg->MMU_map = true;
 		ret = rga2_set_mmu_info(reg, req);
 		if (ret < 0) {
 			pr_err("%s, [%d] set mmu info error\n", __func__, __LINE__);
@@ -2023,6 +2041,24 @@ static int rga2_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static void RGA2_flush_page(void)
+{
+	struct rga2_reg *reg;
+	int i;
+
+	reg = list_entry(rga2_service.running.prev,
+			 struct rga2_reg, status_link);
+
+	if (reg == NULL)
+		return;
+	if (reg->MMU_base == NULL)
+		return;
+
+	for (i = 0; i < reg->MMU_count; i++)
+		rga2_dma_flush_page(phys_to_page(reg->MMU_base[i]),
+				    MMU_UNMAP_INVALID);
+}
+
 static irqreturn_t rga2_irq_thread(int irq, void *dev_id)
 {
 #if RGA2_DEBUGFS
@@ -2030,6 +2066,7 @@ static irqreturn_t rga2_irq_thread(int irq, void *dev_id)
 		INFO("irqthread INT[%x],STATS[%x]\n", rga2_read(RGA2_INT),
 		     rga2_read(RGA2_STATUS));
 #endif
+	RGA2_flush_page();
 	mutex_lock(&rga2_service.lock);
 	if (rga2_service.enable) {
 		rga2_del_running_list();
@@ -2147,7 +2184,7 @@ static int rga2_drv_probe(struct platform_device *pdev)
 	if (of_machine_is_compatible("rockchip,rk3368"))
 		rk3368 = 1;
 
-#if defined(CONFIG_ION_ROCKCHIP)
+#if defined(CONFIG_ION_ROCKCHIP) && (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
 	data->ion_client = rockchip_ion_client_create("rga");
 	if (IS_ERR(data->ion_client)) {
 		dev_err(&pdev->dev, "failed to create ion client for rga");
@@ -2480,15 +2517,8 @@ void rga2_slt(void)
 	memset(src_buf, 0x50, 400 * 200 * 4);
 	memset(dst_buf, 0x00, 400 * 200 * 4);
 
-#ifdef CONFIG_ARM
-	dmac_flush_range(&src_buf[0], &src_buf[400 * 200]);
-	outer_flush_range(virt_to_phys(&src_buf[0]), virt_to_phys(&src_buf[400 * 200]));
-	dmac_flush_range(&dst_buf[0], &dst_buf[400 * 200]);
-	outer_flush_range(virt_to_phys(&dst_buf[0]), virt_to_phys(&dst_buf[400 * 200]));
-#elif defined(CONFIG_ARM64)
-	__dma_flush_range(&src_buf[0], &src_buf[400 * 200]);
-	__dma_flush_range(&dst_buf[0], &dst_buf[400 * 200]);
-#endif
+	rga2_dma_flush_range(&src_buf[0], &src_buf[400 * 200]);
+	rga2_dma_flush_range(&dst_buf[0], &dst_buf[400 * 200]);
 
 	INFO("\n********************************\n");
 	INFO("************ RGA_TEST ************\n");
@@ -2758,7 +2788,11 @@ void rga2_test_0(void)
 #endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#ifdef CONFIG_ROCKCHIP_THUNDER_BOOT
+module_init(rga2_init);
+#else
 late_initcall(rga2_init);
+#endif
 #else
 fs_initcall(rga2_init);
 #endif

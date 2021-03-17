@@ -52,17 +52,6 @@
 		bootargs = "earlycon=uart8250,mmio32,0x20068000 earlyprintk console=ttyFIQ0 rw root=PARTUUID=614e0000-0000 rootwait";
 	};
 
-	codec_hdmi_sound: codec-hdmi-sound {
-		status = "okay";
-		compatible = "rockchip,multicodecs-card";
-		rockchip,card-name = "rockchip,codec-hdmi";
-		rockchip,format = "i2s";
-		rockchip,codec-hp-det;
-		rockchip,mclk-fs = <256>;
-		rockchip,cpu = <&i2s_8ch>;
-		rockchip,codec = <&codec>, <&hdmi>;
-	};
-
 	cpuinfo {
 		compatible = "rockchip,cpuinfo";
 		nvmem-cells = <&efuse_id>;
@@ -126,6 +115,40 @@
 		reset-gpios = <&gpio1 RK_PB3 GPIO_ACTIVE_LOW>;
 	};
 
+	sound: sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,name = "rockchip,rk312x-codec";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,widgets =
+			"Headphone", "Headphone Jack";
+		simple-audio-card,routing =
+			"Headphone Jack", "HPOL",
+			"Headphone Jack", "HPOR";
+
+		simple-audio-card,dai-link@0 {
+			format = "i2s";
+			cpu {
+				sound-dai = <&i2s_8ch 0>;
+			};
+
+			codec {
+				sound-dai = <&hdmi>;
+			};
+		};
+
+		simple-audio-card,dai-link@1 {
+			format = "i2s";
+			cpu {
+				sound-dai = <&i2s_8ch 1>;
+			};
+
+			codec {
+				sound-dai = <&codec>;
+			};
+		};
+	};
+
 	spdif_out: spdif-out {
 		status = "okay";
 		compatible = "linux,spdif-dit";
@@ -147,6 +170,8 @@
 	wireless-wlan {
 		compatible = "wlan-platdata";
 		wifi_chip_type = "ap6212";
+		clocks = <&rk818 1>;
+		clock-names = "ext_clock";
 		sdio_vref = <3300>;
 		rockchip,grf = <&grf>;
 		WIFI,host_wake_irq = <&gpio0 RK_PA2 GPIO_ACTIVE_HIGH>;
@@ -155,15 +180,11 @@
 
 	wireless-bluetooth {
 		compatible = "bluetooth-platdata";
-		//wifi-bt-power-toggle;
 		uart_rts_gpios = <&gpio0 RK_PC1 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default","rts_gpio";
 		pinctrl-0 = <&uart0_rts>;
 		pinctrl-1 = <&uart0_rts_gpio>;
-		//BT,power_gpio = <&gpio1 GPIO_B3 GPIO_ACTIVE_HIGH>;
-		BT,reset_gpio = <&gpio1 RK_PA3 GPIO_ACTIVE_HIGH>;
-		BT,wake_gpio = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
-		BT,wake_host_irq = <&gpio1 RK_PB1 GPIO_ACTIVE_LOW>;
+		BT,power_gpio = <&gpio1 RK_PA3 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
 
@@ -596,6 +617,10 @@
 	};
 };
 
+&rga {
+	status = "okay";
+};
+
 &saradc
 {
 	status = "okay";
@@ -615,8 +640,7 @@
 };
 
 &sdio {
-	clock-frequency = <50000000>;
-	clock-freq-min-max = <200000 50000000>;
+	max-frequency = <50000000>;
 	supports-sdio;
 	disable-wp;
 	cap-sd-highspeed;

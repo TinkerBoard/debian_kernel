@@ -919,18 +919,20 @@ static int rk618_hdmi_setup(struct rk618_hdmi *hdmi,
 	return 0;
 }
 
+static bool rk618_hdmi_hpd_detect(struct rk618_hdmi *hdmi)
+{
+	return !!(hdmi_readb(hdmi, HDMI_STATUS) & m_HOTPLUG);
+}
+
 static enum drm_connector_status
 rk618_hdmi_connector_detect(struct drm_connector *connector, bool force)
 {
 	struct rk618_hdmi *hdmi = connector_to_hdmi(connector);
-	int status;
+	bool status;
 
-	status = hdmi_readb(hdmi, HDMI_STATUS) & m_HOTPLUG;
+	status = rk618_hdmi_hpd_detect(hdmi);
 #ifdef CONFIG_SWITCH
-	if (status)
-		switch_set_state(&hdmi->switchdev, 1);
-	else
-		switch_set_state(&hdmi->switchdev, 0);
+	switch_set_state(&hdmi->switchdev, status);
 #endif
 
 	return status ? connector_status_connected :
@@ -950,7 +952,7 @@ static int rk618_hdmi_connector_get_modes(struct drm_connector *connector)
 	if (!hdmi->ddc)
 		return 0;
 
-	if ((hdmi_readb(hdmi, HDMI_STATUS) & m_HOTPLUG))
+	if (rk618_hdmi_hpd_detect(hdmi))
 		edid = drm_get_edid(connector, hdmi->ddc);
 
 	if (edid) {
@@ -1041,6 +1043,11 @@ static void rk618_hdmi_bridge_enable(struct drm_bridge *bridge)
 	struct rk618_hdmi *hdmi = bridge_to_hdmi(bridge);
 
 	clk_prepare_enable(hdmi->clock);
+
+	if (!rk618_hdmi_hpd_detect(hdmi)) {
+		rk618_hdmi_set_pwr_mode(hdmi, LOWER_PWR);
+		return;
+	}
 
 	rk618_hdmi_setup(hdmi, &hdmi->previous_mode);
 	rk618_hdmi_set_polarity(hdmi, hdmi->hdmi_data.vic);
@@ -1331,10 +1338,12 @@ static int rk618_hdmi_i2c_write(struct rk618_hdmi *hdmi, struct i2c_msg *msgs)
 	    ((msgs->addr != DDC_ADDR) && (msgs->addr != DDC_SEGMENT_ADDR)))
 		return -EINVAL;
 
-	if (msgs->addr == DDC_SEGMENT_ADDR)
-		hdmi->i2c->segment_addr = msgs->buf[0];
 	if (msgs->addr == DDC_ADDR)
 		hdmi->i2c->ddc_addr = msgs->buf[0];
+	if (msgs->addr == DDC_SEGMENT_ADDR) {
+		hdmi->i2c->segment_addr = msgs->buf[0];
+		return 0;
+	}
 
 	/* Set edid fifo first addr */
 	hdmi_writeb(hdmi, HDMI_EDID_FIFO_OFFSET, 0x00);
@@ -1356,6 +1365,9 @@ static int rk618_hdmi_i2c_xfer(struct i2c_adapter *adap,
 	int i, ret = 0;
 
 	mutex_lock(&i2c->lock);
+
+	hdmi->i2c->ddc_addr = 0;
+	hdmi->i2c->segment_addr = 0;
 
 	/* Clear the EDID interrupt flag and unmute the interrupt */
 	hdmi_writeb(hdmi, HDMI_INTERRUPT_MASK1, m_INT_EDID_READY);

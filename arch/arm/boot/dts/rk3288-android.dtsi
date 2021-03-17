@@ -412,7 +412,6 @@
 	clock-names = "aclk_rga", "hclk_rga", "clk_rga";
 	assigned-clocks = <&cru ACLK_RGA>, <&cru SCLK_RGA>;
 	assigned-clock-rates = <300000000>, <300000000>;
-	dma-coherent;
 };
 
 &uart2 {
@@ -433,6 +432,16 @@
 
 &video_phy {
 	status = "okay";
+};
+
+&vopb {
+	assigned-clocks = <&cru DCLK_VOP0>;
+	assigned-clock-parents = <&cru PLL_GPLL>;
+};
+
+&vopl {
+	assigned-clocks = <&cru DCLK_VOP1>;
+	assigned-clock-parents = <&cru PLL_CPLL>;
 };
 
 &pinctrl {

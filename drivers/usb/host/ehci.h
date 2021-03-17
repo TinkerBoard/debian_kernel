@@ -110,6 +110,7 @@ enum ehci_hrtimer_event {
 	EHCI_HRTIMER_POLL_DEAD,		/* Wait for dead controller to stop */
 	EHCI_HRTIMER_UNLINK_INTR,	/* Wait for interrupt QH unlink */
 	EHCI_HRTIMER_FREE_ITDS,		/* Wait for unused iTDs and siTDs */
+	EHCI_HRTIMER_ACTIVE_UNLINK,	/* Wait while unlinking an active QH */
 	EHCI_HRTIMER_START_UNLINK_INTR, /* Unlink empty interrupt QHs */
 	EHCI_HRTIMER_ASYNC_UNLINKS,	/* Unlink empty async QHs */
 	EHCI_HRTIMER_IAA_WATCHDOG,	/* Handle lost IAA interrupts */
@@ -156,6 +157,8 @@ struct ehci_hcd {			/* one per controller */
 	struct list_head	async_idle;
 	unsigned		async_unlink_cycle;
 	unsigned		async_count;	/* async activity count */
+	__hc32			old_current;	/* Test for QH becoming */
+	__hc32			old_token;	/*  inactive during unlink */
 
 	/* periodic schedule support */
 #define	DEFAULT_I_TDPS		1024		/* some HCs can do less */
@@ -439,13 +442,20 @@ struct ehci_qh {
 	u8			xacterrs;	/* XactErr retry counter */
 #define	QH_XACTERR_MAX		32		/* XactErr retry limit */
 
+	u8			unlink_reason;
+#define QH_UNLINK_HALTED	0x01		/* Halt flag is set */
+#define QH_UNLINK_SHORT_READ	0x02		/* Recover from a short read */
+#define QH_UNLINK_DUMMY_OVERLAY	0x04		/* QH overlayed the dummy TD */
+#define QH_UNLINK_SHUTDOWN	0x08		/* The HC isn't running */
+#define QH_UNLINK_QUEUE_EMPTY	0x10		/* Reached end of the queue */
+#define QH_UNLINK_REQUESTED	0x20		/* Disable, reset, or dequeue */
+
 	u8			gap_uf;		/* uframes split/csplit gap */
 
 	unsigned		is_out:1;	/* bulk or intr OUT */
 	unsigned		clearing_tt:1;	/* Clear-TT-Buf in progress */
 	unsigned		dequeue_during_giveback:1;
-	unsigned		exception:1;	/* got a fault, or an unlink
-						   was requested */
+	unsigned		should_be_inactive:1;
 };
 
 /*-------------------------------------------------------------------------*/

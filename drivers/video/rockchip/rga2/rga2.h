@@ -94,6 +94,9 @@ enum
     RGA2_FORMAT_BGRA_5551    = 0xa,
     RGA2_FORMAT_BGRA_4444    = 0xb,
 
+    RGA2_FORMAT_Y4           = 0xe,
+    RGA2_FORMAT_YCbCr_400    = 0xf,
+
     RGA2_FORMAT_YCbCr_422_SP = 0x10,
     RGA2_FORMAT_YCbCr_422_P  = 0x11,
     RGA2_FORMAT_YCbCr_420_SP = 0x12,
@@ -116,6 +119,11 @@ enum
     RGA2_FORMAT_YCrCb_420_SP_10B = 0x21,
     RGA2_FORMAT_YCbCr_422_SP_10B = 0x22,
     RGA2_FORMAT_YCrCb_422_SP_10B = 0x23,
+
+	RGA2_FORMAT_BPP_1            = 0x24,
+	RGA2_FORMAT_BPP_2            = 0x25,
+	RGA2_FORMAT_BPP_4            = 0x26,
+	RGA2_FORMAT_BPP_8            = 0x27
 };
 
 typedef struct mdp_img
@@ -384,6 +392,8 @@ struct rga_req {
                                     /* ([6]   alpha output mode sel) 0 src / 1 dst*/
 
     uint8_t  src_trans_mode;
+
+    uint8_t dither_mode;
 };
 struct rga_req_32
 {
@@ -548,6 +558,7 @@ struct rga2_req
 	struct dma_buf_attachment *attach_src0;
 	struct dma_buf_attachment *attach_src1;
 	struct dma_buf_attachment *attach_dst;
+	struct dma_buf_attachment *attach_els;
 };
 
 struct rga2_mmu_buf_t {
@@ -676,6 +687,8 @@ struct rga2_reg {
 
 	uint32_t *MMU_base;
 	uint32_t MMU_len;
+	uint32_t MMU_count;
+	bool MMU_map;
 
 	struct sg_table *sg_src0;
 	struct sg_table *sg_src1;

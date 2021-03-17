@@ -11,7 +11,10 @@
 
 #include "rkflash_blk.h"
 #include "rkflash_debug.h"
+#include "sfc_nand.h"
 #include "sfc_nand_mtd.h"
+
+#ifdef CONFIG_RK_SFC_NAND_MTD
 
 static struct mtd_partition nand_parts[MAX_PART_COUNT];
 
@@ -21,9 +24,17 @@ static inline struct snand_mtd_dev *mtd_to_priv(struct mtd_info *ptr_mtd)
 		offsetof(struct snand_mtd_dev, mtd));
 }
 
-static int sfc_nand_erase_mtd(struct mtd_info *mtd, u32 addr)
+int sfc_nand_erase_mtd(struct mtd_info *mtd, u32 addr)
 {
-	return sfc_nand_erase_block(0, addr >> mtd->writesize_shift);
+	int ret;
+
+	ret = sfc_nand_erase_block(0, addr >> mtd->writesize_shift);
+	if (ret) {
+		rkflash_print_error("%s fail ret= %d\n", __func__, ret);
+		ret = -EIO;
+	}
+
+	return ret;
 }
 
 static int sfc_nand_write_mtd(struct mtd_info *mtd, loff_t to,
@@ -31,29 +42,27 @@ static int sfc_nand_write_mtd(struct mtd_info *mtd, loff_t to,
 {
 	struct snand_mtd_dev *p_dev = mtd_to_priv(mtd);
 	u8 *data = (u8 *)ops->datbuf;
-	u8 *oob_buf = (u8 *)ops->oobbuf;
 	size_t remaining = ops->len;
-	size_t oob_left = ops->ooblen, oob_real;
 	u32 ret = 0;
 
 	rkflash_print_dio("%s addr= %llx len= %x\n", __func__, to, (u32)remaining);
 	if ((to + remaining) > mtd->size || to & mtd->writesize_mask ||
-	    remaining & mtd->writesize_mask)
+	    remaining & mtd->writesize_mask || ops->ooblen) {
+		rkflash_print_error("%s input error, %llx %x\n", __func__, to, (u32)remaining);
+
 		return -EINVAL;
+	}
 
 	ops->retlen = 0;
-	ops->oobretlen = 0;
 	while (remaining) {
 		memcpy(p_dev->dma_buf, data, mtd->writesize);
 		memset(p_dev->dma_buf + mtd->writesize, 0xff, mtd->oobsize);
-		oob_real = min((u32)oob_left, mtd->oobsize - ops->ooboffs);
-		if (oob_real)
-			memcpy(p_dev->dma_buf + mtd->writesize + ops->ooboffs, oob_buf, oob_real);
 		ret = sfc_nand_prog_page_raw(0, to >> mtd->writesize_shift,
 					     (u32 *)p_dev->dma_buf);
 		if (ret != SFC_OK) {
-			rkflash_print_dio("%s addr %llx ret= %d\n",
-					  __func__, to, ret);
+			rkflash_print_error("%s addr %llx ret= %d\n",
+					    __func__, to, ret);
+			ret = -EIO;
 			break;
 		}
 
@@ -61,43 +70,42 @@ static int sfc_nand_write_mtd(struct mtd_info *mtd, loff_t to,
 		ops->retlen += mtd->writesize;
 		remaining -= mtd->writesize;
 		to += mtd->writesize;
-		if (oob_real) {
-			ops->oobretlen += oob_real;
-			oob_buf += oob_real;
-		}
 	}
 
-	return 0;
+	return ret;
 }
 
 static int sfc_nand_read_mtd(struct mtd_info *mtd, loff_t from,
 			     struct mtd_oob_ops *ops)
 {
-	struct snand_mtd_dev *p_dev = mtd_to_priv(mtd);
 	u8 *data = (u8 *)ops->datbuf;
-	u8 *oob_buf = (u8 *)ops->oobbuf;
 	size_t remaining = ops->len;
-	size_t oob_left = ops->ooblen, oob_real;
 	u32 ret = 0;
 	bool ecc_failed = false;
-	size_t off, real_size;
+	size_t page, off, real_size;
 	int max_bitflips = 0;
 
 	rkflash_print_dio("%s addr= %llx len= %x\n", __func__, from, (u32)remaining);
-	if ((from + remaining) > mtd->size)
+	if ((from + remaining) > mtd->size || ops->ooblen) {
+		rkflash_print_error("%s input error, from= %llx len= %x oob= %x\n",
+				    __func__, from, (u32)remaining, (u32)ops->ooblen);
+
 		return -EINVAL;
+	}
 
 	ops->retlen = 0;
-	ops->oobretlen = 0;
 	while (remaining) {
-		ret = sfc_nand_read_page_raw(0, from >> mtd->writesize_shift,
-					     (u32 *)p_dev->dma_buf);
+		page = from >> mtd->writesize_shift;
+		off = from & mtd->writesize_mask;
+		real_size = min_t(u32, remaining, mtd->writesize - off);
+
+		ret = sfc_nand_read(page, (u32 *)data, off, real_size);
 		if (ret == SFC_NAND_HW_ERROR) {
+			rkflash_print_error("%s addr %llx ret= %d\n",
+					    __func__, from, ret);
 			ret = -EIO;
 			break;
-		}
-
-		if (ret == SFC_NAND_ECC_ERROR) {
+		} else if (ret == SFC_NAND_ECC_ERROR) {
 			rkflash_print_error("%s addr %llx ret= %d\n",
 					    __func__, from, ret);
 			ecc_failed = true;
@@ -109,27 +117,11 @@ static int sfc_nand_read_mtd(struct mtd_info *mtd, loff_t from,
 			max_bitflips = 1;
 		}
 
-		off = from & mtd->writesize_mask;
-		real_size = min_t(u32, remaining, mtd->writesize);
-		if ((from >> mtd->writesize_shift) !=
-		    (loff_t)((from + real_size - 1) >> mtd->writesize_shift))
-			real_size = mtd->writesize - off;
-
-		memcpy(data, p_dev->dma_buf + off, real_size);
-		oob_real = min((u32)oob_left, mtd->oobsize - ops->ooboffs);
-		if (oob_real)
-			memcpy(oob_buf, p_dev->dma_buf + mtd->writesize + ops->ooboffs,
-			       oob_real);
-
 		ret = 0;
 		data += real_size;
 		ops->retlen += real_size;
 		remaining -= real_size;
 		from += real_size;
-		if (oob_real) {
-			ops->oobretlen += oob_real;
-			oob_buf += oob_real;
-		}
 	}
 
 	if (ecc_failed && !ret)
@@ -138,14 +130,17 @@ static int sfc_nand_read_mtd(struct mtd_info *mtd, loff_t from,
 	return ret ? ret : max_bitflips;
 }
 
-static int sfc_nand_isbad_mtd(struct mtd_info *mtd, loff_t ofs)
+int sfc_nand_isbad_mtd(struct mtd_info *mtd, loff_t ofs)
 {
 	int ret;
 	struct snand_mtd_dev *p_dev = mtd_to_priv(mtd);
 
 	rkflash_print_dio("%s %llx\n", __func__, ofs);
-	if (ofs & mtd->writesize_mask)
+	if (ofs & mtd->writesize_mask) {
+		rkflash_print_error("%s %llx input error\n", __func__, ofs);
+
 		return -EINVAL;
+	}
 
 	if (snanddev_bbt_is_initialized(p_dev)) {
 		unsigned int entry;
@@ -184,8 +179,11 @@ static int sfc_nand_markbad_mtd(struct mtd_info *mtd, loff_t ofs)
 	unsigned int entry;
 
 	rkflash_print_error("%s %llx\n", __func__, ofs);
-	if (ofs & mtd->erasesize_mask)
+	if (ofs & mtd->erasesize_mask) {
+		rkflash_print_error("%s %llx input error\n", __func__, ofs);
+
 		return -EINVAL;
+	}
 
 	if (sfc_nand_isbad_mtd(mtd, ofs))
 		return 0;
@@ -225,8 +223,6 @@ out:
 	return ret;
 }
 
-#include "sfc_nand_mtd_bbt.c"
-
 static int sfc_erase_mtd(struct mtd_info *mtd, struct erase_info *instr)
 {
 	struct snand_mtd_dev *p_dev = mtd_to_priv(mtd);
@@ -247,8 +243,8 @@ static int sfc_erase_mtd(struct mtd_info *mtd, struct erase_info *instr)
 		ret = snanddev_bbt_get_block_status(nand, addr >> mtd->erasesize_shift);
 		if (ret == NAND_BBT_BLOCK_WORN ||
 		    ret == NAND_BBT_BLOCK_FACTORY_BAD) {
-			pr_warn("attempt to erase a bad/reserved block @%llx\n",
-				addr >> mtd->erasesize_shift);
+			rkflash_print_error("attempt to erase a bad/reserved block @%llx\n",
+					    addr >> mtd->erasesize_shift);
 			addr += mtd->erasesize;
 			remaining -= mtd->erasesize;
 			continue;
@@ -425,3 +421,5 @@ error_out:
 
 	return ret;
 }
+
+#endif
