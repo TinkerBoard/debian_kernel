@@ -557,6 +557,37 @@ static const struct of_device_id dsi_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, dsi_of_match);
 
+static const struct drm_display_mode waveshare_5inch_mode = {
+       .clock = 30000000 / 1000,
+       .hdisplay = 800,
+       .hsync_start = 800 + 120,
+       .hsync_end = 800 + 120 + 2,
+       .htotal = 800 + 120 + 2 + 52,
+       .vdisplay = 480,
+       .vsync_start = 480 + 7,
+       .vsync_end = 480 + 7 + 2,
+       .vtotal = 480 + 7 + 2 + 21,
+       .vrefresh = 60,
+       .flags = DRM_MODE_FLAG_NVSYNC | DRM_MODE_FLAG_NHSYNC,
+};
+
+static const struct bridge_desc waveshare_5inch_bridge = {
+       .desc = {
+               .modes = &waveshare_5inch_mode,
+               .num_modes = 1,
+               .bpc = 8,
+               .size = {
+                       .width = 113,
+                       .height = 68,
+               },
+       },
+       .flags = MIPI_DSI_MODE_VIDEO |
+                       MIPI_DSI_MODE_VIDEO_BURST ,
+       .format = MIPI_DSI_FMT_RGB888,
+       .lanes = 1,
+};
+
+
 int tc358762_dsi_probe(struct mipi_dsi_device *dsi)
 {
 	const struct bridge_desc *desc;
@@ -570,8 +601,14 @@ int tc358762_dsi_probe(struct mipi_dsi_device *dsi)
 	//id = of_match_node(dsi_of_match, np);
 	//if (!id)
 	//	return -ENODEV;
-	id = &dsi_of_match[0];
-	desc = id->data;
+	printk("tc358762_dsi_probe waveshare_5inch=%d\n", of_property_read_bool(np, "waveshare_5inch"));
+	 if (of_property_read_bool(np, "waveshare_5inch")) {
+               desc = &waveshare_5inch_bridge;
+       } else {
+               id = &dsi_of_match[0];
+               desc = id->data;
+       }
+
 
 	if (desc) {
 		dsi->mode_flags = desc->flags;
