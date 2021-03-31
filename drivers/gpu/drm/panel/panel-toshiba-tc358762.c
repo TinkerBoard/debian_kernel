@@ -517,15 +517,15 @@ struct bridge_desc {
 };
 
 static const struct drm_display_mode tc358762_mode = {
-	.clock = 27000000 / 1000,
+	.clock = 27200000 / 1000,
 	.hdisplay = 800,
 	.hsync_start = 800 + 1,
 	.hsync_end = 800 + 1 + 2,
 	.htotal = 800 + 1 + 2 + 52,
 	.vdisplay = 480,
-	.vsync_start = 480 + 7,
-	.vsync_end = 480 + 7 + 2,
-	.vtotal = 480 + 7 + 2 + 21,
+	.vsync_start = 480 + 26,
+	.vsync_end = 480 + 26 + 2,
+	.vtotal = 480 + 26 + 2 + 21,
 	.vrefresh = 60,
 	.flags = DRM_MODE_FLAG_NVSYNC | DRM_MODE_FLAG_NHSYNC,
 };
