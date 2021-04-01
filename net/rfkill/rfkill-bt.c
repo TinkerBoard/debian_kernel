@@ -65,7 +65,7 @@ enum {
 struct rfkill_rk_data {
 	struct rfkill_rk_platform_data	*pdata;
     struct platform_device      *pdev;
-	struct rfkill				*rfkill_dev;
+	//struct rfkill				*rfkill_dev;
     struct wake_lock            bt_irq_wl;
     struct delayed_work         bt_sleep_delay_work;
     int irq_req;
@@ -256,6 +256,7 @@ void rfkill_rk_sleep_bt(bool sleep)
 }
 EXPORT_SYMBOL(rfkill_rk_sleep_bt);
 
+/*
 static int bt_power_state = 0;
 int rfkill_get_bt_power_state(int *power, bool *toggle)
 {
@@ -363,6 +364,7 @@ static int rfkill_rk_set_power(void *data, bool blocked)
 
 	return 0;
 }
+*/
 
 static int rfkill_rk_pm_prepare(struct device *dev)
 {
@@ -435,9 +437,9 @@ static void rfkill_rk_pm_complete(struct device *dev)
     }
 }
 
-static const struct rfkill_ops rfkill_rk_ops = {
-    .set_block = rfkill_rk_set_power,
-};
+//static const struct rfkill_ops rfkill_rk_ops = {
+//    .set_block = rfkill_rk_set_power,
+//};
 
 #define PROC_DIR	"bluetooth/sleep"
 
@@ -654,16 +656,16 @@ static int rfkill_rk_probe(struct platform_device *pdev)
     ret = rfkill_rk_setup_wake_irq(rfkill, 0);
     if (ret) goto fail_setup_wake_irq;
 
-    DBG("setup rfkill\n");
-	rfkill->rfkill_dev = rfkill_alloc(pdata->name, &pdev->dev, pdata->type,
-				&rfkill_rk_ops, rfkill);
-	if (!rfkill->rfkill_dev)
-		goto fail_alloc;
+    //DBG("setup rfkill\n");
+	//rfkill->rfkill_dev = rfkill_alloc(pdata->name, &pdev->dev, pdata->type,
+	//			&rfkill_rk_ops, rfkill);
+	//if (!rfkill->rfkill_dev)
+	//	goto fail_alloc;
 
-    rfkill_set_states(rfkill->rfkill_dev, BT_BLOCKED, false);
-	ret = rfkill_register(rfkill->rfkill_dev);
-	if (ret < 0)
-		goto fail_rfkill;
+    //rfkill_set_states(rfkill->rfkill_dev, BT_BLOCKED, false);
+	//ret = rfkill_register(rfkill->rfkill_dev);
+	//if (ret < 0)
+	//	goto fail_rfkill;
 
     INIT_DELAYED_WORK(&rfkill->bt_sleep_delay_work, rfkill_rk_delay_sleep_bt);
 
@@ -684,8 +686,8 @@ static int rfkill_rk_probe(struct platform_device *pdev)
 
 	return 0;
 
-fail_rfkill:
-	rfkill_destroy(rfkill->rfkill_dev);
+//fail_rfkill:
+//	rfkill_destroy(rfkill->rfkill_dev);
 fail_alloc:
 
 	remove_proc_entry("btwrite", sleep_dir);
@@ -704,8 +706,8 @@ static int rfkill_rk_remove(struct platform_device *pdev)
 
     LOG("Enter %s\n", __func__);
 
-	rfkill_unregister(rfkill->rfkill_dev);
-	rfkill_destroy(rfkill->rfkill_dev);
+	//rfkill_unregister(rfkill->rfkill_dev);
+	//rfkill_destroy(rfkill->rfkill_dev);
 
     
     cancel_delayed_work_sync(&rfkill->bt_sleep_delay_work);

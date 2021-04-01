@@ -304,8 +304,8 @@ int rockchip_wifi_power(int on)
 	struct rfkill_wlan_data *mrfkill = g_rfkill;
     struct rksdmmc_gpio *poweron, *reset;
     struct regulator *ldo = NULL;
-    int power = 0;
-    bool toggle = false;
+    //int power = 0;
+    //bool toggle = false;
 
     LOG("%s: %d\n", __func__, on);
 
@@ -322,12 +322,14 @@ int rockchip_wifi_power(int on)
         return 0;
     } else power_set_time++;
 
+    /*
     if (!rfkill_get_bt_power_state(&power, &toggle)) {
         if (toggle == true && power == 1) {
             LOG("%s: wifi shouldn't control the power, it was enabled by BT!\n", __func__);
             return 0;
         }
     }
+    */
 
     if (mrfkill->pdata->mregulator.power_ctrl_by_pmu) {
         int ret = -1;
