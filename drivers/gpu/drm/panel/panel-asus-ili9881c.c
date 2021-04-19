@@ -876,18 +876,18 @@ static int ili9881c_unprepare(struct drm_panel *panel)
 }
 
 static const struct drm_display_mode asus_ili9881c_default_mode_7inch= {
-	.clock		= 66000,
+	.clock		= 60000,
 	.vrefresh	= 60,
 
 	.hdisplay	= 720,
 	.hsync_start	= 720 + 8,
-	.hsync_end	= 720 + 8 + 55,
-	.htotal		= 720 + 8 + 55 + 55,
+	.hsync_end	= 720 + 8 + 20,
+	.htotal		= 720 + 8 + 20 + 20,
 
 	.vdisplay	= 1280,
 	.vsync_start	= 1280 + 8,
-	.vsync_end	= 1280 + 8 + 20,
-	.vtotal		= 1280 + 8 + 20 + 20,
+	.vsync_end	= 1280 + 8 + 10,
+	.vtotal		= 1280 + 8 + 10 + 10,
 	.flags = DRM_MODE_FLAG_NVSYNC | DRM_MODE_FLAG_NHSYNC,
 };
 
