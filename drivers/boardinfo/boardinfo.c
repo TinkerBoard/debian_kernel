@@ -33,6 +33,8 @@ static int ver_show(struct seq_file *m, void *v)
 		boardver = "1";
 	else if (hwid == 2)
 		boardver = "2";
+	else if (hwid == 3)
+		boardver = "3";
 	else
 		boardver = "unknown";
 
@@ -56,10 +58,12 @@ static int info_show(struct seq_file *m, void *v)
 		boardinfo = "Tinker Board S";
 	else if (pid == 1)
 		boardinfo = "Tinker Board S/HV";
+	else if (pid == 2)
+		boardinfo = "Tinker Board S/CGW";
+	else if (pid == 3)
+		boardinfo = "Tinker Board R2";
 	else if (pid == 4)
 		boardinfo = "Tinker R/BR";
-	else if (pid == 7)
-		boardinfo = "Tinker Board";
 	else
 		boardinfo = "unknown";
 
