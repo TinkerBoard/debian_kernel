@@ -28,13 +28,13 @@ static int ver_show(struct seq_file *m, void *v)
 	hwid = (id2 << 2) + (id1 << 1) + id0;
 
 	if (hwid == 0)
-		boardver = "0";
+		boardver = "1.00";
 	else if (hwid == 1)
-		boardver = "1";
+		boardver = "1.01";
 	else if (hwid == 2)
-		boardver = "2";
+		boardver = "1.02";
 	else if (hwid == 3)
-		boardver = "3";
+		boardver = "1.03";
 	else
 		boardver = "unknown";
 
