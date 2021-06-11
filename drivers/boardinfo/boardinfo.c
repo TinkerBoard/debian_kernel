@@ -5,6 +5,8 @@
 #include <linux/of_gpio.h>
 #include <linux/proc_fs.h>
 
+#define RK3288_GRF_GPIO2A_P		0x0150
+
 static int hw_id0, hw_id1, hw_id2;
 static int pid_id0, pid_id1, pid_id2;
 static int ddr_id0, ddr_id1, ddr_id2;
@@ -162,6 +164,18 @@ static int board_info_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	int ret;
 	struct proc_dir_entry* file;
+
+	void *regs;
+	/* Pull up GPIO2 A1 A2 A3*/
+	regs = ioremap(0xff770000, 64*1024);
+	if (regs == NULL) {
+		printk("[boardinfo] ioremap failed");
+		return -ENODEV;
+	}
+	writel((readl(regs + RK3288_GRF_GPIO2A_P) & ~(0x3f << 18) & ~(0x3f << 2))
+			| (0x3f << 18) | (0x15 << 2), regs + RK3288_GRF_GPIO2A_P);
+
+	iounmap(regs);
 
 	hw_id0 = of_get_named_gpio(dev->of_node, "hw-id0", 0);
 	if (!gpio_is_valid(hw_id0)) {
