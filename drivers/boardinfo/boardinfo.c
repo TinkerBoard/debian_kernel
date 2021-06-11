@@ -59,15 +59,32 @@ static int info_show(struct seq_file *m, void *v)
 	else if (pid == 1)
 		boardinfo = "Tinker Board S/HV";
 	else if (pid == 2)
-		boardinfo = "Tinker Board S/CGW";
+		boardinfo = "Tinker Board S";
 	else if (pid == 3)
 		boardinfo = "Tinker Board R2";
 	else if (pid == 4)
 		boardinfo = "Tinker R/BR";
+	else if (pid == 7)
+		boardinfo = "Tinker Board";
 	else
 		boardinfo = "unknown";
 
 	seq_printf(m, "%s\n", boardinfo);
+	return 0;
+}
+
+static int pid_show(struct seq_file *m, void *v)
+{
+	int id0, id1, id2;
+	int pid = -1;
+
+	id0 = gpio_get_value(pid_id0);
+	id1 = gpio_get_value(pid_id1);
+	id2 = gpio_get_value(pid_id2);
+
+	pid = (id2 << 2) + (id1 << 1) + id0;
+
+	seq_printf(m, "%d\n", pid);
 	return 0;
 }
 
@@ -106,6 +123,11 @@ static int info_open(struct inode *inode, struct file *file)
 	return single_open(file, info_show, NULL);
 }
 
+static int pid_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, pid_show, NULL);
+}
+
 static int ddr_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, ddr_show, NULL);
@@ -120,6 +142,12 @@ static struct file_operations boardver_ops = {
 static struct file_operations boardinfo_ops = {
 	.owner	= THIS_MODULE,
 	.open	= info_open,
+	.read	= seq_read,
+};
+
+static struct file_operations projectid_ops = {
+	.owner	= THIS_MODULE,
+	.open	= pid_open,
 	.read	= seq_read,
 };
 
@@ -248,6 +276,10 @@ static int board_info_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	file = proc_create("boardinfo", 0444, NULL, &boardinfo_ops);
+	if (!file)
+		return -ENOMEM;
+
+	file = proc_create("projectid", 0444, NULL, &projectid_ops);
 	if (!file)
 		return -ENOMEM;
 
