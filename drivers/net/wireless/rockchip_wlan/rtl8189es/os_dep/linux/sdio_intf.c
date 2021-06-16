@@ -68,10 +68,6 @@ static const struct sdio_device_id sdio_ids[] =
 #ifdef CONFIG_RTL8188F
 	{SDIO_DEVICE(0x024c, 0xF179), .driver_data = RTL8188F},
 #endif
-
-#if defined(RTW_ENABLE_WIFI_CONTROL_FUNC) /* temporarily add this to accept all sdio wlan id */
-	{ SDIO_DEVICE_CLASS(SDIO_CLASS_WLAN) },
-#endif
 	{ /* end: all zeroes */				},
 };
 

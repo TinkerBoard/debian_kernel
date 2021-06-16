@@ -79,10 +79,6 @@ static const struct sdio_device_id sdio_ids[] = {
 	{SDIO_DEVICE(0x024C, 0xB821), .driver_data = RTL8821C},
 	{SDIO_DEVICE(0x024C, 0xC821), .driver_data = RTL8821C},
 #endif
-
-#if defined(RTW_ENABLE_WIFI_CONTROL_FUNC) /* temporarily add this to accept all sdio wlan id */
-	{ SDIO_DEVICE_CLASS(SDIO_CLASS_WLAN) },
-#endif
 	{ /* end: all zeroes */				},
 };
 
