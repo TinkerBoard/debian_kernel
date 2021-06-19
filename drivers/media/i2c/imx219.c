@@ -1080,6 +1080,7 @@ static int imx219_probe(struct i2c_client *client,
 	priv->enable_gpio = devm_gpiod_get(dev, "enable", GPIOD_OUT_HIGH);
 	if (IS_ERR(priv->enable_gpio))
 		dev_warn(dev, "Failed to get enable_gpios\n");
+        msleep(100);
 
 	/* 1920 * 1080 by default */
 	priv->cur_mode = &supported_modes[0];
