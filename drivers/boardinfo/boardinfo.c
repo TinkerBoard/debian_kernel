@@ -75,6 +75,21 @@ static int info_show(struct seq_file *m, void *v)
 	return 0;
 }
 
+static int bid_show(struct seq_file *m, void *v)
+{
+	int id0, id1, id2;
+	int hwid = -1;
+
+	id0 = gpio_get_value(hw_id0);
+	id1 = gpio_get_value(hw_id1);
+	id2 = gpio_get_value(hw_id2);
+
+	hwid = (id2 << 2) + (id1 << 1) + id0;
+
+	seq_printf(m, "%d\n", hwid);
+	return 0;
+}
+
 static int pid_show(struct seq_file *m, void *v)
 {
 	int id0, id1, id2;
@@ -125,6 +140,11 @@ static int info_open(struct inode *inode, struct file *file)
 	return single_open(file, info_show, NULL);
 }
 
+static int bid_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, bid_show, NULL);
+}
+
 static int pid_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, pid_show, NULL);
@@ -144,6 +164,12 @@ static struct file_operations boardver_ops = {
 static struct file_operations boardinfo_ops = {
 	.owner	= THIS_MODULE,
 	.open	= info_open,
+	.read	= seq_read,
+};
+
+static struct file_operations boardid_ops = {
+	.owner	= THIS_MODULE,
+	.open	= bid_open,
 	.read	= seq_read,
 };
 
@@ -290,6 +316,10 @@ static int board_info_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	file = proc_create("boardinfo", 0444, NULL, &boardinfo_ops);
+	if (!file)
+		return -ENOMEM;
+
+	file = proc_create("boardid", 0444, NULL, &boardid_ops);
 	if (!file)
 		return -ENOMEM;
 
