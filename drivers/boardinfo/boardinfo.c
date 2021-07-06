@@ -19,24 +19,43 @@ MODULE_DEVICE_TABLE(of, of_board_info_match);
 
 static int ver_show(struct seq_file *m, void *v)
 {
-	int id0, id1, id2;
-	int hwid;
+	int hwid0, hwid1, hwid2, pid0, pid1, pid2;
+	int hwid, pid;
 	char *boardver;
 
-	id0 = gpio_get_value(hw_id0);
-	id1 = gpio_get_value(hw_id1);
-	id2 = gpio_get_value(hw_id2);
+	hwid0 = gpio_get_value(hw_id0);
+	hwid1 = gpio_get_value(hw_id1);
+	hwid2 = gpio_get_value(hw_id2);
 
-	hwid = (id2 << 2) + (id1 << 1) + id0;
+	hwid = (hwid2 << 2) + (hwid1 << 1) + hwid0;
 
-	if (hwid == 0)
-		boardver = "1.00";
-	else if (hwid == 1)
-		boardver = "1.01";
-	else if (hwid == 2)
-		boardver = "1.02";
-	else if (hwid == 3)
-		boardver = "1.03";
+	pid0 = gpio_get_value(pid_id0);
+	pid1 = gpio_get_value(pid_id1);
+	pid2 = gpio_get_value(pid_id2);
+
+	pid = (pid2 << 2) + (pid1 << 1) + pid0;
+
+	if (hwid == 0) {
+		if (pid == 7)
+			boardver = "1.0";
+		else
+			boardver = "0.99";
+	} else if (hwid == 1) {
+		if (pid == 7)
+			boardver = "1.1";
+		else
+			boardver = "1.00";
+	} else if (hwid == 2) {
+		if (pid == 7)
+			boardver = "1.2";
+		else
+			boardver = "1.01";
+	} else if (hwid == 3)
+		boardver = "2.00";
+	else if (hwid == 4)
+		boardver = "2.01A";
+	else if (hwid == 5)
+		boardver = "2.01B";
 	else
 		boardver = "unknown";
 
@@ -46,28 +65,42 @@ static int ver_show(struct seq_file *m, void *v)
 
 static int info_show(struct seq_file *m, void *v)
 {
-	int id0, id1, id2;
-	int pid;
+	int pid0, pid1, pid2, hwid0, hwid1, hwid2;
+	int pid, hwid;
 	char *boardinfo;
 
-	id0 = gpio_get_value(pid_id0);
-	id1 = gpio_get_value(pid_id1);
-	id2 = gpio_get_value(pid_id2);
+	pid0 = gpio_get_value(pid_id0);
+	pid1 = gpio_get_value(pid_id1);
+	pid2 = gpio_get_value(pid_id2);
 
-	pid = (id2 << 2) + (id1 << 1) + id0;
+	pid = (pid2 << 2) + (pid1 << 1) + pid0;
 
-	if (pid == 0)
-		boardinfo = "Tinker Board S";
-	else if (pid == 1)
+	hwid0 = gpio_get_value(hw_id0);
+	hwid1 = gpio_get_value(hw_id1);
+	hwid2 = gpio_get_value(hw_id2);
+
+	hwid = (hwid2 << 2) + (hwid1 << 1) + hwid0;
+
+	if (pid == 0) {
+		if (hwid < 3)
+			boardinfo = "Tinker Board S";
+		else
+			boardinfo = "Tinker Board S R2";
+	} else if (pid == 1)
 		boardinfo = "Tinker Board S/HV";
 	else if (pid == 2)
 		boardinfo = "Tinker Board S";
 	else if (pid == 3)
-		boardinfo = "Tinker Board R2";
+		boardinfo = "Tinker Board (S) R2 SR";
 	else if (pid == 4)
 		boardinfo = "Tinker R/BR";
+	else if (pid == 5)
+		boardinfo = "Tinker R/BR";
 	else if (pid == 7)
-		boardinfo = "Tinker Board";
+		if (hwid < 3)
+			boardinfo = "Tinker Board";
+		else
+			boardinfo = "Tinker Board R2";
 	else
 		boardinfo = "unknown";
 
