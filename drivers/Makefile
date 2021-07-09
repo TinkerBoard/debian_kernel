@@ -65,6 +65,7 @@ obj-$(CONFIG_CONNECTOR)		+= connector/
 obj-$(CONFIG_FB_I810)           += video/fbdev/i810/
 obj-$(CONFIG_FB_INTEL)          += video/fbdev/intelfb/
 
+obj-$(CONFIG_BOARDINFO)		+= boardinfo/
 obj-$(CONFIG_PARPORT)		+= parport/
 obj-$(CONFIG_NVM)		+= lightnvm/
 obj-y				+= base/ block/ mfd/ nfc/
@@ -183,4 +184,3 @@ obj-$(CONFIG_TEE)		+= tee/
 obj-$(CONFIG_RK_NAND)		+= rk_nand/
 obj-$(CONFIG_RK_HEADSET)	+= headset_observe/
 obj-$(CONFIG_RK_FLASH)		+= rkflash/
-obj-$(CONFIG_BOARDINFO)		+= boardinfo/

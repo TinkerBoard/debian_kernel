@@ -7,9 +7,7 @@
 
 #define RK3288_GRF_GPIO2A_P		0x0150
 
-static int hw_id0, hw_id1, hw_id2;
-static int pid_id0, pid_id1, pid_id2;
-static int ddr_id0, ddr_id1, ddr_id2;
+static int hwid = -1, pid = -1, ddrid = -1;
 
 static const struct of_device_id of_board_info_match[] = {
 	{ .compatible = "board-info", },
@@ -19,21 +17,7 @@ MODULE_DEVICE_TABLE(of, of_board_info_match);
 
 static int ver_show(struct seq_file *m, void *v)
 {
-	int hwid0, hwid1, hwid2, pid0, pid1, pid2;
-	int hwid, pid;
 	char *boardver;
-
-	hwid0 = gpio_get_value(hw_id0);
-	hwid1 = gpio_get_value(hw_id1);
-	hwid2 = gpio_get_value(hw_id2);
-
-	hwid = (hwid2 << 2) + (hwid1 << 1) + hwid0;
-
-	pid0 = gpio_get_value(pid_id0);
-	pid1 = gpio_get_value(pid_id1);
-	pid2 = gpio_get_value(pid_id2);
-
-	pid = (pid2 << 2) + (pid1 << 1) + pid0;
 
 	if (hwid == 0) {
 		if (pid == 7)
@@ -65,21 +49,7 @@ static int ver_show(struct seq_file *m, void *v)
 
 static int info_show(struct seq_file *m, void *v)
 {
-	int pid0, pid1, pid2, hwid0, hwid1, hwid2;
-	int pid, hwid;
 	char *boardinfo;
-
-	pid0 = gpio_get_value(pid_id0);
-	pid1 = gpio_get_value(pid_id1);
-	pid2 = gpio_get_value(pid_id2);
-
-	pid = (pid2 << 2) + (pid1 << 1) + pid0;
-
-	hwid0 = gpio_get_value(hw_id0);
-	hwid1 = gpio_get_value(hw_id1);
-	hwid2 = gpio_get_value(hw_id2);
-
-	hwid = (hwid2 << 2) + (hwid1 << 1) + hwid0;
 
 	if (pid == 0) {
 		if (hwid < 3)
@@ -110,45 +80,19 @@ static int info_show(struct seq_file *m, void *v)
 
 static int bid_show(struct seq_file *m, void *v)
 {
-	int id0, id1, id2;
-	int hwid = -1;
-
-	id0 = gpio_get_value(hw_id0);
-	id1 = gpio_get_value(hw_id1);
-	id2 = gpio_get_value(hw_id2);
-
-	hwid = (id2 << 2) + (id1 << 1) + id0;
-
 	seq_printf(m, "%d\n", hwid);
 	return 0;
 }
 
 static int pid_show(struct seq_file *m, void *v)
 {
-	int id0, id1, id2;
-	int pid = -1;
-
-	id0 = gpio_get_value(pid_id0);
-	id1 = gpio_get_value(pid_id1);
-	id2 = gpio_get_value(pid_id2);
-
-	pid = (id2 << 2) + (id1 << 1) + id0;
-
 	seq_printf(m, "%d\n", pid);
 	return 0;
 }
 
 static int ddr_show(struct seq_file *m, void *v)
 {
-	int id0, id1, id2;
-	int ddrid;
 	char *ddr;
-
-	id0 = gpio_get_value(ddr_id0);
-	id1 = gpio_get_value(ddr_id1);
-	id2 = gpio_get_value(ddr_id2);
-
-	ddrid = (id2 << 2) + (id1 << 1) + id0;
 
 	if (ddrid == 0)
 		ddr = "4GB";
@@ -224,6 +168,12 @@ static int board_info_probe(struct platform_device *pdev)
 	int ret;
 	struct proc_dir_entry* file;
 
+	int hw_id0, hw_id1, hw_id2;
+	int pid_id0, pid_id1, pid_id2;
+	int ddr_id0, ddr_id1, ddr_id2;
+
+	int id0, id1, id2;
+
 	void *regs;
 	/* Pull up GPIO2 A1 A2 A3*/
 	regs = ioremap(0xff770000, 64*1024);
@@ -247,6 +197,7 @@ static int board_info_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+	id0 = gpio_get_value(hw_id0);
 
 	hw_id1 = of_get_named_gpio(dev->of_node, "hw-id1", 0);
 	if (!gpio_is_valid(hw_id1)) {
@@ -259,6 +210,7 @@ static int board_info_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+	id1 = gpio_get_value(hw_id1);
 
 	hw_id2 = of_get_named_gpio(dev->of_node, "hw-id2", 0);
 	if (!gpio_is_valid(hw_id2)) {
@@ -271,6 +223,9 @@ static int board_info_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+	id2 = gpio_get_value(hw_id2);
+
+	hwid = (id2 << 2) + (id1 << 1) + id0;
 
 	pid_id0 = of_get_named_gpio(dev->of_node, "pid-id0", 0);
 	if (!gpio_is_valid(pid_id0)) {
@@ -283,6 +238,7 @@ static int board_info_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+	id0 = gpio_get_value(pid_id0);
 
 	pid_id1 = of_get_named_gpio(dev->of_node, "pid-id1", 0);
 	if (!gpio_is_valid(pid_id1)) {
@@ -295,6 +251,7 @@ static int board_info_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+	id1 = gpio_get_value(pid_id1);
 
 	pid_id2 = of_get_named_gpio(dev->of_node, "pid-id2", 0);
 	if (!gpio_is_valid(pid_id2)) {
@@ -307,6 +264,9 @@ static int board_info_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+	id2 = gpio_get_value(pid_id2);
+
+	pid = (id2 << 2) + (id1 << 1) + id0;
 
 	ddr_id0 = of_get_named_gpio(dev->of_node, "ddr-id0", 0);
 	if (!gpio_is_valid(ddr_id0)) {
@@ -319,6 +279,7 @@ static int board_info_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+	id0 = gpio_get_value(ddr_id0);
 
 	ddr_id1 = of_get_named_gpio(dev->of_node, "ddr-id1", 0);
 	if (!gpio_is_valid(ddr_id1)) {
@@ -331,6 +292,7 @@ static int board_info_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+	id1 = gpio_get_value(ddr_id1);
 
 	ddr_id2 = of_get_named_gpio(dev->of_node, "ddr-id2", 0);
 	if (!gpio_is_valid(ddr_id2)) {
@@ -343,6 +305,21 @@ static int board_info_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+	id2 = gpio_get_value(ddr_id2);
+
+	ddrid = (id2 << 2) + (id1 << 1) + id0;
+
+	gpio_free(hw_id0);
+	gpio_free(hw_id1);
+	gpio_free(hw_id2);
+
+	gpio_free(pid_id0);
+	gpio_free(pid_id1);
+	gpio_free(pid_id2);
+
+	gpio_free(ddr_id0);
+	gpio_free(ddr_id1);
+	gpio_free(ddr_id2);
 
 	file = proc_create("boardver", 0444, NULL, &boardver_ops);
 	if (!file)
@@ -367,20 +344,20 @@ static int board_info_probe(struct platform_device *pdev)
 	return 0;
 }
 
+int get_board_id(void)
+{
+	return hwid;
+}
+EXPORT_SYMBOL_GPL(get_board_id);
+
+int get_project_id(void)
+{
+	return pid;
+}
+EXPORT_SYMBOL_GPL(get_project_id);
+
 static int board_info_remove(struct platform_device *pdev)
 {
-	gpio_free(hw_id0);
-	gpio_free(hw_id1);
-	gpio_free(hw_id2);
-
-	gpio_free(pid_id0);
-	gpio_free(pid_id1);
-	gpio_free(pid_id2);
-
-	gpio_free(ddr_id0);
-	gpio_free(ddr_id1);
-	gpio_free(ddr_id2);
-
 	return 0;
 }
 
