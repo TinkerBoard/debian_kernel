@@ -85,13 +85,13 @@ static int info_show(struct seq_file *m, void *v)
 		if (hwid < 3)
 			boardinfo = "Tinker Board S";
 		else
-			boardinfo = "Tinker Board S R2";
+			boardinfo = "Tinker Board S R2.0";
 	} else if (pid == 1)
 		boardinfo = "Tinker Board S/HV";
 	else if (pid == 2)
 		boardinfo = "Tinker Board S";
 	else if (pid == 3)
-		boardinfo = "Tinker Board (S) R2 SR";
+		boardinfo = "Tinker Board (S) R2.0 SR";
 	else if (pid == 4)
 		boardinfo = "Tinker R/BR";
 	else if (pid == 5)
@@ -100,7 +100,7 @@ static int info_show(struct seq_file *m, void *v)
 		if (hwid < 3)
 			boardinfo = "Tinker Board";
 		else
-			boardinfo = "Tinker Board R2";
+			boardinfo = "Tinker Board R2.0";
 	else
 		boardinfo = "unknown";
 
