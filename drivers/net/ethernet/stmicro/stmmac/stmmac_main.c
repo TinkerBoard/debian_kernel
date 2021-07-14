@@ -689,7 +689,7 @@ static void stmmac_release_ptp(struct stmmac_priv *priv)
 	stmmac_ptp_unregister(priv);
 }
 
-void setLedConfiguration(struct phy_device *phydev) {
+void set_led_configuration_e(struct phy_device *phydev) {
 
 	// disable EEE LED mode
 	phy_write(phydev, 31, 0x0005);
@@ -727,6 +727,22 @@ void setLedConfiguration(struct phy_device *phydev) {
 	phy_write(phydev, 31, 0);
 }
 
+void set_led_configuration_f(struct phy_device *phydev) {
+	// To switch Page0xd04
+	phy_write(phydev, 31, 0x0d04);
+
+	//Disable EEELCR mode
+	phy_write(phydev, 17, 0);
+	printk("%s: #### before setting led, Reg16 = 0x%x\n", __func__, phy_read(phydev, 16));
+
+	//LED Link speed default setting
+	phy_write(phydev, 16, 0x8910);
+	printk("%s: #### after setting led, Reg16 = 0x%x\n", __func__, phy_read(phydev, 16));
+
+	//switch to PHY`s Page0
+	phy_write(phydev, 31, 0);
+}
+
 void adjust_rgmii_driving(struct phy_device *phydev)
 {
 	// set to extension page
@@ -743,6 +759,21 @@ void adjust_rgmii_driving(struct phy_device *phydev)
 	//switch to PHY`s Page0
 	phy_write(phydev, 31, 0);
 }
+
+extern int get_board_id(void);
+void setConfiguration(struct phy_device *phydev) {
+	bool is_rtl8211f = get_board_id() >= 5 ? true: false;
+	printk("%s: #### hwid = %d, PYH is %s \n", __func__, get_board_id(), is_rtl8211f ? "RTL8211F" : "RTL8211E");
+	if (is_rtl8211f) {
+		// RTL8211F
+		set_led_configuration_f(phydev);
+	} else {
+		// RTL8211E
+		set_led_configuration_e(phydev);
+		adjust_rgmii_driving(phydev);
+	}
+}
+
 
 /**
  * stmmac_adjust_link - adjusts the link parameters
@@ -785,8 +816,7 @@ static void stmmac_adjust_link(struct net_device *dev)
 
 		if (phydev->speed != priv->speed) {
 			new_state = 1;
-			setLedConfiguration(phydev);
-			adjust_rgmii_driving(phydev);
+			setConfiguration(phydev);
 			switch (phydev->speed) {
 			case 1000:
 				if (likely(priv->plat->has_gmac))
