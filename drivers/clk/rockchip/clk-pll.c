@@ -356,7 +356,7 @@ static const struct rockchip_pll_rate_table *rockchip_get_pll_settings(
 			continue;
 		if( (rate == 85500000) && (rate_table[i].nr == 4) && iex_monitor)
 			continue;
-		if( (rate == 78750000) && !iex_monitor)
+		if( (rate == 78750000) && (rate_table[i].nr == 4) && !iex_monitor)
 			continue;
 		if( (rate == 170000000) && !acer_kg221q_monitor)
 			continue;
