@@ -46,6 +46,7 @@
 
 / {
 	compatible = "rockchip,rk3288-miniarm", "rockchip,rk3288";
+	model = "Tinker Board (S)";
 
 	memory {
 		device_type = "memory";
