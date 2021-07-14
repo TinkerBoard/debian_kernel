@@ -961,6 +961,7 @@
 	gpio_init_config {
 		gpio_init: gpio-init {
                         rockchip,pins =
+				<7 13 RK_FUNC_GPIO &pcfg_pull_down>,
 				<7 22 RK_FUNC_GPIO &pcfg_pull_none>,
 				<7 23 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
