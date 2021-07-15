@@ -362,8 +362,6 @@ static const struct rockchip_pll_rate_table *rockchip_get_pll_settings(
 			continue;
 		if( (rate == 28320000) && asus_vz229h_monitor)
 			continue;
-		if( (rate == 31500000) && (rate_table[i].nr == 1) && !asus_vz229h_monitor)
-			continue;
 		if((rate == 33900000) && !dwe2100_panel)
 			continue;
 		if (rate == rate_table[i].rate) {
