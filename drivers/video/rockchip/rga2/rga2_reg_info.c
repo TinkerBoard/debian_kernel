@@ -243,17 +243,17 @@ static void RGA2_set_reg_src_info(RK_U8 *base, struct rga2_req *msg)
         case RGA2_FORMAT_BGRX_8888    : src0_format = 0x1; src0_rb_swp = 0x1; pixel_width = 4; msg->src_trans_mode &= 0x07; break;
         case RGA2_FORMAT_RGB_888      : src0_format = 0x2; src0_rgb_pack = 1; pixel_width = 3; msg->src_trans_mode &= 0x07; break;
         case RGA2_FORMAT_BGR_888      : src0_format = 0x2; src0_rgb_pack = 1; src0_rb_swp = 1; pixel_width = 3; msg->src_trans_mode &= 0x07; break;
-        case RGA2_FORMAT_RGB_565      : src0_format = 0x4; pixel_width = 2; msg->src_trans_mode &= 0x07; src0_rb_swp = 0x1; break;
+        case RGA2_FORMAT_RGB_565      : src0_format = 0x4; pixel_width = 2; msg->src_trans_mode &= 0x07; break;
         case RGA2_FORMAT_RGBA_5551    : src0_format = 0x5; pixel_width = 2; src0_rb_swp = 0x1; break;
         case RGA2_FORMAT_RGBA_4444    : src0_format = 0x6; pixel_width = 2; src0_rb_swp = 0x1; break;
-        case RGA2_FORMAT_BGR_565      : src0_format = 0x4; pixel_width = 2; msg->src_trans_mode &= 0x07; break;
+        case RGA2_FORMAT_BGR_565      : src0_format = 0x4; pixel_width = 2; msg->src_trans_mode &= 0x07; src0_rb_swp = 0x1; break;
         case RGA2_FORMAT_BGRA_5551    : src0_format = 0x5; pixel_width = 2; break;
         case RGA2_FORMAT_BGRA_4444    : src0_format = 0x6; pixel_width = 2; break;
 
-		case RGA2_FORMAT_YVYU_422     : src0_format = 0x7; pixel_width = 2; src0_cbcr_swp = 0; src0_rb_swp = 0x0; break;//rbswap=ycswap
-		case RGA2_FORMAT_VYUY_422     : src0_format = 0x7; pixel_width = 2; src0_cbcr_swp = 0; src0_rb_swp = 0x1; break;
-		case RGA2_FORMAT_YUYV_422     : src0_format = 0x7; pixel_width = 2; src0_cbcr_swp = 1; src0_rb_swp = 0x0; break;
-		case RGA2_FORMAT_UYVY_422     : src0_format = 0x7; pixel_width = 2; src0_cbcr_swp = 1; src0_rb_swp = 0x1; break;
+		case RGA2_FORMAT_YVYU_422     : src0_format = 0x7; pixel_width = 2; src0_cbcr_swp = 1; src0_rb_swp = 0x1; break;//rbswap=ycswap
+		case RGA2_FORMAT_VYUY_422     : src0_format = 0x7; pixel_width = 2; src0_cbcr_swp = 1; src0_rb_swp = 0x0; break;
+		case RGA2_FORMAT_YUYV_422     : src0_format = 0x7; pixel_width = 2; src0_cbcr_swp = 0; src0_rb_swp = 0x1; break;
+		case RGA2_FORMAT_UYVY_422     : src0_format = 0x7; pixel_width = 2; src0_cbcr_swp = 0; src0_rb_swp = 0x0; break;
 
         case RGA2_FORMAT_YCbCr_422_SP : src0_format = 0x8; xdiv = 1; ydiv = 1; break;
         case RGA2_FORMAT_YCbCr_422_P  : src0_format = 0x9; xdiv = 2; ydiv = 1; break;
@@ -397,10 +397,10 @@ static void RGA2_set_reg_dst_info(u8 *base, struct rga2_req *msg)
         case RGA2_FORMAT_BGRX_8888    : src1_format = 0x1; src1_rb_swp = 0x1; spw = 4; break;
         case RGA2_FORMAT_RGB_888      : src1_format = 0x2; src1_rgb_pack = 1; spw = 3; break;
         case RGA2_FORMAT_BGR_888      : src1_format = 0x2; src1_rgb_pack = 1; src1_rb_swp = 1; spw = 3; break;
-        case RGA2_FORMAT_RGB_565      : src1_format = 0x4; spw = 2; src1_rb_swp = 0x1; break;
+        case RGA2_FORMAT_RGB_565      : src1_format = 0x4; spw = 2; break;
         case RGA2_FORMAT_RGBA_5551    : src1_format = 0x5; spw = 2; src1_rb_swp = 0x1; break;
         case RGA2_FORMAT_RGBA_4444    : src1_format = 0x6; spw = 2; src1_rb_swp = 0x1; break;
-        case RGA2_FORMAT_BGR_565      : src1_format = 0x4; spw = 2; break;
+        case RGA2_FORMAT_BGR_565      : src1_format = 0x4; spw = 2; src1_rb_swp = 0x1; break;
         case RGA2_FORMAT_BGRA_5551    : src1_format = 0x5; spw = 2; break;
         case RGA2_FORMAT_BGRA_4444    : src1_format = 0x6; spw = 2; break;
         default                       : spw = 4; break;
@@ -419,10 +419,10 @@ static void RGA2_set_reg_dst_info(u8 *base, struct rga2_req *msg)
         case RGA2_FORMAT_BGRX_8888    : dst_format = 0x1; dst_rb_swp = 0x1; dpw = 4; break;
         case RGA2_FORMAT_RGB_888      : dst_format = 0x2; dst_rgb_pack = 1; dpw = 3; break;
         case RGA2_FORMAT_BGR_888      : dst_format = 0x2; dst_rgb_pack = 1; dst_rb_swp = 1; dpw = 3; break;
-        case RGA2_FORMAT_RGB_565      : dst_format = 0x4; dpw = 2; dst_rb_swp = 0x1; break;
+        case RGA2_FORMAT_RGB_565      : dst_format = 0x4; dpw = 2; break;
         case RGA2_FORMAT_RGBA_5551    : dst_format = 0x5; dpw = 2; dst_rb_swp = 0x1; break;
         case RGA2_FORMAT_RGBA_4444    : dst_format = 0x6; dpw = 2; dst_rb_swp = 0x1; break;
-        case RGA2_FORMAT_BGR_565      : dst_format = 0x4; dpw = 2; break;
+        case RGA2_FORMAT_BGR_565      : dst_format = 0x4; dpw = 2; dst_rb_swp = 0x1; break;
         case RGA2_FORMAT_BGRA_5551    : dst_format = 0x5; dpw = 2; break;
         case RGA2_FORMAT_BGRA_4444    : dst_format = 0x6; dpw = 2; break;
 
@@ -438,14 +438,14 @@ static void RGA2_set_reg_dst_info(u8 *base, struct rga2_req *msg)
 		case RGA2_FORMAT_YCbCr_400    : dst_format = 0x8; dst_fmt_yuv400_en = 1; x_div = 1; y_div = 1; break;
 		case RGA2_FORMAT_Y4           : dst_format = 0x8; dst_fmt_y4_en = 1; dst_fmt_yuv400_en = 1; x_div = 1; y_div = 1; break;
 
-		case RGA2_FORMAT_YUYV_422     : dst_format = 0xc; dpw = 2; break;
-		case RGA2_FORMAT_YVYU_422     : dst_format = 0xc; dpw = 2; dst_cbcr_swp = 1; break;
-		case RGA2_FORMAT_YUYV_420     : dst_format = 0xd; dpw = 2; break;
-		case RGA2_FORMAT_YVYU_420     : dst_format = 0xd; dpw = 2; dst_cbcr_swp = 1; break;
-		case RGA2_FORMAT_UYVY_422     : dst_format = 0xe; dpw = 2; break;
-		case RGA2_FORMAT_VYUY_422     : dst_format = 0xe; dpw = 2; dst_cbcr_swp = 1; break;
-		case RGA2_FORMAT_UYVY_420     : dst_format = 0xf; dpw = 2; break;
-		case RGA2_FORMAT_VYUY_420     : dst_format = 0xf; dpw = 2; dst_cbcr_swp = 1; break;
+		case RGA2_FORMAT_YUYV_422     : dst_format = 0xe; dpw = 2; dst_cbcr_swp = 1; break;
+		case RGA2_FORMAT_YVYU_422     : dst_format = 0xe; dpw = 2; break;
+		case RGA2_FORMAT_YUYV_420     : dst_format = 0xf; dpw = 2; dst_cbcr_swp = 1; break;
+		case RGA2_FORMAT_YVYU_420     : dst_format = 0xf; dpw = 2; break;
+		case RGA2_FORMAT_UYVY_422     : dst_format = 0xc; dpw = 2; dst_cbcr_swp = 1; break;
+		case RGA2_FORMAT_VYUY_422     : dst_format = 0xc; dpw = 2; break;
+		case RGA2_FORMAT_UYVY_420     : dst_format = 0xd; dpw = 2; dst_cbcr_swp = 1; break;
+		case RGA2_FORMAT_VYUY_420     : dst_format = 0xd; dpw = 2; break;
     };
 
     reg = ((reg & (~m_RGA2_DST_INFO_SW_DST_FMT)) | (s_RGA2_DST_INFO_SW_DST_FMT(dst_format)));
@@ -1091,8 +1091,12 @@ void RGA_MSG_2_RGA2_MSG(struct rga_req *req_rga, struct rga2_req *req)
 
     memcpy(&req->src, &req_rga->src, sizeof(req_rga->src));
     memcpy(&req->dst, &req_rga->dst, sizeof(req_rga->dst));
-    memcpy(&req->pat, &req_rga->pat, sizeof(req_rga->pat));
-    memcpy(&req->src1,&req_rga->pat, sizeof(req_rga->pat));
+    /* The application will only import pat or src1. */
+    if (req->render_mode == update_palette_table_mode) {
+        memcpy(&req->pat, &req_rga->pat, sizeof(req_rga->pat));
+    } else {
+        memcpy(&req->src1, &req_rga->pat, sizeof(req_rga->pat));
+    }
 
     format_name_convert(&req->src.format, req_rga->src.format);
     format_name_convert(&req->dst.format, req_rga->dst.format);
@@ -1168,6 +1172,8 @@ void RGA_MSG_2_RGA2_MSG(struct rga_req *req_rga, struct rga2_req *req)
     req->rop_mode = req_rga->alpha_rop_mode;
 
     req->color_fill_mode = req_rga->color_fill_mode;
+    req->alpha_zero_key = req_rga->alpha_rop_mode >> 4;
+    req->src_trans_mode = req_rga->src_trans_mode;
     req->color_key_min   = req_rga->color_key_min;
     req->color_key_max   = req_rga->color_key_max;
 
@@ -1233,8 +1239,8 @@ void RGA_MSG_2_RGA2_MSG(struct rga_req *req_rga, struct rga2_req *req)
                     req->alpha_mode_1 = alpha_mode_1;
                     break;
                 case 4: //dst = (sc*(256-da) + 256*dc) >> 8
-                    req->alpha_mode_0 = 0x1232;
-                    req->alpha_mode_1 = 0x1232;
+                    req->alpha_mode_0 = 0x1A3A;
+                    req->alpha_mode_1 = 0x1A3A;
                     break;
                 case 5: //dst = (da*sc) >> 8
                     break;
@@ -1258,6 +1264,13 @@ void RGA_MSG_2_RGA2_MSG(struct rga_req *req_rga, struct rga2_req *req)
 		    break;
                 default:
                     break;
+            }
+            /* Real color mode */
+            if ((req_rga->alpha_rop_flag >> 9) & 1) {
+                if (req->alpha_mode_0 & (0x01 << 1))
+                    req->alpha_mode_0 |= (1 << 7);
+                if (req->alpha_mode_0 & (0x01 << 9))
+                    req->alpha_mode_0 |= (1 << 15);
             }
         }
         else {
@@ -1391,6 +1404,8 @@ void RGA_MSG_2_RGA2_MSG_32(struct rga_req_32 *req_rga, struct rga2_req *req)
     req->rop_code = req_rga->rop_code;
     req->rop_mode = req_rga->alpha_rop_mode;
     req->color_fill_mode = req_rga->color_fill_mode;
+    req->alpha_zero_key = req_rga->alpha_rop_mode >> 4;
+    req->src_trans_mode = req_rga->src_trans_mode;
     req->color_key_min   = req_rga->color_key_min;
     req->color_key_max   = req_rga->color_key_max;
     req->fg_color = req_rga->fg_color;
@@ -1446,8 +1461,8 @@ void RGA_MSG_2_RGA2_MSG_32(struct rga_req_32 *req_rga, struct rga2_req *req)
                     req->alpha_mode_1 = alpha_mode_1;
                     break;
                 case 4: //dst = (sc*(256-da) + 256*dc) >> 8
-                    req->alpha_mode_0 = 0x1232;
-                    req->alpha_mode_1 = 0x1232;
+                    req->alpha_mode_0 = 0x1A3A;
+                    req->alpha_mode_1 = 0x1A3A;
                     break;
                 case 5: //dst = (da*sc) >> 8
                     break;
@@ -1471,6 +1486,13 @@ void RGA_MSG_2_RGA2_MSG_32(struct rga_req_32 *req_rga, struct rga2_req *req)
 		    break;
                 default:
                     break;
+            }
+            /* Real color mode */
+            if ((req_rga->alpha_rop_flag >> 9) & 1) {
+                if (req->alpha_mode_0 & (0x01 << 1))
+                    req->alpha_mode_0 |= (1 << 7);
+                if (req->alpha_mode_0 & (0x01 << 9))
+                    req->alpha_mode_0 |= (1 << 15);
             }
         }
         else {

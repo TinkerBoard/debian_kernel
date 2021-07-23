@@ -202,6 +202,98 @@ static void dwc2_hsotg_ctrl_epint(struct dwc2_hsotg *hsotg,
 }
 
 /**
+ * dwc2_hsotg_tx_fifo_count - return count of TX FIFOs in device mode
+ */
+int dwc2_hsotg_tx_fifo_count(struct dwc2_hsotg *hsotg)
+{
+	if (hsotg->hw_params.en_multiple_tx_fifo)
+		/* In dedicated FIFO mode we need count of IN EPs */
+		return (dwc2_readl(hsotg->regs + GHWCFG4)  &
+			GHWCFG4_NUM_IN_EPS_MASK) >> GHWCFG4_NUM_IN_EPS_SHIFT;
+	else
+		/* In shared FIFO mode we need count of Periodic IN EPs */
+		return hsotg->hw_params.num_dev_perio_in_ep;
+}
+
+/**
+ * dwc2_hsotg_ep_info_size - return Endpoint Info Control block size in DWORDs
+ */
+static int dwc2_hsotg_ep_info_size(struct dwc2_hsotg *hsotg)
+{
+	int val = 0;
+	int i;
+	u32 ep_dirs;
+
+	/*
+	 * Don't need additional space for ep info control registers in
+	 * slave mode.
+	 */
+	if (!using_dma(hsotg)) {
+		dev_dbg(hsotg->dev, "Buffer DMA ep info size 0\n");
+		return 0;
+	}
+
+	/*
+	 * Buffer DMA mode - 1 location per endpoit
+	 * Descriptor DMA mode - 4 locations per endpoint
+	 */
+	ep_dirs = hsotg->hw_params.dev_ep_dirs;
+
+	for (i = 0; i <= hsotg->hw_params.num_dev_ep; i++) {
+		val += ep_dirs & 3 ? 1 : 2;
+		ep_dirs >>= 2;
+	}
+
+	/* TODO set 4 locations per endpoint for Descriptor DMA mode */
+
+	return val;
+}
+
+/**
+ * dwc2_hsotg_tx_fifo_total_depth - return total FIFO depth available for
+ * device mode TX FIFOs
+ */
+int dwc2_hsotg_tx_fifo_total_depth(struct dwc2_hsotg *hsotg)
+{
+	int ep_info_size;
+	int addr;
+	int tx_addr_max;
+	u32 np_tx_fifo_size;
+
+	np_tx_fifo_size = min_t(u32, hsotg->hw_params.dev_nperio_tx_fifo_size,
+				hsotg->g_np_g_tx_fifo_sz);
+
+	/* Get Endpoint Info Control block size in DWORDs. */
+	ep_info_size = dwc2_hsotg_ep_info_size(hsotg);
+	tx_addr_max = hsotg->hw_params.total_fifo_size - ep_info_size;
+
+	addr = hsotg->g_rx_fifo_sz + np_tx_fifo_size;
+	if (tx_addr_max <= addr)
+		return 0;
+
+	return tx_addr_max - addr;
+}
+
+/**
+ * dwc2_hsotg_tx_fifo_average_depth - returns average depth of device mode
+ * TX FIFOs
+ */
+int dwc2_hsotg_tx_fifo_average_depth(struct dwc2_hsotg *hsotg)
+{
+	int tx_fifo_count;
+	int tx_fifo_depth;
+
+	tx_fifo_depth = dwc2_hsotg_tx_fifo_total_depth(hsotg);
+
+	tx_fifo_count = dwc2_hsotg_tx_fifo_count(hsotg);
+
+	if (!tx_fifo_count)
+		return tx_fifo_depth;
+	else
+		return tx_fifo_depth / tx_fifo_count;
+}
+
+/**
  * dwc2_hsotg_init_fifo - initialise non-periodic FIFOs
  * @hsotg: The device instance.
  */
@@ -2464,8 +2556,11 @@ void dwc2_hsotg_disconnect(struct dwc2_hsotg *hsotg)
 	if (!hsotg->connected)
 		return;
 
+	del_timer(&hsotg->rst_complete_timer);
+
 	hsotg->connected = 0;
 	hsotg->test_mode = 0;
+	hsotg->rst_completed = 0;
 
 	for (ep = 0; ep < hsotg->num_of_eps; ep++) {
 		if (hsotg->eps_in[ep])
@@ -2478,6 +2573,8 @@ void dwc2_hsotg_disconnect(struct dwc2_hsotg *hsotg)
 
 	call_gadget(hsotg, disconnect);
 	hsotg->lx_state = DWC2_L3;
+
+	usb_gadget_set_state(&hsotg->gadget, USB_STATE_NOTATTACHED);
 }
 
 /**
@@ -2804,6 +2901,10 @@ irq_retry:
 
 		u32 usb_status = dwc2_readl(hsotg->regs + GOTGCTL);
 		u32 connected = hsotg->connected;
+
+		hsotg->rst_completed = 1;
+		/* Can't del_timer_sync in interrupt */
+		del_timer(&hsotg->rst_complete_timer);
 
 		dev_dbg(hsotg->dev, "%s: USBRst\n", __func__);
 		dev_dbg(hsotg->dev, "GNPTXSTS=%08x\n",
@@ -3148,10 +3249,11 @@ static int dwc2_hsotg_ep_enable(struct usb_ep *ep,
 	 * a unique tx-fifo even if it is non-periodic.
 	 */
 	if (dir_in && hsotg->dedicated_fifos) {
+		unsigned fifo_count = dwc2_hsotg_tx_fifo_count(hsotg);
 		u32 fifo_index = 0;
 		u32 fifo_size = UINT_MAX;
 		size = hs_ep->ep.maxpacket*hs_ep->mc;
-		for (i = 1; i < hsotg->num_of_eps; ++i) {
+		for (i = 1; i <= fifo_count; ++i) {
 			if (hsotg->fifo_map & (1<<i))
 				continue;
 			val = dwc2_readl(hsotg->regs + DPTXFSIZN(i));
@@ -3228,7 +3330,8 @@ static int dwc2_hsotg_ep_disable(struct usb_ep *ep)
 	ctrl = dwc2_readl(hsotg->regs + epctrl_reg);
 
 	/* stop isoc ep in transfer even if the ep is disabled */
-	if ((ctrl & DXEPCTL_EPENA) || (dir_in && (ctrl & DXEPCTL_EPTYPE_ISO)))
+	if ((ctrl & DXEPCTL_EPENA) ||
+	    (dir_in && ((ctrl & DXEPCTL_EPTYPE_MASK) == DXEPCTL_EPTYPE_ISO)))
 		dwc2_hsotg_ep_stop_xfr(hsotg, hs_ep);
 
 	ctrl &= ~DXEPCTL_EPENA;
@@ -3804,6 +3907,45 @@ static int dwc2_hsotg_hw_cfg(struct dwc2_hsotg *hsotg)
 }
 
 /**
+ * dwc2_wait_reset_watchdog - Watchdog timer function for a reset on the USB
+ * @param: The device state
+ *
+ * Watchdog timer function for when the dwc2 controller fails to detect
+ * a reset on USB bus. In this case, we assume the dwc2 controller is broken,
+ * the host does not see that the device is connected, and the device does
+ * not receive reset signal on the USB. So we have to do soft disconnect
+ * and soft connect, and try to generate a device connect event to the USB
+ * host.
+ */
+static void dwc2_wait_reset_watchdog(unsigned long data)
+{
+	struct dwc2_hsotg *hsotg = (struct dwc2_hsotg *)data;
+	unsigned long flags;
+	u32 dctl;
+
+	spin_lock_irqsave(&hsotg->lock, flags);
+
+	if (!hsotg->rst_completed) {
+		dctl = dwc2_readl(hsotg->regs + DCTL);
+
+		/*
+		 * According to the dwc2 controller databook,
+		 * Table 5-55 lists the minimum duration under various
+		 * conditions for which the Soft Disconnect bit must be
+		 * set for the USB host to detect a device disconnect.
+		 * We set minimum duration to 3 microseconds.
+		 */
+		if (!(dctl & DCTL_SFTDISCON)) {
+			dwc2_hsotg_core_disconnect(hsotg);
+			udelay(3);
+			dwc2_hsotg_core_connect(hsotg);
+		}
+	}
+
+	spin_unlock_irqrestore(&hsotg->lock, flags);
+}
+
+/**
  * dwc2_hsotg_dump - dump state of the udc
  * @param: The device state
  */
@@ -3908,15 +4050,20 @@ static inline void dwc2_hsotg_of_probe(struct dwc2_hsotg *hsotg) { }
 int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq)
 {
 	struct device *dev = hsotg->dev;
+	int depth_average;
+	int fifo_count;
 	int epnum;
 	int ret;
 	int i;
-	u32 p_tx_fifo[] = DWC2_G_P_LEGACY_TX_FIFO_SIZE;
 
 	/* Initialize to legacy fifo configuration values */
 	hsotg->g_rx_fifo_sz = 2048;
 	hsotg->g_np_g_tx_fifo_sz = 1024;
-	memcpy(&hsotg->g_tx_fifo_sz[1], p_tx_fifo, sizeof(p_tx_fifo));
+	fifo_count = dwc2_hsotg_tx_fifo_count(hsotg);
+	depth_average = dwc2_hsotg_tx_fifo_average_depth(hsotg);
+	for (i = 1; i <= fifo_count; i++)
+		hsotg->g_tx_fifo_sz[i] = depth_average;
+
 	/* Device tree specific probe */
 	dwc2_hsotg_of_probe(hsotg);
 
@@ -4000,6 +4147,9 @@ int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq)
 								epnum, 0);
 	}
 
+	setup_timer(&hsotg->rst_complete_timer, dwc2_wait_reset_watchdog,
+		    (unsigned long)hsotg);
+
 	ret = usb_add_gadget_udc(dev, &hsotg->gadget);
 	if (ret) {
 		dwc2_hsotg_ep_free_request(&hsotg->eps_out[0]->ep,
@@ -4019,6 +4169,7 @@ int dwc2_hsotg_remove(struct dwc2_hsotg *hsotg)
 {
 	usb_del_gadget_udc(&hsotg->gadget);
 	dwc2_hsotg_ep_free_request(&hsotg->eps_out[0]->ep, hsotg->ctrl_req);
+	del_timer_sync(&hsotg->rst_complete_timer);
 
 	return 0;
 }

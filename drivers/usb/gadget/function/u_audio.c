@@ -687,7 +687,6 @@ static void g_audio_work(struct work_struct *data)
 	struct device *dev = &gadget->dev;
 	char *uac_event[4]  = { NULL, NULL, NULL, NULL };
 	char str[19];
-	signed short volume;
 	int i;
 
 	for (i = 0; i < SET_USB_STATE_MAX; i++) {
@@ -736,17 +735,13 @@ static void g_audio_work(struct work_struct *data)
 		case SET_VOLUME_OUT:
 			uac_event[0] = "USB_STATE=SET_VOLUME";
 			uac_event[1] = "STREAM_DIRECTION=OUT";
-			volume = (signed short)params->c_volume;
-			volume /= UAC_VOLUME_RES;
-			snprintf(str, sizeof(str), "VOLUME=%d%%", volume + 50);
+			snprintf(str, sizeof(str), "VOLUME=%6d", (int16_t)params->c_volume);
 			uac_event[2] = str;
 			break;
 		case SET_VOLUME_IN:
 			uac_event[0] = "USB_STATE=SET_VOLUME";
 			uac_event[1] = "STREAM_DIRECTION=IN";
-			volume = (signed short)params->p_volume;
-			volume /= UAC_VOLUME_RES;
-			snprintf(str, sizeof(str), "VOLUME=%d%%", volume + 50);
+			snprintf(str, sizeof(str), "VOLUME=%6d", (int16_t)params->p_volume);
 			uac_event[2] = str;
 			break;
 		default:
@@ -913,6 +908,9 @@ void g_audio_cleanup(struct g_audio *g_audio)
 	card = uac->card;
 	if (card)
 		snd_card_free(card);
+
+	free_ep(&uac->c_prm, g_audio->out_ep);
+	free_ep(&uac->p_prm, g_audio->in_ep);
 
 	kfree(uac->p_prm.ureq);
 	kfree(uac->c_prm.ureq);

@@ -691,8 +691,8 @@ static int rga2_flush(rga2_session *session, unsigned long arg)
 {
 	int ret = 0;
 	int ret_timeout;
-	ktime_t start;
-	ktime_t end;
+	ktime_t start = ktime_set(0, 0);
+	ktime_t end = ktime_set(0, 0);
 
 #if RGA2_DEBUGFS
 	if (RGA2_TEST_TIME)
@@ -873,9 +873,11 @@ static struct rga2_reg * rga2_reg_init(rga2_session *session, struct rga2_req *r
 	reg->sg_src0 = req->sg_src0;
 	reg->sg_dst = req->sg_dst;
 	reg->sg_src1 = req->sg_src1;
+	reg->sg_els = req->sg_els;
 	reg->attach_src0 = req->attach_src0;
 	reg->attach_dst = req->attach_dst;
 	reg->attach_src1 = req->attach_src1;
+	reg->attach_els = req->attach_els;
 #endif
 
     mutex_lock(&rga2_service.lock);
@@ -1004,8 +1006,8 @@ static int rga2_put_dma_buf(struct rga2_req *req, struct rga2_reg *reg)
 	if (!req && !reg)
 		return -EINVAL;
 
-	attach = (!reg) ? req->attach_src0 : reg->attach_src0;
-	sgt = (!reg) ? req->sg_src0 : reg->sg_src0;
+	attach = reg ? reg->attach_src0 : req->attach_src0;
+	sgt = reg ? reg->sg_src0 : req->sg_src0;
 	if (attach && sgt)
 		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
 	if (attach) {
@@ -1014,8 +1016,8 @@ static int rga2_put_dma_buf(struct rga2_req *req, struct rga2_reg *reg)
 		dma_buf_put(dma_buf);
 	}
 
-	attach = (!reg) ? req->attach_dst : reg->attach_dst;
-	sgt = (!reg) ? req->sg_dst : reg->sg_dst;
+	attach = reg ? reg->attach_dst : req->attach_dst;
+	sgt = reg ? reg->sg_dst : req->sg_dst;
 	if (attach && sgt)
 		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
 	if (attach) {
@@ -1024,8 +1026,18 @@ static int rga2_put_dma_buf(struct rga2_req *req, struct rga2_reg *reg)
 		dma_buf_put(dma_buf);
 	}
 
-	attach = (!reg) ? req->attach_src1 : reg->attach_src1;
-	sgt = (!reg) ? req->sg_src1 : reg->sg_src1;
+	attach = reg ? reg->attach_src1 : req->attach_src1;
+	sgt = reg ? reg->sg_src1 : req->sg_src1;
+	if (attach && sgt)
+		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
+	if (attach) {
+		dma_buf = attach->dmabuf;
+		dma_buf_detach(dma_buf, attach);
+		dma_buf_put(dma_buf);
+	}
+
+	attach = reg ? reg->attach_els : req->attach_els;
+	sgt = reg ? reg->sg_els : req->sg_els;
 	if (attach && sgt)
 		dma_buf_unmap_attachment(attach, sgt, DMA_BIDIRECTIONAL);
 	if (attach) {
@@ -1076,7 +1088,9 @@ static void rga2_del_running_list_timeout(void)
 	while (!list_empty(&rga2_service.running)) {
 		reg = list_entry(rga2_service.running.next, struct rga2_reg,
 				 status_link);
+#if 0
 		kfree(reg->MMU_base);
+#endif
 		if (reg->MMU_len && tbuf) {
 			if (tbuf->back + reg->MMU_len > 2 * tbuf->size)
 				tbuf->back = reg->MMU_len + tbuf->size;
@@ -1693,7 +1707,7 @@ static long rga_ioctl(struct file *file, uint32_t cmd, unsigned long arg)
 			}
 			RGA_MSG_2_RGA2_MSG(&req_rga, &req);
 
-			if (first_RGA2_proc == 0 && req.bitblt_mode == bitblt_mode && rga2_service.dev_mode == 1) {
+			if (first_RGA2_proc == 0 && req.render_mode == bitblt_mode && rga2_service.dev_mode == 1) {
 				memcpy(&req_first, &req, sizeof(struct rga2_req));
 				if ((req_first.src.act_w != req_first.dst.act_w)
 						|| (req_first.src.act_h != req_first.dst.act_h)) {
@@ -1719,7 +1733,7 @@ static long rga_ioctl(struct file *file, uint32_t cmd, unsigned long arg)
 			}
 
 			RGA_MSG_2_RGA2_MSG(&req_rga, &req);
-			if (first_RGA2_proc == 0 && req.bitblt_mode == bitblt_mode && rga2_service.dev_mode == 1) {
+			if (first_RGA2_proc == 0 && req.render_mode == bitblt_mode && rga2_service.dev_mode == 1) {
 				memcpy(&req_first, &req, sizeof(struct rga2_req));
 				if ((req_first.src.act_w != req_first.dst.act_w)
 						|| (req_first.src.act_h != req_first.dst.act_h)
@@ -1867,7 +1881,7 @@ static long compat_rga_ioctl(struct file *file, uint32_t cmd, unsigned long arg)
 
 			RGA_MSG_2_RGA2_MSG_32(&req_rga, &req);
 
-			if (first_RGA2_proc == 0 && req.bitblt_mode == bitblt_mode && rga2_service.dev_mode == 1) {
+			if (first_RGA2_proc == 0 && req.render_mode == bitblt_mode && rga2_service.dev_mode == 1) {
 				memcpy(&req_first, &req, sizeof(struct rga2_req));
 				if ((req_first.src.act_w != req_first.dst.act_w)
 						|| (req_first.src.act_h != req_first.dst.act_h)) {
@@ -1893,7 +1907,7 @@ static long compat_rga_ioctl(struct file *file, uint32_t cmd, unsigned long arg)
 			}
 			RGA_MSG_2_RGA2_MSG_32(&req_rga, &req);
 
-			if (first_RGA2_proc == 0 && req.bitblt_mode == bitblt_mode && rga2_service.dev_mode == 1) {
+			if (first_RGA2_proc == 0 && req.render_mode == bitblt_mode && rga2_service.dev_mode == 1) {
 				memcpy(&req_first, &req, sizeof(struct rga2_req));
 				if ((req_first.src.act_w != req_first.dst.act_w)
 						|| (req_first.src.act_h != req_first.dst.act_h)) {
