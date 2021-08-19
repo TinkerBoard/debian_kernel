@@ -44,7 +44,7 @@
 
 / {
 	compatible = "rockchip,rk3288-evb-rk808-linux", "rockchip,rk3288";
-	model = "Tinker Board (S)";
+	model = "ASUS Tinker Board (S)";
 
 	chosen {
 		bootargs = "console=ttyFIQ0 rw rootfstype=ext4 rootwait";
