@@ -37,9 +37,9 @@ static int ver_show(struct seq_file *m, void *v)
 	} else if (hwid == 3)
 		boardver = "2.00";
 	else if (hwid == 4)
-		boardver = "2.01A";
+		boardver = "2.03A";
 	else if (hwid == 5)
-		boardver = "2.01B";
+		boardver = "2.03B";
 	else
 		boardver = "unknown";
 
