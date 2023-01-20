@@ -30,7 +30,9 @@ struct sk_buff *qmi_wwan_tx_fixup(struct usbnet *dev, struct sk_buff *skb, gfp_t
 	if (dev->net->hard_header_len == 0)
 		return skb;
 	else
-		skb_reset_mac_header(skb); if (skb_pull(skb, ETH_HLEN)) {
+		skb_reset_mac_header(skb);
+
+	if (skb_pull(skb, ETH_HLEN)) {
 		return skb;
 	} else {
 		dev_err(&dev->intf->dev, "Packet Dropped ");
